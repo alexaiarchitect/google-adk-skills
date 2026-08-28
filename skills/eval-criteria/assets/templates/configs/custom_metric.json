@@ -1,0 +1,12 @@
+{
+  "criteria": {
+    "tool_trajectory_avg_score": {"threshold": 1.0, "match_type": "IN_ORDER"},
+    "claim_amount_accuracy": 0.9
+  },
+  "custom_metrics": {
+    "claim_amount_accuracy": {
+      "description": "Fraction of submitted claims whose amount matches the user's request.",
+      "code_config": {"name": "app.eval_metrics.claim_amount_accuracy"}
+    }
+  }
+}

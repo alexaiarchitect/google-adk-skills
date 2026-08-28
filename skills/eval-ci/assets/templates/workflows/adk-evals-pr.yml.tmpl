@@ -1,0 +1,55 @@
+# Deterministic eval gate: runs on every change.
+#
+# Only metrics that cost nothing belong here. A judge metric on every push is
+# slow enough that people stop pushing and expensive enough that someone
+# eventually turns it off, which is the worst of the three outcomes.
+#
+# The gate is the wrapper script, not `adk eval`: the command always exits 0,
+# even when cases fail.
+name: ADK evals (PR)
+
+on:
+  pull_request:
+  push:
+    branches: [{{DEFAULT_BRANCH}}]
+  workflow_dispatch:
+
+concurrency:
+  group: adk-evals-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+{{ID_TOKEN_PERMISSION}}
+jobs:
+  deterministic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "{{PYTHON_VERSION}}"
+          cache: pip
+
+      - name: Install ADK
+        run: pip install "google-adk[eval]=={{ADK_VERSION}}.*"
+{{AUTH_STEP}}
+      - name: Run the deterministic suite
+        env:
+          MODEL_NAME: ${{ vars.MODEL_NAME || '{{MODEL_NAME}}' }}
+{{BACKEND_ENV}}
+        run: |
+          python3 {{SCRIPTS_PATH}}/eval-run/scripts/run_evals.py {{AGENT_DIR}} \
+            --config {{PR_CONFIG}} \
+            --not-evaluated fail
+
+      - name: Upload eval history
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-history-pr
+          path: {{AGENT_DIR}}/.adk/eval_history/
+          if-no-files-found: ignore
+          retention-days: 14

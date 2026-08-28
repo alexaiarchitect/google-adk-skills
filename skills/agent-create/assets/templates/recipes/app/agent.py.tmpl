@@ -1,0 +1,26 @@
+"""{{AGENT_DESCRIPTION}}"""
+
+import os
+
+from google.adk.agents import Agent
+from google.adk.apps import App
+
+from .tools import {{TOOL_NAMES}}
+
+#: The model is read from the environment so the agent survives a model
+#: retirement. `gemini-flash-latest` is an alias, not a dated id.
+MODEL = os.getenv("MODEL_NAME", "gemini-flash-latest")
+
+INSTRUCTION = """{{INSTRUCTION}}"""
+
+root_agent = Agent(
+    name="{{AGENT_NAME}}",
+    model=MODEL,
+    description="{{AGENT_DESCRIPTION}}",
+    instruction=INSTRUCTION,
+    tools=[{{TOOL_NAMES}}],
+)
+
+#: The loader prefers an `App`, and plugins, context caching and resumability
+#: only reach a run - including an eval run - through one.
+app = App(name="{{APP_NAME}}", root_agent=root_agent)

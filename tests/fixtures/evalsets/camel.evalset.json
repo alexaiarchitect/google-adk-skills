@@ -1,0 +1,25 @@
+{
+  "eval_set_id": "camel_style",
+  "name": "camelCase keys inside cases",
+  "description": "Snake_case at the top level (EvalSet has no alias generator), camelCase below it (every nested model does).",
+  "eval_cases": [
+    {
+      "evalId": "happy_meals_within_limit",
+      "conversation": [
+        {
+          "invocationId": "inv_1",
+          "userContent": {"parts": [{"text": "Claim CLM-000010 for 40 dollars of meals on sales."}], "role": "user"},
+          "finalResponse": {"parts": [{"text": "Submitted CLM-000010."}], "role": "model"},
+          "intermediateData": {
+            "toolUses": [
+              {"name": "lookup_policy", "args": {"req": {"category": "meals"}}},
+              {"name": "check_cost_centre_funds", "args": {"req": {"cost_centre": "sales", "amount_usd": 40.0}}},
+              {"name": "submit_claim", "args": {"req": {"claim_id": "CLM-000010", "cost_centre": "sales", "amount_usd": 40.0}}}
+            ]
+          }
+        }
+      ],
+      "sessionInput": {"appName": "app", "userId": "evaluator", "state": {}}
+    }
+  ]
+}

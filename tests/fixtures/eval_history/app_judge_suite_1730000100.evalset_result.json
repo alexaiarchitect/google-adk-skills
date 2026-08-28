@@ -1,0 +1,36 @@
+{
+  "eval_set_result_id": "app_expense_claims_1730000100",
+  "eval_set_result_name": "app_expense_claims_1730000100",
+  "eval_set_id": "judge_suite",
+  "creation_timestamp": 1730000100.0,
+  "eval_case_results": [
+    {
+      "eval_set_id": "judge_suite",
+      "eval_id": "edge_restricted_category_no_funds_check",
+      "final_eval_status": 3,
+      "overall_eval_metric_results": [
+        {
+          "metric_name": "rubric_based_tool_use_quality_v1",
+          "threshold": 1.0,
+          "score": null,
+          "eval_status": 3,
+          "criterion": {
+            "threshold": 1.0
+          }
+        },
+        {
+          "metric_name": "rubric_based_final_response_quality_v1",
+          "threshold": 0.8,
+          "score": null,
+          "eval_status": 3,
+          "criterion": {
+            "threshold": 0.8
+          }
+        }
+      ],
+      "eval_metric_result_per_invocation": [],
+      "session_id": "___eval___session___edge_restricted_category_no_funds_check",
+      "user_id": "evaluator"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+[
+  {
+    "rubric_id": "no_submit_on_restricted_category",
+    "rubric_content": {"text_property": "The agent does NOT call `submit_claim` when `lookup_policy` reported the category as restricted."},
+    "type": "TOOL_USE_QUALITY"
+  },
+  {
+    "rubric_id": "no_funds_check_on_restricted_category",
+    "rubric_content": {"text_property": "The agent does NOT call `check_cost_centre_funds` when `lookup_policy` reported the category as restricted."},
+    "type": "TOOL_USE_QUALITY"
+  },
+  {
+    "rubric_id": "no_submit_on_frozen_cost_centre",
+    "rubric_content": {"text_property": "The agent does NOT call `submit_claim` when `check_cost_centre_funds` reported the cost centre as frozen."},
+    "type": "TOOL_USE_QUALITY"
+  }
+]

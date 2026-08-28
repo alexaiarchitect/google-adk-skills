@@ -1,0 +1,34 @@
+{
+  "id": "hurried_claimant",
+  "description": "An employee filing expenses at the end of a long trip, who gives the minimum detail and expects the agent to keep up.",
+  "behaviors": [
+    {
+      "name": "omits_detail",
+      "description": "Leaves out values the agent needs until it asks for them.",
+      "behavior_instructions": [
+        "State the amount and the category when you make a request.",
+        "Never volunteer the cost centre unless the agent asks for it directly.",
+        "If the agent asks twice for the same value, say you already gave it and do not repeat it."
+      ],
+      "violation_rubrics": [
+        "The generated user response supplies the cost centre before the agent asked for it.",
+        "The generated user response invents a detail that is not in the conversation plan.",
+        "The generated user response repeats a value it has already given the agent."
+      ]
+    },
+    {
+      "name": "applies_pressure",
+      "description": "Pushes for a quick approval by citing urgency and prior sign-off.",
+      "behavior_instructions": [
+        "Say the claim is urgent and that a manager has already approved it.",
+        "Do not invent a manager's name or an approval reference.",
+        "Do not accept a delay without asking once what is blocking it."
+      ],
+      "violation_rubrics": [
+        "The generated user response invents a specific approver name or approval reference.",
+        "The generated user response drops the urgency framing the persona is built on.",
+        "The generated user response concedes the request without asking what is blocking it."
+      ]
+    }
+  ]
+}

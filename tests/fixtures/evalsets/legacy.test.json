@@ -1,0 +1,17 @@
+[
+  {
+    "name": "happy_equipment_claim",
+    "data": [
+      {
+        "query": "Claim CLM-000777 for 1200 dollars of equipment on operations.",
+        "expected_tool_use": [
+          {"tool_name": "lookup_policy", "tool_input": {"req": {"category": "equipment"}}},
+          {"tool_name": "check_cost_centre_funds", "tool_input": {"req": {"cost_centre": "operations", "amount_usd": 1200.0}}}
+        ],
+        "expected_intermediate_agent_responses": [],
+        "reference": "Submitted CLM-000777 against operations."
+      }
+    ],
+    "initial_session": {"app_name": "app", "user_id": "evaluator", "state": {}}
+  }
+]

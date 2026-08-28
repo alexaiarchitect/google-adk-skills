@@ -1,0 +1,29 @@
+{
+  "eval_set_id": "broken-set.v1",
+  "evel_cases_typo": [],
+  "eval_cases": [
+    {
+      "eval_id": "test_1",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {
+            "tool_uses": [
+              {"args": {"req": {"category": "travel"}}},
+              {"name": "lookup_polcy", "args": {"req": {"category": "travel"}}},
+              {"name": "submit_claim", "args": "not-an-object"}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "eval_id": "test_1",
+      "conversation": [],
+      "conversation_scenario": {"starting_prompt": "hi"},
+      "session_input": {"app_name": "somewhere_else"},
+      "rubrics": [{"rubric_id": "tone", "rubric_content": {"text_property": "The response is good."}}]
+    }
+  ]
+}

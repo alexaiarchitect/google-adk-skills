@@ -1,0 +1,24 @@
+{
+  "eval_set_id": "regression",
+  "name": "Regression guards",
+  "description": "One case per fixed bug, named after the issue. The repro that found it is the case that stops it coming back.",
+  "eval_cases": [
+    {
+      "eval_id": "regression_REPLACE_issue_123_wrong_cost_centre",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": "The exact input that reproduced the bug."}], "role": "user"},
+          "final_response": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {
+            "intermediate_responses": [],
+            "tool_uses": [
+              {"name": "first_tool", "args": {"req": {"field": "the value that was wrong before"}}}
+            ]
+          }
+        }
+      ],
+      "session_input": {"app_name": "REPLACE_app_name", "user_id": "evaluator", "state": {}}
+    }
+  ]
+}

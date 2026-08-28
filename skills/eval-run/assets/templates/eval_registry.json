@@ -1,0 +1,22 @@
+{
+  "schema": "adk-skills.registry/1",
+  "suites": [
+    {
+      "name": "trajectory_pr",
+      "tier": "pr",
+      "agent_dir": "app",
+      "evalsets": ["tests/eval/evalsets/*.evalset.json"],
+      "config": "tests/eval/eval_config.json",
+      "runs": 1
+    },
+    {
+      "name": "judge_nightly",
+      "tier": "nightly",
+      "agent_dir": "app",
+      "evalsets": ["tests/eval/evalsets/*.evalset.json"],
+      "config": "tests/eval/eval_config.nightly.json",
+      "runs": 5,
+      "pass_at_1_min": 0.95
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+"""Argument contracts for {{AGENT_NAME}}'s tools.
+
+Every tool takes one of these models. That is what turns "the model usually
+sends sensible arguments" into "the arguments are checked before anything
+happens", and it gives eval cases something exact to assert against.
+
+Three constraint shapes do most of the work:
+
+* ``Literal[...]`` - the model cannot invent a value outside the list.
+* ``pattern=...`` - identifiers have a shape, so a malformed one is caught at the
+  boundary rather than three calls later.
+* ``ge=`` / ``le=`` - numbers have ranges.
+"""
+
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+{{SCHEMA_CLASSES}}

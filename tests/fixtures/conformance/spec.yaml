@@ -1,0 +1,7 @@
+# A conformance spec in the shape ADK's TestSpec accepts (extra="forbid"):
+# user_messages entries are objects, never bare strings.
+description: Approves a travel claim within policy on the engineering cost centre.
+agent: app
+initial_state: {}
+user_messages:
+  - text: "Submit claim CLM-000412 for 900 dollars of travel on the engineering cost centre."

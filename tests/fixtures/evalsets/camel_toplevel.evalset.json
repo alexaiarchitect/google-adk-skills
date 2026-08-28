@@ -1,0 +1,20 @@
+{
+  "evalSetId": "camel_top_level",
+  "name": "camelCase at the top level",
+  "evalCases": [
+    {
+      "eval_id": "happy_meals_within_limit",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": "Claim CLM-000010 for 40 dollars of meals on sales."}], "role": "user"},
+          "final_response": {"parts": [{"text": "Submitted CLM-000010."}], "role": "model"},
+          "intermediate_data": {
+            "tool_uses": [{"name": "lookup_policy", "args": {"req": {"category": "meals"}}}]
+          }
+        }
+      ],
+      "session_input": {"app_name": "app", "user_id": "evaluator", "state": {}}
+    }
+  ]
+}

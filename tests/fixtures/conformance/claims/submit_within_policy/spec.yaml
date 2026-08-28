@@ -1,0 +1,13 @@
+# tests/conformance/<category>/<case>/spec.yaml
+#
+# Record (the dev server must already be running with the recordings plugin):
+#   adk web <agents-dir> -v --extra_plugins=google.adk.cli.plugins.recordings_plugin.RecordingsPlugin
+#   adk conformance record tests/conformance/claims/submit_within_policy none
+# Replay:
+#   adk conformance test tests/conformance
+description: A travel claim inside policy and budget is submitted, not queried twice.
+agent: app
+initial_state: {}
+user_messages:
+  - text: Submit claim CLM-000412 for 900 dollars of travel on the engineering cost centre.
+  - text: Did that go through?

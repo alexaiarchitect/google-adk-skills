@@ -1,0 +1,6 @@
+{
+  "count": 10,
+  "model_name": "gemini-flash-latest",
+  "generation_instruction": "Generate conversations between an employee and an expense-claim agent. Cover: a claim within policy; a claim in a restricted category; a claim on a frozen cost centre; a user who omits the cost centre; a user who changes the amount mid-conversation. The user should behave naturally and not repeat values they have already given.",
+  "environment_context": "The agent can look up spending policy, check whether a cost centre has funds, and submit or reject a claim. Categories are travel, meals, equipment and entertainment; entertainment is never claimable."
+}

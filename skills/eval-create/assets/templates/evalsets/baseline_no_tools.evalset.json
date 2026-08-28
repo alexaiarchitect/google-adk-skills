@@ -1,0 +1,19 @@
+{
+  "eval_set_id": "baseline",
+  "name": "Baseline: no tools bound",
+  "description": "Run against the agent with its tools removed. The expected trajectory is empty: the agent must say what it cannot do rather than invent a capability or a value. The cheapest case in the suite, and the first one to write.",
+  "eval_cases": [
+    {
+      "eval_id": "happy_baseline_no_tools_declines_honestly",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": "A request that would normally need a tool."}], "role": "user"},
+          "final_response": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {"intermediate_responses": [], "tool_uses": []}
+        }
+      ],
+      "session_input": {"app_name": "REPLACE_app_name", "user_id": "evaluator", "state": {}}
+    }
+  ]
+}

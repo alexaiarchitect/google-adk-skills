@@ -1,0 +1,79 @@
+"""Run the evalsets under pytest.
+
+`adk eval` prints a summary and exits 0 whatever happens, so it cannot gate
+anything on its own. `AgentEvaluator` raises on failure, which makes pytest's
+exit code meaningful — that is why CI runs this rather than the CLI.
+
+Four things worth knowing:
+
+* The config is passed explicitly. ADK only auto-discovers ``test_config.json``
+  when it sits beside a single evalset file, which is not guaranteed here.
+* ``num_runs`` averages scores across runs rather than reporting each one, so it
+  hides the variance you are usually looking for. Keep it at 1 and measure
+  reliability with ``/adk:eval-run --runs N``, which aggregates pass@k properly.
+* ``agent_name`` selects a sub-agent to evaluate in isolation. Only this pytest
+  path supports it; ``adk eval`` has no equivalent flag.
+* Each evalset is its own test, so a failure names the file it came from.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import pathlib
+import sys
+
+import pytest
+from google.adk.evaluation import AgentEvaluator
+from google.adk.evaluation.eval_config import EvalConfig
+from google.adk.evaluation.eval_set import EvalSet
+
+pytest_plugins = ("pytest_asyncio",)
+
+EVAL_DIR = pathlib.Path(__file__).parent
+PROJECT_ROOT = (EVAL_DIR / "../..").resolve()
+AGENT_DIR = (EVAL_DIR / "../../app").resolve()
+EVALSETS = sorted((EVAL_DIR / "evalsets").resolve().glob("*.evalset.json"))
+CONFIG = (EVAL_DIR / "eval_config.json").resolve()
+
+AGENT_MODULE = "app.agent"
+NUM_RUNS = int(os.getenv("ADK_EVAL_NUM_RUNS", "1"))
+AGENT_NAME = os.getenv("ADK_EVAL_AGENT_NAME") or None
+
+# `adk eval` puts the agents directory on `sys.path` before importing the agent
+# module; pytest does not, so do it here and the suite runs from any directory.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def load_env() -> None:
+    """Load the same `.env` files `adk` would, nearest the agent first."""
+    try:
+        import dotenv
+    except ImportError:
+        return
+    for candidate in (AGENT_DIR / ".env", PROJECT_ROOT / ".env"):
+        if candidate.is_file():
+            dotenv.load_dotenv(candidate)
+
+
+def test_there_is_something_to_evaluate() -> None:
+    """A suite that found no evalsets would otherwise pass silently."""
+    assert EVALSETS, f"no evalsets matched *.evalset.json under {EVAL_DIR}"
+    assert CONFIG.is_file(), f"no eval config at {CONFIG}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("evalset_path", EVALSETS, ids=lambda p: p.stem)
+async def test_evalset(evalset_path: pathlib.Path) -> None:
+    eval_set = EvalSet.model_validate_json(evalset_path.read_text(encoding="utf-8"))
+    eval_config = EvalConfig.model_validate(json.loads(CONFIG.read_text(encoding="utf-8")))
+    await AgentEvaluator.evaluate_eval_set(
+        agent_module=AGENT_MODULE,
+        eval_set=eval_set,
+        eval_config=eval_config,
+        num_runs=NUM_RUNS,
+        agent_name=AGENT_NAME,
+        print_detailed_results=True,
+    )

@@ -1,0 +1,112 @@
+"""{{AGENT_DESCRIPTION}}
+
+A **graph workflow** rather than a single prompted agent. The difference that
+matters for evaluation: every step the graph takes in code is a step the model
+cannot skip, reorder, or talk itself out of. A prompt that says "always call
+`{{FIRST_TOOL}}` first" is a request; an edge that runs it first is a guarantee,
+and a guarantee needs no eval case to defend it.
+
+The shape here is the one worth starting from — deterministic work in function
+nodes, judgement in an `Agent` node, wired in a fixed order:
+
+    START -> normalise_request -> apply_policy -> {{AGENT_NAME}}_reporter
+
+Two rules the graph enforces, both worth knowing before extending it:
+
+* **One output per node.** A node produces its successor's input by returning a
+  value. Emitting a second `Event.output` from the same node is a runtime error,
+  not a merge — so build the whole result and return it once.
+* **`Workflow` is not an `Agent`.** It is its own type; `App.root_agent` accepts
+  it, and the CLI loads it through the `app` export below. An `LlmAgent`
+  elsewhere in the tree cannot `transfer_to_agent` into a workflow node.
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Any, Literal
+
+from google.adk.agents import Agent
+from google.adk.apps import App
+from google.adk.workflow import START, FunctionNode, Workflow
+from pydantic import BaseModel, Field, ValidationError
+
+#: The model is read from the environment so the agent survives a model
+#: retirement. `gemini-flash-latest` is an alias, not a dated id.
+MODEL = os.getenv("MODEL_NAME", "gemini-flash-latest")
+
+{{SCHEMA_CLASSES}}
+
+{{TOOL_FUNCTIONS}}
+
+
+# ---------------------------------------------------------------------------
+# graph nodes
+# ---------------------------------------------------------------------------
+
+def normalise_request(node_input: str) -> dict[str, Any]:
+    """Turn the raw user text into the structure the rest of the graph expects.
+
+    No model call happens here, which is the point: parsing, defaulting and
+    obvious rejection are cheaper, faster and more reliable in code, and they
+    are the steps you never want a model to improvise.
+
+    Returns:
+        A dict carrying the request and whatever was extracted from it. The
+        return value *is* this node's output; do not also emit an event
+        carrying `output`, because a second output raises.
+    """
+    text = (node_input or "").strip()
+    return {"request": text, "extracted": {}}
+
+
+def apply_policy(node_input: dict[str, Any]) -> dict[str, Any]:
+    """Take the deterministic part of the decision, in Python.
+
+    TODO: call `{{FIRST_TOOL}}` and any other pure lookup here, and decide what
+    the rules allow. Anything decided in this node is a branch the eval suite
+    does not have to cover with a case, because the model was never asked.
+
+    Returns:
+        A dict with `request`, the facts the lookups produced, and `allowed`
+        — what the reporter node explains to the user.
+    """
+    request = (node_input or {}).get("request", "")
+    facts: dict[str, Any] = {}
+    allowed = True
+    reason = ""
+    # TODO: the real rules, e.g.
+    #     facts = {{FIRST_TOOL}}(...)
+    #     allowed = facts.get("status") == "ok"
+    #     reason = "" if allowed else "name the rule that failed"
+    return {"request": request, "facts": facts, "allowed": allowed, "reason": reason}
+
+
+INSTRUCTION = """{{INSTRUCTION}}"""
+
+#: The judgement step. It receives `apply_policy`'s output as its input, so its
+#: instruction can assume the facts are already established and only has to
+#: explain the outcome and handle what code could not decide.
+reporter = Agent(
+    name="{{AGENT_NAME}}_reporter",
+    model=MODEL,
+    description="{{AGENT_DESCRIPTION}}",
+    instruction=INSTRUCTION,
+    tools=[{{TOOL_NAMES}}],
+)
+
+normalise_node = FunctionNode(func=normalise_request, name="normalise_request")
+policy_node = FunctionNode(func=apply_policy, name="apply_policy")
+
+#: Each row of `edges` is a chain run in order; each node's return value becomes
+#: the next node's input, so nothing has to be passed through session state.
+workflow = Workflow(
+    name="{{AGENT_NAME}}",
+    edges=[(START, normalise_node, policy_node, reporter)],
+)
+
+#: `root_agent` is kept as an alias so the package `__init__` export and any
+#: tooling that looks for it still resolve; the loader prefers `app`.
+root_agent = workflow
+
+app = App(name="{{APP_NAME}}", root_agent=workflow)

@@ -1,0 +1,24 @@
+# tests/conformance/<category>/<case>/spec.yaml
+#
+# Recording drives a *running* dev server, so start it first and leave it up:
+#   adk web <agents-dir> -v \
+#       --extra_plugins=google.adk.cli.plugins.recordings_plugin.RecordingsPlugin
+# It must be listening on 127.0.0.1:8000 - that is the address the recorder
+# hardcodes. Run the interaction in the UI, then record it:
+#   adk conformance record tests/conformance/<category>/<case> none
+# The streaming mode is a positional argument, not a flag. `none` and `sse` are
+# the usable values; `bidi` parses and then raises "Unsupported streaming mode".
+#
+# Replay, which exits non-zero when a case fails:
+#   adk conformance test tests/conformance
+#
+# TestSpec forbids unknown keys: a misspelled field is an error, not a no-op.
+description: One line on the interaction this pins.
+agent: app
+initial_state: {}
+user_messages:
+  # Each entry is an object. A bare string is rejected.
+  - text: "The first thing the user says."
+  - text: "And the second, if the case is multi-turn."
+  # A turn may instead carry `content:` (a full types.UserContent, for a
+  # function response or non-text part) and/or `state_delta:`.

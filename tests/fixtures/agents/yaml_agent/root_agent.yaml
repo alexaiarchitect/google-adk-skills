@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/google/adk-python/main/src/google/adk/agents/config_schemas/AgentConfig.json
+name: legacy_claims_agent
+model: gemini-flash-latest
+description: Fixture for the deprecated YAML config layout.
+instruction: |
+  Approve or reject expense claims. Always look up the policy first.

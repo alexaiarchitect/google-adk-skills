@@ -1,0 +1,25 @@
+{
+  "eval_set_id": "happy",
+  "name": "Happy path",
+  "description": "The unobstructed path through the agent's pipeline. If these fail, nothing else is worth reading.",
+  "eval_cases": [
+    {
+      "eval_id": "happy_REPLACE_full_pipeline",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": "A request that should succeed end to end."}], "role": "user"},
+          "final_response": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {
+            "intermediate_responses": [],
+            "tool_uses": [
+              {"name": "first_tool", "args": {"req": {"field": "value"}}},
+              {"name": "second_tool", "args": {"req": {"field": "value"}}}
+            ]
+          }
+        }
+      ],
+      "session_input": {"app_name": "REPLACE_app_name", "user_id": "evaluator", "state": {}}
+    }
+  ]
+}

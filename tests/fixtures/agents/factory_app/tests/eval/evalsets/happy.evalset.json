@@ -1,0 +1,20 @@
+{
+  "eval_set_id": "factory_happy",
+  "name": "Factory app happy path",
+  "eval_cases": [
+    {
+      "eval_id": "happy_small_claim_approved",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": "Approve CLM-000042."}], "role": "user"},
+          "final_response": {"parts": [{"text": "Approved CLM-000042."}], "role": "model"},
+          "intermediate_data": {
+            "tool_uses": [{"name": "approve_claim", "args": {"claim_id": "CLM-000042"}}]
+          }
+        }
+      ],
+      "session_input": {"app_name": "claims_app", "user_id": "evaluator", "state": {}}
+    }
+  ]
+}

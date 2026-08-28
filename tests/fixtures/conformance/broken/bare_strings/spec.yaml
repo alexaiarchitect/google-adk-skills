@@ -1,0 +1,9 @@
+# The mistake this fixture pins: user_messages written as bare strings, plus a
+# key TestSpec does not define. TestSpec sets extra="forbid" and its
+# user_messages are UserMessage objects, so ADK rejects both.
+description: A spec whose user messages are scalars rather than objects.
+agent: app
+severity: high
+user_messages:
+  - "The first thing the user says."
+  - "And the second."

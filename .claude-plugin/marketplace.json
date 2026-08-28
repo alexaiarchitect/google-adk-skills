@@ -1,0 +1,15 @@
+{
+  "name": "alexaiarchitect-adk",
+  "description": "Claude Code skills for building and evaluating Google ADK agents.",
+  "owner": {
+    "name": "Alex",
+    "email": "alex@alexaiarchitect.com"
+  },
+  "plugins": [
+    {
+      "name": "adk",
+      "source": "./",
+      "description": "Skills for building and evaluating Google ADK agents."
+    }
+  ]
+}

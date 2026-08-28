@@ -1,0 +1,3 @@
+{"author": "user", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"text": "Escalate CLM-000412 to finance."}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"functionCall": {"name": "escalate_to_finance", "args": {"claim_id": "CLM-000412"}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"text": "I have escalated the claim to the finance team."}]}}

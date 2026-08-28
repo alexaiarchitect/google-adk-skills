@@ -1,0 +1,19 @@
+{
+  "eval_set_result_id": "app_inference_failed_1730002000",
+  "eval_set_result_name": "app_inference_failed_1730002000",
+  "eval_set_id": "inference_failed",
+  "eval_case_results": [
+    {
+      "eval_set_file": "happy",
+      "eval_set_id": "inference_failed",
+      "eval_id": "happy_travel_within_policy",
+      "final_eval_status": 2,
+      "eval_metric_results": null,
+      "overall_eval_metric_results": [],
+      "eval_metric_result_per_invocation": [],
+      "session_id": "___eval___session___0a9c41af-c412-4db2-a3d6-7e5e2ce14e5d",
+      "user_id": "evaluator"
+    }
+  ],
+  "creation_timestamp": 1730002000.0
+}

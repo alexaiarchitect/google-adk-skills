@@ -1,0 +1,37 @@
+{
+  "eval_set_id": "edge",
+  "name": "Edge cases and refusals",
+  "description": "One case per branch where the agent must stop. The assertion is where the trajectory ends: the forbidden call is simply absent.",
+  "eval_cases": [
+    {
+      "eval_id": "edge_REPLACE_condition_no_action",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": "A request that must be refused, and why is discoverable from the tools."}], "role": "user"},
+          "final_response": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {
+            "intermediate_responses": [],
+            "tool_uses": [
+              {"name": "first_tool", "args": {"req": {"field": "blocked_value"}}},
+              {"name": "refusal_tool", "args": {"req": {"reason": "the specific constraint that failed"}}}
+            ]
+          }
+        }
+      ],
+      "session_input": {"app_name": "REPLACE_app_name", "user_id": "evaluator", "state": {}}
+    },
+    {
+      "eval_id": "edge_REPLACE_missing_information_asks",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": "A request that leaves out something required."}], "role": "user"},
+          "final_response": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {"intermediate_responses": [], "tool_uses": []}
+        }
+      ],
+      "session_input": {"app_name": "REPLACE_app_name", "user_id": "evaluator", "state": {}}
+    }
+  ]
+}

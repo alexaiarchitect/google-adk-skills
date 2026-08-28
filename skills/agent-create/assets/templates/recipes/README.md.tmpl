@@ -1,0 +1,40 @@
+# {{AGENT_NAME}}
+
+{{AGENT_DESCRIPTION}}
+
+## Setup
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install "google-adk[eval]==2.9.*" pytest pytest-asyncio python-dotenv
+cp .env.example .env    # then fill in the project and location
+gcloud auth application-default login
+```
+
+## Run
+
+```bash
+adk run {{APP_NAME}} --jsonl "a request to try"
+adk web .                       # dev UI, with the trace and eval tabs
+```
+
+## Evaluate
+
+```bash
+# deterministic, gates every change
+adk eval {{APP_NAME}} tests/eval/evalsets/happy.evalset.json \
+    --config_file_path tests/eval/eval_config.json
+
+# the honest gate: AgentEvaluator raises, so the exit code means something
+pytest tests/eval -v
+```
+
+`adk eval` always exits 0, even when cases fail. Use pytest, or
+`/adk:eval-run`, anywhere the result has to gate something.
+
+## Layout
+
+```
+{{APP_NAME}}/          the agent package: agent.py, tools.py, schemas.py
+tests/eval/            eval_config.json, evalsets/, test_eval.py
+.env.example           backend and MODEL_NAME
+```

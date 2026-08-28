@@ -1,0 +1,12 @@
+[
+  {
+    "rubric_id": "no_repeated_question",
+    "rubric_content": {"text_property": "The agent does not ask for a value the user has already given earlier in the conversation."},
+    "type": "TRAJECTORY_QUALITY"
+  },
+  {
+    "rubric_id": "checks_before_acting",
+    "rubric_content": {"text_property": "Every call to `submit_claim` is preceded in the same conversation by a call to `check_cost_centre_funds`."},
+    "type": "TRAJECTORY_QUALITY"
+  }
+]

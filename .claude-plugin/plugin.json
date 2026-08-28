@@ -1,0 +1,15 @@
+{
+  "name": "adk",
+  "description": "Create, review, validate, run, analyze and manage Google ADK (Python 2.x) agents and their evaluations. Deterministic stdlib validators plus interactive, options-first skills for evalsets, criteria, rubrics, pass@k, groundedness, safety, simulation and CI gates.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Alex",
+    "email": "alex@alexaiarchitect.com"
+  },
+  "homepage": "https://github.com/alexaiarchitect/google-adk-skills",
+  "repository": "https://github.com/alexaiarchitect/google-adk-skills",
+  "license": "Apache-2.0",
+  "experimental": {
+    "evals": "evals"
+  }
+}

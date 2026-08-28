@@ -1,0 +1,3 @@
+{"author": "user", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"text": "I have a receipt from last month, what should I do?"}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"text": "I am not sure which cost centre this belongs to."}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"text": "Could you clarify what you would like me to do?"}]}}

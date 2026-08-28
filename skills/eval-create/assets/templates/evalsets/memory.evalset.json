@@ -1,0 +1,39 @@
+{
+  "eval_set_id": "memory",
+  "name": "Context retention",
+  "description": "A constraint stated once, then required several turns later without being repeated. Vary the distance: a constraint that survives two turns may not survive five.",
+  "eval_cases": [
+    {
+      "eval_id": "memory_REPLACE_recalls_constraint_after_noise",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": "State the constraint once, plainly."}], "role": "user"},
+          "final_response": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {"intermediate_responses": [], "tool_uses": []}
+        },
+        {
+          "invocation_id": "inv_2",
+          "user_content": {"parts": [{"text": "Unrelated work that puts distance between the constraint and its use."}], "role": "user"},
+          "final_response": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {
+            "intermediate_responses": [],
+            "tool_uses": [{"name": "first_tool", "args": {"req": {"field": "value"}}}]
+          }
+        },
+        {
+          "invocation_id": "inv_3",
+          "user_content": {"parts": [{"text": "A request that needs the constraint, without restating it."}], "role": "user"},
+          "final_response": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {
+            "intermediate_responses": [],
+            "tool_uses": [
+              {"name": "second_tool", "args": {"req": {"remembered_field": "the value from turn 1"}}}
+            ]
+          }
+        }
+      ],
+      "session_input": {"app_name": "REPLACE_app_name", "user_id": "evaluator", "state": {}}
+    }
+  ]
+}

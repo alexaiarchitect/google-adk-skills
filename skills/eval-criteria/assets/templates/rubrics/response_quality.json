@@ -1,0 +1,17 @@
+[
+  {
+    "rubric_id": "names_the_failed_constraint",
+    "rubric_content": {"text_property": "The final response names the specific constraint that blocked the request, such as the restricted category, the exceeded limit, or the frozen cost centre."},
+    "type": "FINAL_RESPONSE_QUALITY"
+  },
+  {
+    "rubric_id": "quotes_only_returned_values",
+    "rubric_content": {"text_property": "Every number and identifier in the final response appears in a tool result from this conversation."},
+    "type": "FINAL_RESPONSE_QUALITY"
+  },
+  {
+    "rubric_id": "states_the_next_step",
+    "rubric_content": {"text_property": "When the request cannot be fulfilled, the response states what the user can do next."},
+    "type": "FINAL_RESPONSE_QUALITY"
+  }
+]

@@ -1,0 +1,24 @@
+"""Tools for {{AGENT_NAME}}.
+
+What the model sees of a tool is its **name, its docstring and its type hints**,
+and nothing else. So the docstring is not documentation, it is the interface:
+say what the tool does, when to call it, what each argument means, and what
+comes back.
+
+Two rules these tools follow:
+
+* **Validate, then return the error.** A schema failure comes back as
+  ``{"status": "error", ...}`` rather than as an exception, so the model can read
+  what was wrong and correct itself. An exception ends the invocation instead.
+* **Always return a dict with ``status``.** It gives the model something
+  unambiguous to branch on, and gives groundedness and rubric metrics something
+  to check the response against.
+"""
+
+from typing import Any
+
+from pydantic import ValidationError
+
+from .schemas import {{SCHEMA_NAMES}}
+
+{{TOOL_FUNCTIONS}}

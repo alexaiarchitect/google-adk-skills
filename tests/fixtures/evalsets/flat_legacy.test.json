@@ -1,0 +1,18 @@
+[
+  {
+    "query": "What can you check before I submit a claim?",
+    "expected_tool_use": [],
+    "expected_intermediate_agent_responses": [],
+    "reference": "I can look up the policy for a category and check whether a cost centre has funds."
+  },
+  {
+    "query": "Claim CLM-000321 for 95 dollars of meals on sales.",
+    "expected_tool_use": [
+      {"tool_name": "lookup_policy", "tool_input": {"req": {"category": "meals"}}},
+      {"tool_name": "check_cost_centre_funds", "tool_input": {"req": {"cost_centre": "sales", "amount_usd": 95.0}}},
+      {"tool_name": "submit_claim", "tool_input": {"req": {"claim_id": "CLM-000321", "cost_centre": "sales", "amount_usd": 95.0}}}
+    ],
+    "expected_intermediate_agent_responses": [],
+    "reference": "Submitted CLM-000321 against sales."
+  }
+]

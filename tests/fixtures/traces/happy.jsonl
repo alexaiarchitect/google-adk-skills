@@ -1,0 +1,8 @@
+{"author": "user", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"text": "Submit claim CLM-000412 for 900 dollars of travel on the engineering cost centre."}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"functionCall": {"name": "lookup_policy", "args": {"req": {"category": "travel"}}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"functionResponse": {"name": "lookup_policy", "response": {"status": "ok", "limit_usd": 2500.0, "restricted": false}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"functionCall": {"name": "check_cost_centre_funds", "args": {"req": {"cost_centre": "engineering", "amount_usd": 900.0}}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"functionResponse": {"name": "check_cost_centre_funds", "response": {"status": "ok", "available_usd": 41000.0, "frozen": false, "sufficient": true}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"functionCall": {"name": "submit_claim", "args": {"req": {"claim_id": "CLM-000412", "cost_centre": "engineering", "amount_usd": 900.0}}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"functionResponse": {"name": "submit_claim", "response": {"status": "ok", "claim_id": "CLM-000412", "state": "submitted"}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"text": "Submitted CLM-000412 for 900 USD against engineering."}]}}

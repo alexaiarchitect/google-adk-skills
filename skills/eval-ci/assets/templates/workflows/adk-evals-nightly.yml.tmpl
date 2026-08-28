@@ -1,0 +1,66 @@
+# Judge-metric and reliability gate: runs on a schedule, not on every change.
+#
+# Everything that costs model calls lives here: rubric metrics, groundedness,
+# safety, and repeated runs for pass@k. `runs` is an input so a release
+# candidate can be qualified with more of them without editing the workflow.
+name: ADK evals (nightly)
+
+on:
+  schedule:
+    - cron: "{{CRON}}"
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: "Runs per eval set (5 for a check, 20+ before a release)"
+        default: "5"
+        required: false
+
+permissions:
+  contents: read
+{{ID_TOKEN_PERMISSION}}
+jobs:
+  judged:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "{{PYTHON_VERSION}}"
+          cache: pip
+
+      - name: Install ADK
+        run: pip install "google-adk[eval]=={{ADK_VERSION}}.*"
+{{AUTH_STEP}}
+      - name: Run the judged suite
+        env:
+          MODEL_NAME: ${{ vars.MODEL_NAME || '{{MODEL_NAME}}' }}
+{{BACKEND_ENV}}
+        run: |
+          python3 {{SCRIPTS_PATH}}/eval-run/scripts/run_evals.py {{AGENT_DIR}} \
+            --config {{NIGHTLY_CONFIG}} \
+            --runs "${{ github.event.inputs.runs || '5' }}" \
+            --not-evaluated fail
+
+      - name: Reliability report
+        if: always()
+        run: |
+          python3 {{SCRIPTS_PATH}}/eval-analyze/scripts/pass_at_k.py \
+            --dir {{AGENT_DIR}}/.adk/eval_history \
+            >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Explain any failures
+        if: failure()
+        run: |
+          python3 {{SCRIPTS_PATH}}/eval-analyze/scripts/summarize_results.py \
+            {{AGENT_DIR}} --latest >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload eval history
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-history-nightly
+          path: {{AGENT_DIR}}/.adk/eval_history/
+          if-no-files-found: ignore
+          retention-days: 30

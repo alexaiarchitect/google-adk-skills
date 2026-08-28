@@ -1,0 +1,21 @@
+# Python
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+.idea/
+.vscode/
+.DS_Store
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Working notes, not shipped with the plugin
+.dev/
+
+# Written by ADK when a fixture agent is run or evaluated
+tests/fixtures/agents/*/.adk/
+
+# Written by `claude plugin eval`
+evals/results/

@@ -1,0 +1,34 @@
+# Conformance replay: has the agent's behaviour drifted?
+#
+# Different question from the evals. A recording says what the agent did; replay
+# says whether it still does exactly that. Useful after a refactor, noisy on an
+# agent under active development.
+name: ADK conformance
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+{{ID_TOKEN_PERMISSION}}
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "{{PYTHON_VERSION}}"
+          cache: pip
+
+      - name: Install ADK
+        run: pip install "google-adk[eval]=={{ADK_VERSION}}.*"
+{{AUTH_STEP}}
+      - name: Replay the recordings
+        env:
+          MODEL_NAME: ${{ vars.MODEL_NAME || '{{MODEL_NAME}}' }}
+{{BACKEND_ENV}}
+        run: adk conformance test {{CONFORMANCE_DIR}} --generate_report

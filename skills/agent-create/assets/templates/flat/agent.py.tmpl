@@ -1,0 +1,24 @@
+"""{{AGENT_DESCRIPTION}}"""
+
+import os
+from typing import Any, Literal
+
+from google.adk.agents import Agent
+from pydantic import BaseModel, Field, ValidationError
+
+#: Read from the environment so the agent survives a model retirement.
+MODEL = os.getenv("MODEL_NAME", "gemini-flash-latest")
+
+{{SCHEMA_CLASSES}}
+
+{{TOOL_FUNCTIONS}}
+
+INSTRUCTION = """{{INSTRUCTION}}"""
+
+root_agent = Agent(
+    name="{{AGENT_NAME}}",
+    model=MODEL,
+    description="{{AGENT_DESCRIPTION}}",
+    instruction=INSTRUCTION,
+    tools=[{{TOOL_NAMES}}],
+)

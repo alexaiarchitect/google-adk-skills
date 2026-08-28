@@ -1,0 +1,16 @@
+{
+  "eval_set_id": "simulated",
+  "name": "Simulated conversations",
+  "description": "No fixed turns: an LLM plays the user against a plan. Reference-based metrics cannot score these; use rubric, groundedness or safety criteria.",
+  "eval_cases": [
+    {
+      "eval_id": "memory_REPLACE_simulated_multi_turn",
+      "conversation_scenario": {
+        "starting_prompt": "How the user opens the conversation.",
+        "conversation_plan": "What the user does across the conversation: what they state early, what they ask for later without repeating, and when they stop.",
+        "user_persona": "NOVICE"
+      },
+      "session_input": {"app_name": "REPLACE_app_name", "user_id": "evaluator", "state": {}}
+    }
+  ]
+}

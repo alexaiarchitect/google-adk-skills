@@ -1,0 +1,9 @@
+{"author": "user", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"text": "Claim CLM-000501 for 60 of meals on marketing."}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"functionCall": {"name": "lookup_policy", "args": {"req": {"category": "meals"}}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"functionResponse": {"name": "lookup_policy", "response": {"status": "ok", "limit_usd": 75.0, "restricted": false}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"functionCall": {"name": "check_cost_centre_funds", "args": {"req": {"cost_centre": "marketing", "amount_usd": 60.0}}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"functionResponse": {"name": "check_cost_centre_funds", "response": {"status": "ok", "frozen": true, "sufficient": false}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"functionCall": {"name": "lookup_policy", "args": {"req": {"category": "meals"}}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"functionResponse": {"name": "lookup_policy", "response": {"status": "ok", "limit_usd": 75.0, "restricted": false}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"functionCall": {"name": "check_cost_centre_funds", "args": {"req": {"cost_centre": "marketing", "amount_usd": 60.0}}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"functionResponse": {"name": "check_cost_centre_funds", "response": {"status": "ok", "frozen": true, "sufficient": false}}}]}}

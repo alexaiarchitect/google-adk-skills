@@ -1,0 +1,10 @@
+{"author": "user", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"text": "Claim CLM-000412 for 900 of travel on engineering."}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"functionCall": {"name": "check_cost_centre_funds", "args": {"req": {"cost_centre": "engineering"}}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"functionResponse": {"name": "check_cost_centre_funds", "response": {"status": "error", "error": "schema validation failed"}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"functionCall": {"name": "check_cost_centre_funds", "args": {"req": {"cost_centre": "engineering"}}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"functionResponse": {"name": "check_cost_centre_funds", "response": {"status": "error", "error": "schema validation failed"}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"functionCall": {"name": "check_cost_centre_funds", "args": {"req": {"cost_centre": "engineering"}}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"functionResponse": {"name": "check_cost_centre_funds", "response": {"status": "error", "error": "schema validation failed"}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"functionCall": {"name": "check_cost_centre_funds", "args": {"req": {"cost_centre": "engineering"}}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "user", "parts": [{"functionResponse": {"name": "check_cost_centre_funds", "response": {"status": "error", "error": "schema validation failed"}}}]}}
+{"author": "claims_agent", "invocationId": "inv_1", "content": {"role": "model", "parts": [{"text": "I could not verify the budget."}]}}

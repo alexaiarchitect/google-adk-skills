@@ -1,0 +1,15 @@
+{
+  "eval_set_id": "simulated_users",
+  "name": "Simulated claimants",
+  "eval_cases": [
+    {
+      "eval_id": "memory_persistent_cost_centre",
+      "conversation_scenario": {
+        "starting_prompt": "I need to claim some expenses from last week's trip.",
+        "conversation_plan": "State that you work in the engineering cost centre. Ask about two claims in turn, a 900 dollar flight and a 40 dollar meal, without repeating the cost centre. Confirm both outcomes, then stop.",
+        "user_persona": "NOVICE"
+      },
+      "session_input": {"app_name": "app", "user_id": "evaluator", "state": {}}
+    }
+  ]
+}

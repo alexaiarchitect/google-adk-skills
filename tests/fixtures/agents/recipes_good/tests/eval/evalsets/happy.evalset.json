@@ -1,0 +1,29 @@
+{
+  "eval_set_id": "happy",
+  "name": "Expense claims — happy path",
+  "description": "The unobstructed path: policy allows it, funds are available, the claim is submitted.",
+  "eval_cases": [
+    {
+      "eval_id": "happy_travel_within_policy",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {
+            "parts": [{"text": "Submit claim CLM-000412 for 900 dollars of travel on the engineering cost centre."}],
+            "role": "user"
+          },
+          "final_response": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {
+            "intermediate_responses": [],
+            "tool_uses": [
+              {"name": "lookup_policy", "args": {"req": {"category": "travel"}}},
+              {"name": "check_cost_centre_funds", "args": {"req": {"cost_centre": "engineering", "amount_usd": 900.0}}},
+              {"name": "submit_claim", "args": {"req": {"claim_id": "CLM-000412", "cost_centre": "engineering", "amount_usd": 900.0}}}
+            ]
+          }
+        }
+      ],
+      "session_input": {"app_name": "app", "user_id": "evaluator", "state": {}}
+    }
+  ]
+}
