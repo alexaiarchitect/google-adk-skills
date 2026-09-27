@@ -11,6 +11,7 @@ Four things worth knowing:
 * ``num_runs`` averages scores across runs rather than reporting each one, so it
   hides the variance you are usually looking for. Keep it at 1 and measure
   reliability with ``/adk:eval-run --runs N``, which aggregates pass@k properly.
+  It must also be at least 1: ADK 2.10 raises ``ValueError`` for less.
 * ``agent_name`` selects a sub-agent to evaluate in isolation. Only this pytest
   path supports it; ``adk eval`` has no equivalent flag.
 * Each evalset is its own test, so a failure names the file it came from.
@@ -59,7 +60,13 @@ def load_env() -> None:
 
 
 def test_there_is_something_to_evaluate() -> None:
-    """A suite that found no evalsets would otherwise pass silently."""
+    """A suite that found no evalsets would otherwise pass silently.
+
+    ADK 2.10 also raises `ValueError` from `evaluate_eval_set` when a run would
+    evaluate no eval case (an empty evalset, or a `-k` filter that matched
+    nothing); 2.9 ran it and reported nothing. This assertion names the problem
+    before the library does, and covers 2.9 as well.
+    """
     assert EVALSETS, f"no evalsets matched {{EVALSET_GLOB}} under {EVAL_DIR}"
     assert CONFIG.is_file(), f"no eval config at {CONFIG}"
 

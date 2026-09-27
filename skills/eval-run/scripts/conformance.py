@@ -8,7 +8,7 @@ same results, replayed without touching a model. That makes it the cheap
 regression net around a refactor, and the one check in this plugin whose own
 exit code can be trusted: unlike `adk eval`, `adk conformance test` fails loudly.
 
-Two things catch people out, and this wrapper handles both:
+Three things catch people out, and this wrapper handles all three:
 
 * **Recording is not self-contained.** `adk conformance record` does not start
   an agent; it drives a dev server that must already be listening on
@@ -18,6 +18,19 @@ Two things catch people out, and this wrapper handles both:
 * **The mode is a positional, not a flag.** `record` takes the paths first and
   then the streaming mode (`none`, `sse` or `bidi`) as a trailing argument.
   Writing it as `--mode` produces a usage error.
+* **A case with no recording is skipped, not failed.** In replay mode ADK 2.10
+  prints `Skipping <category>/<name>: no recordings` and drops the case; if that
+  leaves the streaming mode with nothing to run, the summary says "No tests were
+  run." and the command still exits 0. A suite that records nothing therefore
+  passes. Every case is checked for its recordings file here first (`CNF020`),
+  before anything is replayed.
+
+On exit codes, as of 2.10.0: `adk conformance test` raises on failures in the
+first streaming mode it runs, which makes it the one command in this plugin whose
+exit code can be trusted. It does *not* yet fail because a later streaming mode
+failed, nor because a mode ran no test at all - that rewrite is on upstream main
+after 2.10.0. Until it ships, the `CNF020` pre-check is what stands between an
+unrecorded suite and a green run.
 
     conformance.py record <case-dir> [--mode none|sse|bidi] [--host H] [--port N]
                           [--no-port-check] [--dry-run] [--json]
@@ -50,6 +63,13 @@ from adk_skills.report import (  # noqa: E402
 
 RECORDINGS_PLUGIN = "google.adk.cli.plugins.recordings_plugin.RecordingsPlugin"
 SPEC_NAME = "spec.yaml"
+
+#: What `ConformanceTestRunner._discover_test_cases` looks for, per streaming
+#: mode. Recordings are made one mode at a time, so each mode has its own file.
+RECORDINGS_NAME = {
+    "none": "generated-recordings.yaml",
+    "sse": "generated-recordings-sse.yaml",
+}
 
 #: `TestSpec` sets `extra="forbid"`, so anything outside this set is rejected
 #: by ADK rather than ignored.
@@ -133,6 +153,36 @@ def validate_spec(path: Path, report: GapReport) -> None:
                        path=str(path), locator=f"line {entry['line']}",
                        fix="UserMessage accepts `text`, `content` and `state_delta`",
                        source=_SRC_SPEC)
+
+
+def recordings_file(case_dir: Path, streaming_mode: str | None) -> Path:
+    """The recordings file replay needs for this case in this streaming mode."""
+    return case_dir / RECORDINGS_NAME.get(streaming_mode or "none", RECORDINGS_NAME["none"])
+
+
+def check_recordings(specs: list[Path], report: GapReport, *, streaming_mode: str | None) -> None:
+    """Refuse to replay a case that has no recording.
+
+    ADK skips such a case with a yellow warning and carries on; if that empties
+    the streaming mode, 2.10 prints "No tests were run." and exits 0, so the
+    suite passes without replaying anything.
+    """
+    mode = streaming_mode or "none"
+    for spec in specs:
+        case_dir = spec.parent
+        target = recordings_file(case_dir, mode)
+        if target.is_file():
+            continue
+        report.add(
+            "CNF020", "error", "conformance",
+            f"no {target.name} for this case, so replay skips it",
+            path=str(case_dir), locator=target.name,
+            fix=f"record it first: `conformance.py record {case_dir} --mode {mode}` "
+                "(needs a dev server started with the recordings plugin). ADK 2.10 only "
+                "warns and moves on, and a streaming mode left with no cases still exits 0",
+            source="adk-python: cli/conformance/cli_test.py "
+                   "(ConformanceTestRunner._discover_test_cases)",
+        )
 
 
 def find_specs(target: Path) -> list[Path]:
@@ -263,6 +313,21 @@ def cmd_test(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return EXIT_USAGE
 
+    report = GapReport(subject=", ".join(str(d) for d in dirs), skill="eval-run")
+    report.discovered = {
+        "specs": [str(s) for s in specs],
+        "mode": args.mode or "replay",
+        "streaming_mode": args.streaming_mode or "none (ADK runs none then sse)",
+    }
+    for spec in specs:
+        validate_spec(spec, report)
+    # Nothing is replayed on a dry run, so a missing recording is not yet a problem.
+    if (args.mode or "replay") == "replay" and not args.skip_recordings_check and not args.dry_run:
+        check_recordings(specs, report, streaming_mode=args.streaming_mode)
+    if report.has_errors():
+        print(report.render("json" if args.json else "md"))
+        return EXIT_FINDINGS
+
     command = ["conformance", "test", *[str(d) for d in dirs]]
     if args.mode:
         command.append(f"--mode={args.mode}")
@@ -294,7 +359,10 @@ def cmd_test(args: argparse.Namespace) -> int:
         "runner": describe_runner(runner),
         "mode": args.mode or "replay",
         "command": outcome.to_dict(),
-        # Unlike `adk eval`, this command's own exit code is meaningful.
+        # Unlike `adk eval`, this command's own exit code is meaningful: 2.10
+        # raises on failures in the first streaming mode it runs. It stays silent
+        # about a later mode's failures, and about a mode that ran nothing, which
+        # is why every case was checked for its recordings above.
         "exit_code": EXIT_OK if outcome.ok else EXIT_FINDINGS,
     }
     if args.json:
@@ -359,6 +427,9 @@ def main(argv: list[str] | None = None) -> int:
     test.add_argument("--generate-report", action="store_true", help="write a markdown report")
     test.add_argument("--report-dir", help="where to write the report")
     test.add_argument("--streaming-mode", choices=("none", "sse", "bidi"))
+    test.add_argument("--skip-recordings-check", action="store_true",
+                      help="replay even where a case has no recordings file (ADK will skip "
+                           "those cases and can still exit 0)")
     test.set_defaults(func=cmd_test)
 
     check = subparsers.add_parser("check", parents=[common],

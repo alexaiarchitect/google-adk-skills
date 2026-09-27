@@ -19,6 +19,12 @@ model you configure. Consequences:
   bill, not a stricter credential.
 - They fail differently from a judge metric: no usable credential at all shows up
   as `NOT_EVALUATED`, not as a low score.
+- **`safety_v1` now asks the service for a pinned spec version.** 2.10 requests
+  `PrebuiltMetric.SAFETY(version="v1")` where 2.9.2 requested `SAFETY` and took
+  whatever the service considered current. The version string is internal — it
+  appears in no config and no result file, and the score still means 1.0 for no
+  policy violation and 0.0 for one — but it is the reason a `safety_v1` score can
+  differ between the two releases without anything in your suite changing.
 
 ## Local setup
 
@@ -112,6 +118,7 @@ gs://bucket/prefix` keeps eval sets and results in Cloud Storage instead of
 
 Sources: `adk-python: evaluation/vertex_ai_eval_facade.py` (`__init__` reads
 `GOOGLE_API_KEY` before the project pair),
-`evaluation/safety_evaluator.py`, `evaluation/response_evaluator.py`,
+`evaluation/safety_evaluator.py` (`_VERTEX_SAFETY_SPEC_VERSION = "v1"`, new in
+2.10.0), `evaluation/response_evaluator.py`,
 `cli/utils/evals.py`; `adk-docs: docs/evaluate/criteria.md`,
 `docs/evaluate/index.md`.

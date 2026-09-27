@@ -155,10 +155,15 @@ def main(argv: list[str] | None = None) -> int:
         "export": exports.preferred_export if exports else None,
         "agent": agent.name if agent else None,
         "agent_type": agent.call if agent else None,
+        # A null `agent`, `model` or empty `tools` means one of two very
+        # different things: absent, or unreadable. This says which.
+        "agent_unresolved": facts.agent_unresolved,
+        "agent_unresolved_reason": facts.agent_unresolved_reason,
         "model": agent.model if agent else None,
         "model_policy": classify_model_id(agent.model) if agent else "unknown",
         "model_from_env": agent.model_from_env if agent else None,
         "tools": sorted(facts.bound_tool_names),
+        "tools_unresolved": facts.tools_unresolved,
         "tools_defined_here": sorted(set(facts.tools) & facts.bound_tool_names),
         "opaque_tools": dict(sorted(facts.opaque_tools.items())),
         "pydantic_models": sorted(facts.models),

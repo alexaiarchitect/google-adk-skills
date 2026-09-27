@@ -52,6 +52,34 @@ def test_review_reports_what_it_found_about_the_agent(run_script, agent_dir):
     assert discovered["app_exported"] is True
 
 
+def test_review_says_so_when_the_agent_cannot_be_read(run_script, agent_dir):
+    """`Agent(**kwargs)` exported as an object's attribute: a null name, a null
+    model and no tools are unknowns here, not findings, and the review says which."""
+    result = run_script(
+        "skills/agent-review/scripts/lint_agent.py", agent_dir("kwargs_agent"),
+        "--json", "--no-backend",
+    )
+    payload = json.loads(result.stdout)
+    found = payload["discovered"]
+    assert found["agent_unresolved"] is True
+    assert found["tools_unresolved"] is True
+    assert "Agent(**kwargs)" in found["agent_unresolved_reason"]
+    ids = [f["id"] for f in payload["findings"]]
+    assert ids.count("AGT055") == 1
+    assert not [i for i in ids if i in ("AGT012", "AGT020", "AGT007")]
+    assert result.returncode == 0, "a partial review is not a failed one"
+
+
+def test_the_unreadable_agent_is_flagged_in_discovery_too(run_script, agent_dir):
+    result = run_script(
+        "skills/adk/scripts/discover.py", agent_dir("kwargs_agent"), "--json", "--no-probe",
+    )
+    agent = json.loads(result.stdout)["discovered"]["agent"]
+    assert agent["agent_unresolved"] is True
+    assert "attribute of an object" in agent["agent_unresolved_reason"]
+    assert agent["tools_unresolved"] is True
+
+
 def test_review_flags_an_app_name_that_disagrees_with_its_directory(run_script, agent_dir):
     result = run_script(
         "skills/agent-review/scripts/lint_agent.py", agent_dir("shim"), "--no-backend", "--json"

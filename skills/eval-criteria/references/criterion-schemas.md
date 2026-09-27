@@ -41,6 +41,7 @@ An object carries the threshold plus whatever that metric supports:
 | `RubricsBasedCriterion` | the three rubric metrics | `judge_model_options`, `rubrics` |
 | `HallucinationsCriterion` | `hallucinations_v1` | `judge_model_options`, `evaluate_intermediate_nl_responses` |
 | `LlmBackedUserSimulatorCriterion` | `per_turn_user_simulator_quality_v1` | `judge_model_options`, `stop_signal` |
+| **none** | the four efficiency metrics (2.10+) | they take no criterion and no threshold: a `criteria` entry for one is refused at run time. Leave them out — ADK reports them anyway |
 
 ### Why a misspelled field never raises
 
@@ -139,7 +140,10 @@ to the live/bidi path, which changes how inference is performed.
 ---
 
 Sources: `adk-python: evaluation/eval_config.py` (the
-`Threshold | BaseCriterion` union), `evaluation/eval_metrics.py`
+`Threshold | BaseCriterion` union, and `get_eval_metrics_from_config`, which on
+2.10 appends the four efficiency metrics with no threshold),
+`evaluation/_efficiency_evaluators.py` (`_reject_threshold`),
+`evaluation/eval_metrics.py`
 (`BaseCriterion` and its subclasses, `extra="allow"`),
 `evaluation/llm_as_judge.py` and `evaluation/hallucinations_v1.py`
 (`criterion_type.model_validate(...)`, the subclass re-validation),

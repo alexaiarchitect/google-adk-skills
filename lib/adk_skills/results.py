@@ -6,18 +6,28 @@ It is a serialized `EvalSetResult`, dumped by field name, so the keys on disk ar
 snake_case (this parser accepts camelCase too, since the same models are served
 over the dev-server API with aliases).
 
-Three statuses, and the middle one matters:
+Four statuses, and the last two both need care:
 
 ===============  =  ==================================================
 PASSED           1  every evaluated metric met its threshold
 FAILED           2  at least one metric scored below its threshold
 NOT_EVALUATED    3  the metric never produced a score
+INFORMATIONAL    4  ADK 2.10: the metric reported a value and no verdict
 ===============  =  ==================================================
 
 `NOT_EVALUATED` is not a regression: it means the judge could not be reached, no
 reference was available, or a rubric list was empty. `adk eval`'s own summary
 counts it in the failed column, which is why this parser keeps it separate - the
 fix for a NOT_EVALUATED is a configuration fix, not an agent fix.
+
+`INFORMATIONAL` (ADK 2.10) is not a regression either, and not a skipped metric:
+it is the status of the four always-on efficiency metrics
+(``tool_call_count_v1``, ``inference_call_count_v1``, ``token_usage_v1``,
+``invocation_duration_v1``), which report a value and never pass or fail a case.
+Their entries carry no `threshold` and no `criterion`; `token_usage_v1` adds a
+`details.token_usage_details` breakdown. They must be kept out of pass/fail
+counts and out of the NOT_EVALUATED bucket, so this parser tags them and the
+analyzers report them in their own table.
 """
 
 from __future__ import annotations
@@ -31,7 +41,18 @@ from typing import Any, Iterable
 RESULT_SUFFIX = ".evalset_result.json"
 EVAL_HISTORY_DIR = Path(".adk") / "eval_history"
 
-STATUS_NAMES = {1: "PASSED", 2: "FAILED", 3: "NOT_EVALUATED"}
+STATUS_NAMES = {1: "PASSED", 2: "FAILED", 3: "NOT_EVALUATED", 4: "INFORMATIONAL"}
+
+#: `EvalStatus.INFORMATIONAL`, as the integer a result file carries.
+INFORMATIONAL_STATUS = "INFORMATIONAL"
+
+#: The per-type token counts `token_usage_v1` reports under
+#: `details.token_usage_details`, nested: total = input (prompt, of which cached,
+#: plus tool use) + output (candidates plus reasoning).
+TOKEN_USAGE_FIELDS = (
+    "total_tokens", "input_tokens", "prompt_tokens", "cached_tokens",
+    "tool_use_tokens", "output_tokens", "candidates_tokens", "reasoning_tokens",
+)
 #: `<app_name>_<eval_set_id>_<timestamp>`. Both ids may contain underscores, so
 #: only the trailing timestamp can be split off reliably; the eval set id comes
 #: from the file contents.
@@ -70,10 +91,21 @@ class MetricResult:
     threshold: float | None
     status: str
     rubric_scores: list[dict[str, Any]] = field(default_factory=list)
+    #: `token_usage_v1` only: the eight nested per-type counts.
+    token_usage: dict[str, float] = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
         return self.status == "PASSED"
+
+    @property
+    def informational(self) -> bool:
+        """Reported for tracking, never a verdict (ADK 2.10 efficiency metrics).
+
+        Recognized from the status the file carries, not from the metric name, so
+        an efficiency metric ADK adds later is handled without a catalog update.
+        """
+        return self.status == INFORMATIONAL_STATUS
 
     @property
     def margin(self) -> float | None:
@@ -94,6 +126,7 @@ class MetricResult:
         data = asdict(self)
         data["margin"] = self.margin
         data["failed_rubrics"] = self.failed_rubrics()
+        data["informational"] = self.informational
         return data
 
 
@@ -113,7 +146,8 @@ class InvocationResult:
             "user_text": self.user_text,
             "actual_tools": [t.get("name") for t in self.actual_tools],
             "expected_tools": [t.get("name") for t in self.expected_tools],
-            "metrics": [m.to_dict() for m in self.metrics],
+            "metrics": [m.to_dict() for m in self.metrics if not m.informational],
+            "efficiency": [m.to_dict() for m in self.metrics if m.informational],
         }
 
 
@@ -146,13 +180,22 @@ class CaseResult:
     def unevaluated_metrics(self) -> list[MetricResult]:
         return [m for m in self.metrics if m.status == "NOT_EVALUATED"]
 
+    def gate_metrics(self) -> list[MetricResult]:
+        """The metrics that can actually pass or fail this case."""
+        return [m for m in self.metrics if not m.informational]
+
+    def efficiency_metrics(self) -> list[MetricResult]:
+        """The informational efficiency metrics, in the order ADK reported them."""
+        return [m for m in self.metrics if m.informational]
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "eval_id": self.eval_id,
             "status": self.status,
             "eval_set_id": self.eval_set_id,
             "session_id": self.session_id,
-            "metrics": [m.to_dict() for m in self.metrics],
+            "metrics": [m.to_dict() for m in self.gate_metrics()],
+            "efficiency": [m.to_dict() for m in self.efficiency_metrics()],
             "invocations": [i.to_dict() for i in self.invocations],
         }
 
@@ -187,6 +230,32 @@ class RunResult:
         """Every case passed, nothing skipped."""
         return bool(self.cases) and self.failed == 0 and self.not_evaluated == 0
 
+    def efficiency(self) -> dict[str, dict[str, Any]]:
+        """Mean of each informational metric across the cases that reported it.
+
+        ADK already averages per invocation within a case; this averages those
+        case values, so the figure is per invocation, not per run.
+        """
+        totals: dict[str, list[float]] = {}
+        usage: dict[str, dict[str, float]] = {}
+        for case in self.cases:
+            for metric in case.efficiency_metrics():
+                if metric.score is not None:
+                    totals.setdefault(metric.name, []).append(float(metric.score))
+                if metric.token_usage:
+                    usage[metric.name] = metric.token_usage
+        out: dict[str, dict[str, Any]] = {}
+        for name, scores in totals.items():
+            out[name] = {
+                "mean": round(sum(scores) / len(scores), 4),
+                "cases": len(scores),
+                "min": min(scores),
+                "max": max(scores),
+            }
+            if name in usage:
+                out[name]["token_usage_details"] = usage[name]
+        return out
+
     def case(self, eval_id: str) -> CaseResult | None:
         for case in self.cases:
             if case.eval_id == eval_id:
@@ -203,6 +272,7 @@ class RunResult:
             "passed": self.passed,
             "failed": self.failed,
             "not_evaluated": self.not_evaluated,
+            "efficiency": self.efficiency(),
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -308,8 +378,15 @@ def _metric_results(entries: Iterable[Any]) -> list[MetricResult]:
         if threshold is None and isinstance(criterion, dict):
             threshold = criterion.get("threshold")
         details = _get(entry, "details") or {}
+        token_usage: dict[str, float] = {}
         rubric_scores = []
         if isinstance(details, dict):
+            usage = _get(details, "token_usage_details") or {}
+            if isinstance(usage, dict):
+                for key in TOKEN_USAGE_FIELDS:
+                    value = _get(usage, key)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        token_usage[key] = float(value)
             for score in _get(details, "rubric_scores", default=[]) or []:
                 if isinstance(score, dict):
                     rubric_scores.append({
@@ -323,6 +400,7 @@ def _metric_results(entries: Iterable[Any]) -> list[MetricResult]:
             threshold=threshold,
             status=status_name(_get(entry, "eval_status")),
             rubric_scores=rubric_scores,
+            token_usage=token_usage,
         ))
     return results
 

@@ -1,0 +1,198 @@
+{
+  "eval_set_result_id": "app_efficiency_1790000000.123456",
+  "eval_set_result_name": "app_efficiency_1790000000.123456",
+  "eval_set_id": "efficiency",
+  "creation_timestamp": 1790000000.123456,
+  "eval_case_results": [
+    {
+      "eval_set_file": "efficiency",
+      "eval_set_id": "efficiency",
+      "eval_id": "happy_travel_within_policy",
+      "final_eval_status": 1,
+      "eval_metric_results": null,
+      "overall_eval_metric_results": [
+        {
+          "metric_name": "tool_trajectory_avg_score",
+          "threshold": 1.0,
+          "score": 1.0,
+          "eval_status": 1,
+          "criterion": {
+            "threshold": 1.0
+          }
+        },
+        {
+          "metric_name": "tool_call_count_v1",
+          "score": 1.0,
+          "eval_status": 4,
+          "details": {}
+        },
+        {
+          "metric_name": "inference_call_count_v1",
+          "score": 2.0,
+          "eval_status": 4,
+          "details": {}
+        },
+        {
+          "metric_name": "token_usage_v1",
+          "score": 312.0,
+          "eval_status": 4,
+          "details": {
+            "token_usage_details": {
+              "total_tokens": 312.0,
+              "input_tokens": 257.0,
+              "prompt_tokens": 250.0,
+              "cached_tokens": 40.0,
+              "tool_use_tokens": 7.0,
+              "output_tokens": 55.0,
+              "candidates_tokens": 50.0,
+              "reasoning_tokens": 5.0
+            }
+          }
+        },
+        {
+          "metric_name": "invocation_duration_v1",
+          "score": 2.5,
+          "eval_status": 4,
+          "details": {}
+        }
+      ],
+      "overall_token_usage_details": {
+        "total_tokens": 312.0,
+        "input_tokens": 257.0,
+        "prompt_tokens": 250.0,
+        "cached_tokens": 40.0,
+        "tool_use_tokens": 7.0,
+        "output_tokens": 55.0,
+        "candidates_tokens": 50.0,
+        "reasoning_tokens": 5.0
+      },
+      "eval_metric_result_per_invocation": [
+        {
+          "actual_invocation": {
+            "invocation_id": "e-1",
+            "user_content": {
+              "parts": [
+                {
+                  "text": "Submit claim CLM-000412 for 900 dollars of travel on the engineering cost centre."
+                }
+              ],
+              "role": "user"
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Submitted CLM-000412 for 900 USD against engineering."
+                }
+              ],
+              "role": "model"
+            },
+            "intermediate_data": {
+              "tool_uses": [
+                {
+                  "name": "lookup_policy",
+                  "args": {
+                    "req": {
+                      "category": "travel"
+                    }
+                  }
+                }
+              ]
+            },
+            "creation_timestamp": 1790000000.0,
+            "duration": 2.5
+          },
+          "expected_invocation": {
+            "invocation_id": "x-1",
+            "user_content": {
+              "parts": [
+                {
+                  "text": "Submit claim CLM-000412 for 900 dollars of travel on the engineering cost centre."
+                }
+              ],
+              "role": "user"
+            },
+            "final_response": {
+              "parts": [
+                {
+                  "text": "Submitted CLM-000412 for 900 USD against engineering."
+                }
+              ],
+              "role": "model"
+            },
+            "intermediate_data": {
+              "tool_uses": [
+                {
+                  "name": "lookup_policy",
+                  "args": {
+                    "req": {
+                      "category": "travel"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "eval_metric_results": [
+            {
+              "metric_name": "tool_trajectory_avg_score",
+              "threshold": 1.0,
+              "score": 1.0,
+              "eval_status": 1,
+              "criterion": {
+                "threshold": 1.0
+              }
+            },
+            {
+              "metric_name": "tool_call_count_v1",
+              "score": 1.0,
+              "eval_status": 4,
+              "details": {}
+            },
+            {
+              "metric_name": "inference_call_count_v1",
+              "score": 2.0,
+              "eval_status": 4,
+              "details": {}
+            },
+            {
+              "metric_name": "token_usage_v1",
+              "score": 312.0,
+              "eval_status": 4,
+              "details": {
+                "token_usage_details": {
+                  "total_tokens": 312.0,
+                  "input_tokens": 257.0,
+                  "prompt_tokens": 250.0,
+                  "cached_tokens": 40.0,
+                  "tool_use_tokens": 7.0,
+                  "output_tokens": 55.0,
+                  "candidates_tokens": 50.0,
+                  "reasoning_tokens": 5.0
+                }
+              }
+            },
+            {
+              "metric_name": "invocation_duration_v1",
+              "score": 2.5,
+              "eval_status": 4,
+              "details": {}
+            }
+          ],
+          "token_usage_details": {
+            "total_tokens": 312.0,
+            "input_tokens": 257.0,
+            "prompt_tokens": 250.0,
+            "cached_tokens": 40.0,
+            "tool_use_tokens": 7.0,
+            "output_tokens": 55.0,
+            "candidates_tokens": 50.0,
+            "reasoning_tokens": 5.0
+          },
+          "overall_eval_status": 1
+        }
+      ],
+      "session_id": "___eval___session___f0a1c2d3-efficiency",
+      "user_id": "evaluator"
+    }
+  ]
+}

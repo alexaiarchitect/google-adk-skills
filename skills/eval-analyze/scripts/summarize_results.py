@@ -12,6 +12,10 @@ For each failing case it reports:
 * **rubric verdicts**, by id, so a judge failure names the property that failed.
 * **NOT_EVALUATED** separately from failure, because "the judge was unreachable"
   and "the agent regressed" need different fixes.
+* the **efficiency** figures ADK 2.10 reports on every run (tool calls,
+  inference calls, tokens, seconds per invocation) in their own table. They carry
+  `eval_status` 4 (`INFORMATIONAL`): a value, never a verdict, so they are not
+  counted as passes, failures or skips.
 
     summarize_results.py <agent-dir | result.json | --dir eval_history>
                          [--latest] [--eval-id ID] [--format json|md]
@@ -64,12 +68,15 @@ def analyze_case(case: CaseResult) -> dict:
     entry: dict = {
         "eval_id": case.eval_id,
         "status": case.status,
-        "metrics": [m.to_dict() for m in case.metrics],
+        # Gate metrics only. The informational ones report a value and never a
+        # verdict, so mixing them in would read as extra passes.
+        "metrics": [m.to_dict() for m in case.gate_metrics()],
+        "efficiency": [m.to_dict() for m in case.efficiency_metrics()],
         "failing_metrics": [m.name for m in case.failing_metrics()],
         "unevaluated_metrics": [m.name for m in case.unevaluated_metrics()],
         # A failed case with no metric results at all did not score badly: the run
         # never got far enough to score. Different problem, different fix.
-        "inference_failed": case.status == "FAILED" and not case.metrics,
+        "inference_failed": case.status == "FAILED" and not case.gate_metrics(),
     }
 
     if trajectory and response:
@@ -95,7 +102,7 @@ def analyze_case(case: CaseResult) -> dict:
         entry["divergences"] = divergences
 
     rubrics = []
-    for metric in case.metrics:
+    for metric in case.gate_metrics():
         for score in metric.rubric_scores:
             rubrics.append({
                 "metric": metric.name, "rubric_id": score.get("rubric_id"),
@@ -104,6 +111,50 @@ def analyze_case(case: CaseResult) -> dict:
     if rubrics:
         entry["rubric_scores"] = rubrics
     return entry
+
+
+#: The unit each 2.10 efficiency metric reports, per invocation.
+EFFICIENCY_UNITS = {
+    "tool_call_count_v1": "tool calls",
+    "inference_call_count_v1": "model calls",
+    "token_usage_v1": "tokens",
+    "invocation_duration_v1": "seconds",
+}
+
+
+def efficiency_table(metrics: list[dict]) -> list[str]:
+    """The informational efficiency metrics, kept out of the pass/fail reading.
+
+    Lower is better and there is no threshold, so there is nothing to compare
+    against except the same figure from an earlier run.
+    """
+    if not metrics:
+        return []
+    lines = [
+        "",
+        "**Efficiency (informational, lower is better).** Reported by ADK 2.10 on every "
+        "run, per invocation, averaged over the case. No thresholds, no pass or fail: "
+        "compare against your own earlier runs.",
+        "",
+        "| metric | value | unit |",
+        "|---|---|---|",
+    ]
+    for metric in metrics:
+        score = "n/a" if metric["score"] is None else f"{metric['score']:g}"
+        lines.append(
+            f"| `{metric['name']}` | {score} | "
+            f"{EFFICIENCY_UNITS.get(metric['name'], 'per invocation')} |"
+        )
+    for metric in metrics:
+        usage = metric.get("token_usage") or {}
+        if usage:
+            lines.append("")
+            lines.append(
+                "Token breakdown (nested: total = input, of which prompt, of which cached, "
+                "plus tool use; and output, of which candidates and reasoning): "
+                + ", ".join(f"{key} {value:g}" for key, value in usage.items())
+            )
+    return lines
 
 
 def render(run: RunResult, cases: list[dict], *, filtered: bool = False) -> str:
@@ -125,6 +176,8 @@ def render(run: RunResult, cases: list[dict], *, filtered: bool = False) -> str:
             lines.append(f"- `{metric['name']}` {score} vs {threshold} -> {metric['status']}")
             for rubric in metric.get("failed_rubrics") or []:
                 lines.append(f"  - rubric not met: `{rubric}`")
+
+        lines.extend(efficiency_table(entry.get("efficiency") or []))
 
         if entry.get("quadrant"):
             q = entry["quadrant"]

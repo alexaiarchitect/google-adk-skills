@@ -1,7 +1,7 @@
 # `adk` — Claude Code skills for Google ADK agents and evaluations
 
 Eleven skills for building, reviewing and evaluating Google Agent Development Kit
-(Python) agents. Checked against **ADK 2.9**.
+(Python) agents. Checked against **ADK 2.10**; 2.9 compatible.
 
 The premise: an agent's instruction is a promise written in prose, and **eval
 cases are the only form of that promise a machine can check**. Prose drifts
@@ -69,6 +69,12 @@ Generated configs here always name the model and the sample count.
 fixed expected answer, so trajectory and response matching are unavailable. Keep
 a separate config for simulated suites.
 
+**ADK 2.10 adds four metrics you cannot configure.** `tool_call_count_v1`,
+`inference_call_count_v1`, `token_usage_v1` and `invocation_duration_v1` are
+appended to every eval and reported as informational values — lower is better, no
+threshold, no pass or fail. Naming one in `criteria` raises at run time, so this
+plugin refuses it (`CFG070`) and reports the values in their own table.
+
 ## Requirements
 
 Python 3.10+ for the plugin's own scripts, which are **standard library only** and
@@ -80,13 +86,13 @@ Anything that actually runs ADK resolves an interpreter in this order:
 1. `$ADK_PYTHON`
 2. a virtualenv at or above the agent
 3. the interpreter owning an `adk` on `PATH`
-4. `uv run --with "google-adk[eval]==2.9.*"`
+4. `uv run --with "google-adk[eval]==2.10.*"`
 
 ```bash
 # either
 brew install uv
 # or
-python3 -m venv .venv && .venv/bin/pip install "google-adk[eval]==2.9.*"
+python3 -m venv .venv && .venv/bin/pip install "google-adk[eval]==2.10.*"
 export ADK_PYTHON=.venv/bin/python
 ```
 

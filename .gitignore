@@ -1,6 +1,8 @@
 # Python
 .env
 .env.*
+# ...but the scaffold templates that generate a .env.example must ship
+!skills/agent-create/assets/templates/*/.env.example.tmpl
 !.env.example
 .venv/
 venv/

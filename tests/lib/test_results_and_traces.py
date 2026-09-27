@@ -9,12 +9,65 @@ from adk_skills.results import (
 )
 
 
+EFFICIENCY_RESULT = "app_efficiency_1790000000.123456.evalset_result.json"
+
+
 def test_status_names_accept_ints_enums_and_strings():
     assert status_name(1) == "PASSED"
     assert status_name(2) == "FAILED"
     assert status_name(3) == "NOT_EVALUATED"
+    assert status_name(4) == "INFORMATIONAL", "ADK 2.10's efficiency metrics"
     assert status_name("EvalStatus.PASSED") == "PASSED"
     assert status_name(None) == "UNKNOWN"
+
+
+def test_efficiency_metrics_are_read_but_kept_out_of_the_verdict(fixtures):
+    """Status 4 is neither a pass, a failure nor a skipped metric: the case is
+    PASSED on its one gate metric and the four values ride alongside it."""
+    run = parse_result(fixtures / "eval_history" / EFFICIENCY_RESULT)
+    case = run.cases[0]
+    assert (run.passed, run.failed, run.not_evaluated) == (1, 0, 0)
+    assert run.is_clean is True
+    assert [m.name for m in case.gate_metrics()] == ["tool_trajectory_avg_score"]
+    assert [m.name for m in case.efficiency_metrics()] == [
+        "tool_call_count_v1", "inference_call_count_v1",
+        "token_usage_v1", "invocation_duration_v1",
+    ]
+    assert case.failing_metrics() == [] and case.unevaluated_metrics() == []
+    for metric in case.efficiency_metrics():
+        assert metric.informational is True
+        assert metric.threshold is None, "no threshold and no criterion on the wire"
+        assert metric.margin is None, "nothing to be above or below"
+
+
+def test_the_token_usage_breakdown_survives_parsing(fixtures):
+    run = parse_result(fixtures / "eval_history" / EFFICIENCY_RESULT)
+    tokens = run.cases[0].metric("token_usage_v1")
+    assert tokens.score == 312.0
+    assert tokens.token_usage["total_tokens"] == 312.0
+    assert tokens.token_usage["input_tokens"] == 257.0
+    assert tokens.token_usage["cached_tokens"] == 40.0
+    assert tokens.token_usage["reasoning_tokens"] == 5.0
+    # Nested, not a flat list of addends: input and output sum to the total.
+    assert (tokens.token_usage["input_tokens"] + tokens.token_usage["output_tokens"]
+            == tokens.token_usage["total_tokens"])
+
+
+def test_the_run_summary_reports_efficiency_separately(fixtures):
+    run = parse_result(fixtures / "eval_history" / EFFICIENCY_RESULT)
+    summary = run.summary()
+    assert summary["passed"] == 1 and summary["failed"] == 0
+    efficiency = summary["efficiency"]
+    assert efficiency["invocation_duration_v1"]["mean"] == 2.5
+    assert efficiency["tool_call_count_v1"]["cases"] == 1
+    assert "token_usage_details" in efficiency["token_usage_v1"]
+
+
+def test_per_invocation_efficiency_is_split_out_too(fixtures):
+    run = parse_result(fixtures / "eval_history" / EFFICIENCY_RESULT)
+    invocation = run.cases[0].invocations[0].to_dict()
+    assert [m["name"] for m in invocation["metrics"]] == ["tool_trajectory_avg_score"]
+    assert len(invocation["efficiency"]) == 4
 
 
 def test_result_file_name_needs_the_eval_set_id_to_split_safely():

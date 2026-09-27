@@ -46,7 +46,9 @@ across sessions, `app:` app-wide, `temp:` for the current invocation only.
 | `EvalCaseResult.eval_set_file`, `.eval_metric_results` | deprecated; use `eval_set_id` and `overall_eval_metric_results` |
 | `AgentEvaluator(criteria={...})` | deprecated; pass an `EvalConfig` |
 | dev-server eval routes | moved under `/dev/...` with hyphenated paths; underscore variants are deprecated aliases |
-| `ignore_args` on tool trajectory | new in 2.9 |
+| `ignore_args` on tool trajectory | new in 2.9, unchanged in 2.10 |
+| the four efficiency metrics | new in 2.10: reported on every eval, informational (`eval_status: 4`), and refused if you name them in `criteria` |
+| `EvalStatus` | gained `INFORMATIONAL = 4` in 2.10; anything parsing the int must not read 4 as a pass or a fail |
 | `NOT_EVALUATED` | reported as "not a score regression" by `AgentEvaluator`, still counted as failed by the `adk eval` summary |
 
 ## Custom metrics
@@ -78,5 +80,6 @@ Sources: `adk-python: agents/llm_agent.py`, `agents/base_agent.py`,
 `agents/loop_agent.py`, `apps/app.py`, `evaluation/eval_metrics.py`,
 `evaluation/eval_result.py`, `evaluation/agent_evaluator.py`,
 `evaluation/custom_metric_evaluator.py`, `evaluation/local_eval_sets_manager.py`,
+`evaluation/_efficiency_evaluators.py` (2.10.0),
 `cli/dev_server.py`, `CHANGELOG.md`; `adk-docs: docs/2.0/index.md`,
 `docs/sessions/state.md`, `docs/agents/config.md`.

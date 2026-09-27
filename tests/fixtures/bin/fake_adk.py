@@ -15,6 +15,9 @@ Behaviour is driven by environment variables:
     FAKE_ADK_RUN_TOOL                                            tool name in the run trace
     FAKE_ADK_RUN_EMPTY                                           `run` emits no events
     FAKE_ADK_GENERATED_CASES                                     cases `generate_eval_cases` writes
+    FAKE_ADK_EFFICIENCY                                          add ADK 2.10's four
+                                                                 informational efficiency
+                                                                 metrics to every case
 """
 
 from __future__ import annotations
@@ -25,7 +28,9 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = os.environ.get("FAKE_ADK_VERSION", "2.9.0")
+#: The release the plugin targets. `FAKE_ADK_VERSION=2.9.2` makes this stand-in
+#: an older runner, which is how the 2.9-vs-2.10 behaviour is tested.
+VERSION = os.environ.get("FAKE_ADK_VERSION", "2.10.0")
 
 
 def _probe(code: str, args: list[str]) -> int:
@@ -81,18 +86,37 @@ def _load_probe(agents_dir: str, agent_name: str, module_path: str) -> int:
     return 0
 
 
+#: What ADK 2.10 appends to every eval, whatever the config says: a value, no
+#: threshold, no criterion, and `eval_status` 4 (`EvalStatus.INFORMATIONAL`).
+EFFICIENCY_RESULTS = [
+    {"metric_name": "tool_call_count_v1", "score": 1.0, "eval_status": 4, "details": {}},
+    {"metric_name": "inference_call_count_v1", "score": 2.0, "eval_status": 4, "details": {}},
+    {"metric_name": "token_usage_v1", "score": 312.0, "eval_status": 4, "details": {
+        "token_usage_details": {
+            "total_tokens": 312.0, "input_tokens": 257.0, "prompt_tokens": 250.0,
+            "cached_tokens": 40.0, "tool_use_tokens": 7.0, "output_tokens": 55.0,
+            "candidates_tokens": 50.0, "reasoning_tokens": 5.0,
+        }
+    }},
+    {"metric_name": "invocation_duration_v1", "score": 2.5, "eval_status": 4, "details": {}},
+]
+
+
 def _status_case(eval_id: str, status: int) -> dict:
+    metrics = [{
+        "metric_name": "tool_trajectory_avg_score",
+        "threshold": 1.0,
+        "score": 1.0 if status == 1 else (None if status == 3 else 0.5),
+        "eval_status": status,
+        "criterion": {"threshold": 1.0},
+    }]
+    if os.environ.get("FAKE_ADK_EFFICIENCY"):
+        metrics.extend(json.loads(json.dumps(EFFICIENCY_RESULTS)))
     return {
         "eval_set_id": os.environ.get("FAKE_ADK_EVAL_SET", "fixture_set"),
         "eval_id": eval_id,
         "final_eval_status": status,
-        "overall_eval_metric_results": [{
-            "metric_name": "tool_trajectory_avg_score",
-            "threshold": 1.0,
-            "score": 1.0 if status == 1 else (None if status == 3 else 0.5),
-            "eval_status": status,
-            "criterion": {"threshold": 1.0},
-        }],
+        "overall_eval_metric_results": metrics,
         "eval_metric_result_per_invocation": [],
         "session_id": f"___eval___session___{eval_id}",
         "user_id": "evaluator",

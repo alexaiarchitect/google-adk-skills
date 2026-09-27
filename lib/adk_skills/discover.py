@@ -238,6 +238,11 @@ class Discovery:
                 "tools": sorted(self.tool_names),
                 "opaque_tools": sorted(self.facts.opaque_tools),
                 "tools_unresolved": self.facts.tools_unresolved,
+                # The agent's construction can be unreadable (`Agent(**kwargs)`,
+                # or an export that is an object's attribute), in which case the
+                # fields above are unknown rather than empty.
+                "agent_unresolved": self.facts.agent_unresolved,
+                "agent_unresolved_reason": self.facts.agent_unresolved_reason,
                 "instruction_dynamic": agent.instruction_is_dynamic if agent else False,
                 "sub_agents": agent.sub_agents if agent else [],
                 "app_exported": self.facts.app is not None,
@@ -419,6 +424,7 @@ class Discovery:
                 backend=self.backend,
                 agent_dir=self.layout.agent_dir,
                 known_tools=self.tool_names or None,
+                adk_version=self.runner.adk_version if self.runner else None,
             )
 
     def _add_gaps(self, report: GapReport) -> None:

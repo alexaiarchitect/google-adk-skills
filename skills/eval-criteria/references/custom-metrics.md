@@ -135,6 +135,17 @@ ADK scores the metric without one. It exists so the metric is legible in the dev
 UI and in metric listings, which starts to matter the moment somebody other than
 the author is choosing criteria.
 
+**`requires_threshold` (2.10+)** is a new `MetricInfo` field, default `True`.
+ADK's four efficiency metrics are the only things that set it `False`: a metric
+that does not require a threshold reports a value and an `INFORMATIONAL` status
+instead of a verdict, and ADK's own wording says surfaces that ask a user to pick
+metrics and set thresholds should skip those. A custom metric reads
+`criterion.threshold` to decide a pass or fail, so leave the default alone;
+setting it `False` on a metric whose evaluator still compares against a threshold
+only misleads whoever reads the listing. Note that `False` does not buy you the
+efficiency metrics' behaviour — theirs is in their evaluators, which *reject* a
+configured threshold outright.
+
 ## Cost and tier
 
 A custom metric is deterministic, so it costs nothing and belongs in the
@@ -148,7 +159,7 @@ Sources: `adk-python/src/google/adk/evaluation/custom_metric_evaluator.py`
 `PerInvocationResult`, `EvalStatus`);
 `adk-python/src/google/adk/evaluation/eval_metrics.py` (`EvalMetric`,
 `BaseCriterion`, `MetricInfo`, `MetricValueInfo`, `Interval`);
-`adk-docs/docs/evaluate/custom_metrics.md`. Verified against a live ADK 2.9.2
-install by driving a generated metric through `_CustomMetricEvaluator`.
+`adk-docs/docs/evaluate/custom_metrics.md`. Verified against live ADK 2.9.2 and
+2.10.0 installs by driving a generated metric through `_CustomMetricEvaluator`.
 Background reading: the LinkedIn Learning course "Evaluating AI Agents with
 Google ADK", for the criteria methodology these metrics extend.

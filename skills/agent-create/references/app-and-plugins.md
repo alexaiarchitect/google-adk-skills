@@ -55,11 +55,39 @@ only four are re-exported by the package:
 | `SaveFilesAsArtifactsPlugin` | `google.adk.plugins.save_files_as_artifacts_plugin` |
 | `AutoTracingPlugin` | `google.adk.plugins.auto_tracing_plugin` |
 | `ContextFilterPlugin` | `google.adk.plugins.context_filter_plugin` |
+| `ModelArmorPlugin`, `ModelArmorConfig` | `google.adk.integrations.model_armor` — **not** under `plugins` at all |
 
 `google.adk.plugins.__all__` is exactly `BasePlugin`, `PluginManager` and the
 first two rows, so `from google.adk.plugins import GlobalInstructionPlugin`
 raises `ImportError` — the package's `__getattr__` lazily resolves only the four
-names it lists. The bottom four need their submodule path.
+names it lists. The others need their submodule path, and it is the same six names
+on 2.9.2 and 2.10.0.
+
+### Model Armor
+
+```python
+from google.adk.integrations.model_armor import ModelArmorPlugin, ModelArmorConfig
+
+app = App(name="app", root_agent=root_agent, plugins=[
+    ModelArmorPlugin(config=ModelArmorConfig(
+        prompt_template_name="projects/<p>/locations/<l>/templates/<t>",
+        response_template_name="projects/<p>/locations/<l>/templates/<t>",
+    )),
+])
+```
+
+It screens the user's text against the prompt template in `before_model_callback`
+and the model's output against the response template, and returns your
+`input_blocked_message` / `output_blocked_message` instead when Model Armor finds
+a match. `block_on_screening_failure` defaults to `True`, so a screening call that
+errors blocks rather than passes the text through. `ModelArmorPlugin`'s arguments
+are keyword-only.
+
+**It needs an extra.** On a plain `google-adk[eval]` install the import raises
+`ImportError: Model Armor support requires google-cloud-modelarmor. Install it
+with: pip install 'google-adk[gcp]'.` The plugin has shipped since 2.9.2 — what
+changed in this upstream sync is only that ADK's docs now list it among the
+built-ins.
 
 ## Where a guardrail belongs
 
@@ -108,7 +136,9 @@ Plus: everything in `event.output` must be JSON-serializable.
 ---
 
 Sources: `adk-python: apps/app.py`, `agents/llm_agent.py`, `plugins/__init__.py`
-(`__all__` and the lazy `__getattr__`), `plugins/`, `agents/context.py`
+(`__all__` and the lazy `__getattr__`), `plugins/`,
+`integrations/model_armor/` (`_plugin.py`, `_config.py`, `__init__.py`'s
+`__all__` and its import error), `agents/context.py`
 (the output setter), `workflow/_workflow.py` (terminal-output finalization),
 `workflow/_errors.py`; `adk-docs: docs/apps/index.md`, `docs/callbacks/*`,
 `docs/plugins/index.md`, `docs/2.0/index.md`, `docs/graphs/index.md`,

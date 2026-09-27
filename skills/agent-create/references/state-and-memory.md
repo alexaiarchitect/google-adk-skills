@@ -35,8 +35,8 @@ Two hooks make state testable:
 - `session_input.state` pre-loads state, so a case can start from a condition
   instead of talking the agent into one.
 - `final_session_state` *looks* like it asserts what the state should be at the
-  end. It does not: the field is declared on `EvalCase` and no evaluator in ADK
-  2.9 reads it, so a case that relies on it asserts nothing. Do not use it as a
+  end. It does not: the field is declared on `EvalCase` and no evaluator through
+  ADK 2.10 reads it, so a case that relies on it asserts nothing. Do not use it as a
   gate.
 
 So pre-loading state turns "does the agent remember?" into a deterministic

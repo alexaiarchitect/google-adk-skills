@@ -108,6 +108,52 @@ def test_extraction_never_executes_the_agent(tmp_path):
     extract_module(tmp_path)          # must not raise
 
 
+def test_an_agent_built_from_kwargs_is_reported_as_unreadable(agent_dir):
+    """`Agent(**kwargs)` plus `root_agent = wrapper._agent`: name, model,
+    instruction and tools are unknown, and saying nothing would read as "absent"."""
+    facts = extract_module(agent_dir("kwargs_agent"))
+    assert facts.agent_unresolved is True
+    reason = facts.agent_unresolved_reason
+    assert "Agent(**kwargs)" in reason
+    assert "_claims_app._agent" in reason
+    assert "attribute of an object" in reason
+    agent = facts.root_agent()
+    assert agent.kwargs_unresolved is True
+    assert (agent.name, agent.model, agent.instruction_len, agent.tools) == (None, None, 0, [])
+    assert facts.unresolved_exports == {"root_agent": "_claims_app._agent"}
+    assert facts.to_dict()["agent_unresolved"] is True
+
+
+def test_the_unreadable_agent_gets_one_note_and_no_invented_faults(agent_dir):
+    facts = extract_module(agent_dir("kwargs_agent"))
+    ids = [f.id for f in facts.findings]
+    assert ids.count("AGT055") == 1
+    message = [f.message for f in facts.findings if f.id == "AGT055"][0]
+    assert "not statically readable" in message and "load_agent.py" in message
+    # The checks that need those fields must stay quiet rather than guess.
+    for absent in ("AGT012", "AGT020", "AGT007", "AGT004"):
+        assert absent not in ids, absent
+
+
+def test_nothing_is_ruled_out_while_the_agent_cannot_be_read(agent_dir):
+    """A tool bound only under a feature flag is still a name a run can emit."""
+    from adk_skills.tools_ast import resolve_tool
+
+    facts = extract_module(agent_dir("kwargs_agent"))
+    assert facts.tools_unresolved is True
+    assert resolve_tool(facts, "export_to_ledger").status == "unresolved"
+    assert resolve_tool(facts, "export_to_ledger").is_real
+    assert resolve_tool(facts, "made_up_tool").is_real, "absence proves nothing here"
+
+
+def test_a_readable_agent_is_not_marked_unresolved(agent_dir):
+    facts = extract_module(agent_dir("flat_good"))
+    assert facts.agent_unresolved is False
+    assert facts.agent_unresolved_reason is None
+    assert facts.tools_unresolved is False
+    assert "AGT055" not in [f.id for f in facts.findings]
+
+
 def test_a_defined_tool_is_not_ruled_out_when_the_tool_list_is_built_at_runtime(tmp_path):
     """long-horizon-harness shape: `tools=compact(tools)` hides the binding, and
     every tool the project defines must then resolve as possible, not absent."""

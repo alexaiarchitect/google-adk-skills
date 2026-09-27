@@ -6,8 +6,26 @@ import json
 def test_metric_info_lists_the_whole_catalog(run_script):
     result = run_script("skills/eval-criteria/scripts/metric_info.py", "--json")
     payload = json.loads(result.stdout)
-    assert len(payload["metrics"]) == 13
+    assert len(payload["metrics"]) == 17, "13 from 2.9 plus the four 2.10 efficiency metrics"
     assert payload["defaults_when_no_config"]["response_match_score"] == 0.8
+
+
+def test_metric_info_marks_an_efficiency_metric_as_not_a_gate(run_script):
+    result = run_script("skills/eval-criteria/scripts/metric_info.py", "token_usage_v1")
+    assert result.returncode == 0
+    assert "Informational" in result.stdout and "always on" in result.stdout
+    assert "never passes or fails" in result.stdout
+    assert "Do not put it in `criteria`" in result.stdout
+    assert "token_usage_details" in result.stdout
+
+
+def test_metric_info_json_stays_valid_json_for_an_unbounded_metric(run_script):
+    """`Infinity` is not JSON, so an unbounded ceiling is written as null."""
+    result = run_script("skills/eval-criteria/scripts/metric_info.py",
+                        "invocation_duration_v1", "--json")
+    payload = json.loads(result.stdout)
+    assert payload["value_range"] == [0.0, None]
+    assert payload["informational"] is True and payload["since"] == "2.10"
 
 
 def test_metric_info_explains_one_metric(run_script):
@@ -75,6 +93,66 @@ def test_custom_tier_accepts_a_match_type(run_script):
     )
     criteria = json.loads(result.stdout)["config"]["criteria"]
     assert criteria["tool_trajectory_avg_score"]["match_type"] == "ANY_ORDER"
+
+
+def test_an_efficiency_metric_cannot_be_put_into_a_generated_config(run_script):
+    """The flag the plan wanted would have written configs that raise on 2.10."""
+    result = run_script(
+        "skills/eval-criteria/scripts/gen_config.py",
+        "--tier", "custom", "--metrics", "token_usage_v1=100",
+    )
+    assert result.returncode == 2
+    assert "informational efficiency metrics take no threshold" in result.stderr
+    assert "NotFoundError" in result.stderr and "ValueError" in result.stderr
+
+
+def test_no_tier_ever_emits_an_efficiency_metric(run_script):
+    for tier in ("pr", "nightly"):
+        result = run_script("skills/eval-criteria/scripts/gen_config.py",
+                            "--tier", tier, "--json")
+        criteria = json.loads(result.stdout)["config"]["criteria"]
+        assert not [name for name in criteria if name.endswith(("_count_v1", "_usage_v1",
+                                                               "_duration_v1"))]
+
+
+def test_validating_a_config_that_names_an_efficiency_metric_fails(run_script, tmp_path):
+    config = tmp_path / "eval_config.json"
+    config.write_text(
+        '{"criteria": {"tool_trajectory_avg_score": 1.0, "tool_call_count_v1": 0}}'
+    )
+    result = run_script(
+        "skills/eval-criteria/scripts/validate_config.py", config,
+        "--no-backend", "--no-probe",
+    )
+    assert result.returncode == 1
+    assert "CFG070" in result.stdout
+    assert "reported automatically" in result.stdout or "automatically" in result.stdout
+
+
+def test_the_efficiency_note_follows_the_runner_the_config_will_use(run_script, tmp_path, fixtures):
+    config = tmp_path / "eval_config.json"
+    config.write_text('{"criteria": {"tool_trajectory_avg_score": 1.0}}')
+    import os
+
+    previous = os.environ.get("ADK_PYTHON")
+    os.environ["ADK_PYTHON"] = str(fixtures / "bin" / "fake_adk.py")
+    try:
+        on_target = run_script("skills/eval-criteria/scripts/validate_config.py",
+                               config, "--no-backend")
+        os.environ["FAKE_ADK_VERSION"] = "2.9.2"
+        older = run_script("skills/eval-criteria/scripts/validate_config.py",
+                           config, "--no-backend")
+    finally:
+        os.environ.pop("FAKE_ADK_VERSION", None)
+        if previous is None:
+            os.environ.pop("ADK_PYTHON", None)
+        else:
+            os.environ["ADK_PYTHON"] = previous
+
+    assert "CFG071" in on_target.stdout, "the probed 2.10 runner reports them"
+    assert "2.10.0" in on_target.stdout
+    assert "CFG071" not in older.stdout, "a 2.9 runner reports nothing extra"
+    assert "2.9.2" in older.stdout
 
 
 def test_unknown_metric_is_refused_with_a_suggestion(run_script):

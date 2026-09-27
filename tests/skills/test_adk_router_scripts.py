@@ -2,6 +2,8 @@
 
 import json
 
+from adk_skills import ADK_TARGET
+
 
 def test_discover_reports_a_recipes_project_as_json(run_script, agent_dir):
     result = run_script(
@@ -80,7 +82,7 @@ def test_check_env_is_ready_with_vertex_configured(run_script, tmp_agent, fixtur
         result = run_script("skills/adk/scripts/check_env.py", agent, "--json")
         payload = json.loads(result.stdout)
         assert payload["ready"] is True
-        assert payload["runner"]["adk_version"] == "2.9.0"
+        assert payload["runner"]["adk_version"] == f"{ADK_TARGET}.0"
         assert result.returncode == 0
     finally:
         os.environ.pop("ADK_PYTHON", None)

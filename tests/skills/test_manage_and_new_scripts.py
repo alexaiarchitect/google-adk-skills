@@ -216,6 +216,52 @@ def test_conformance_record_explains_the_missing_dev_server(run_script, fixtures
     assert "adk web" in result.stdout + result.stderr
 
 
+def test_replay_refuses_a_case_with_no_recording(run_script, fixtures, tmp_path):
+    """ADK 2.10 skips such a case with a warning; if that empties the streaming
+    mode the summary says "No tests were run." and the command still exits 0, so
+    an unrecorded suite would pass. The pre-check is what catches it."""
+    import shutil
+
+    case = tmp_path / "tests" / "conformance" / "travel"
+    case.mkdir(parents=True)
+    shutil.copy(fixtures / "conformance/spec.yaml", case / "spec.yaml")
+    result = run_script("skills/eval-run/scripts/conformance.py", "test",
+                        tmp_path / "tests")
+    assert result.returncode == 1
+    assert "CNF020" in result.stdout
+    assert "generated-recordings.yaml" in result.stdout
+    assert "conformance.py record" in result.stdout
+
+
+def test_replay_of_a_recorded_case_gets_past_the_pre_check(run_script, fixtures, tmp_path):
+    import shutil
+
+    case = tmp_path / "tests" / "conformance" / "travel"
+    case.mkdir(parents=True)
+    shutil.copy(fixtures / "conformance/spec.yaml", case / "spec.yaml")
+    (case / "generated-recordings.yaml").write_text("# recorded\n")
+    result = run_script("skills/eval-run/scripts/conformance.py", "test",
+                        tmp_path / "tests", "--dry-run")
+    assert result.returncode == 0, result.combined
+    assert "conformance test" in result.stdout
+    assert "CNF020" not in result.stdout
+
+
+def test_sse_replay_wants_the_sse_recording(run_script, fixtures, tmp_path):
+    """Recordings are made one streaming mode at a time, and each mode reads its
+    own file, so the `none` recording does not satisfy `--streaming-mode sse`."""
+    import shutil
+
+    case = tmp_path / "tests" / "conformance" / "travel"
+    case.mkdir(parents=True)
+    shutil.copy(fixtures / "conformance/spec.yaml", case / "spec.yaml")
+    (case / "generated-recordings.yaml").write_text("# recorded\n")
+    result = run_script("skills/eval-run/scripts/conformance.py", "test",
+                        tmp_path / "tests", "--streaming-mode", "sse")
+    assert result.returncode == 1
+    assert "generated-recordings-sse.yaml" in result.stdout
+
+
 # -- generate_eval_cases.py -------------------------------------------------
 
 def test_generation_config_is_validated_before_anything_is_spent(run_script, agent_dir, tmp_path):

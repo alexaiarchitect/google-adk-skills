@@ -1,7 +1,7 @@
 """Load, normalize, validate and migrate ADK evalset files.
 
 Strictness is **not** uniform across ADK's eval models, and every difference
-below was read off the live 2.9.2 models rather than assumed:
+below was read off the live 2.9.2 and 2.10.0 models rather than assumed:
 
 ============================  ==================  ========================
 model                         camelCase aliases   unknown keys
@@ -11,6 +11,8 @@ model                         camelCase aliases   unknown keys
 ``SessionInput``              yes                 allowed (kept)
 ``Invocation``                yes                 **rejected**
 ``IntermediateData``          yes                 **rejected**
+``InvocationEvents``          yes                 **rejected**
+``InvocationEvent``           yes                 ignored (2.10; 2.9 rejected)
 ``ConversationScenario``      yes                 **rejected**
 ``Rubric``                    yes                 **rejected**
 ============================  ==================  ========================
@@ -80,16 +82,30 @@ EVAL_CASE_KEYS = frozenset({
 })
 #: The four models below are `extra="forbid"`: an unrecognized key raises at
 #: load, so these are errors rather than notes.
+#: `duration` is 2.10 only; it is accepted here because a case captured from a
+#: 2.10 run carries it, and a 2.9 runner is the one that would reject it.
 INVOCATION_KEYS = frozenset({
     "invocation_id", "user_content", "final_response", "intermediate_data",
-    "creation_timestamp", "rubrics", "app_details",
+    "creation_timestamp", "duration", "rubrics", "app_details",
 })
-#: Exactly the fields `IntermediateData` declares in ADK 2.9.2. Kept tight on
-#: purpose: adding a key ADK has not shipped yet would turn a load-time
-#: ValidationError into silence, so this list is revisited per ADK release
-#: rather than padded for forward compatibility.
+#: `Invocation` fields that only exist from this release on, so a finding can say
+#: which runner would refuse the file.
+INVOCATION_KEYS_SINCE = {"duration": "2.10"}
+#: `intermediate_data` is a union of two models, and each one is
+#: `extra="forbid"`: `IntermediateData` (the hand-written shape) or
+#: `InvocationEvents` (what a captured run writes). Keys from both in one object
+#: match neither member, so that is an error rather than a merge. Both lists are
+#: revisited per ADK release rather than padded for forward compatibility: adding
+#: a key ADK has not shipped turns a load-time ValidationError into silence.
 INTERMEDIATE_DATA_KEYS = frozenset({
     "tool_uses", "tool_responses", "intermediate_responses",
+})
+INVOCATION_EVENTS_KEYS = frozenset({"invocation_events"})
+#: `InvocationEvent`, for reference: `usage_metadata` and `model_version` are new
+#: in 2.10, and 2.10 sets `extra="ignore"` on this model alone (2.9.2 forbade
+#: extras), which is why nothing here is validated strictly.
+INVOCATION_EVENT_KEYS = frozenset({
+    "author", "content", "grounding_metadata", "usage_metadata", "model_version",
 })
 CONVERSATION_SCENARIO_KEYS = frozenset({
     "starting_prompt", "conversation_plan", "user_persona",
@@ -474,7 +490,10 @@ def validate_evalset(
         return report
     if not cases:
         report.add("EVS006", "warn", "evalset",
-                   "`eval_cases` is empty: this evalset asserts nothing yet",
+                   "`eval_cases` is empty: this evalset asserts nothing yet, and on ADK 2.10 "
+                   "the pytest path raises ValueError for this "
+                   "(`AgentEvaluator.evaluate_eval_set` refuses a run with no eval case; "
+                   "2.9 ran it and reported nothing)",
                    path=path, fix="capture a golden trace or add a case with eval-create",
                    source=_SRC_EVAL_SET)
 
@@ -689,6 +708,22 @@ def _validate_invocation(
                    path=path, locator=locator, source=_SRC_EVAL_CASE)
         return
 
+    since = sorted(
+        (key, release) for key, release in INVOCATION_KEYS_SINCE.items() if key in invocation
+    )
+    if since and not any(f.id == "EVS049" for f in report.findings):
+        fields = ", ".join(f"`{key}` (ADK {release}+)" for key, release in since)
+        report.add(
+            "EVS049", "info", "evalset",
+            f"this case was captured on a newer ADK: {fields}",
+            path=path, locator=locator,
+            fix="fine on the release that wrote it, and nothing to remove. Measured on the "
+                "wheels: ADK 2.9.2 refuses the file (`Invocation` is extra=\"forbid\", so "
+                "`duration` is an extra input), while 2.10 reads it. Strip the field if the "
+                "suite has to run on 2.9 as well",
+            source=f"{_SRC_EVAL_CASE} (Invocation.duration, new in 2.10)",
+        )
+
     unknown = sorted(set(invocation) - INVOCATION_KEYS)
     if unknown:
         report.add("EVS021", "error", "evalset",
@@ -738,16 +773,39 @@ def _validate_invocation(
                    path=path, locator=locator, source=_SRC_EVAL_CASE)
         return
     if isinstance(data, dict):
-        unknown_data = sorted(set(data) - INTERMEDIATE_DATA_KEYS)
-        if unknown_data:
+        # `intermediate_data` is a union: the hand-written `IntermediateData`
+        # shape, or the `InvocationEvents` shape a captured run writes. Keys from
+        # both at once match neither member, so pydantic rejects the whole file.
+        both = sorted(set(data) & INTERMEDIATE_DATA_KEYS)
+        if set(data) & INVOCATION_EVENTS_KEYS and both:
             report.add(
                 "EVS047", "error", "evalset",
-                f"unrecognized key(s) in `intermediate_data`: {', '.join(unknown_data)}",
+                "`intermediate_data` mixes the two shapes it can take: "
+                f"`invocation_events` together with {', '.join(both)}",
                 path=path, locator=locator,
-                fix=f"`IntermediateData` is extra=\"forbid\" and accepts only "
-                    f"{', '.join(sorted(INTERMEDIATE_DATA_KEYS))}",
-                source=f"{_SRC_EVAL_CASE} (IntermediateData, extra=\"forbid\")",
+                fix="pick one - `{\"tool_uses\": [...]}` for a hand-written case, or "
+                    "`{\"invocation_events\": [...]}` for a captured run. Both models are "
+                    "extra=\"forbid\", so a mixed object matches neither and the file "
+                    "raises at load",
+                source=f"{_SRC_EVAL_CASE} (IntermediateDataType union)",
             )
+        else:
+            allowed = (
+                INVOCATION_EVENTS_KEYS if set(data) & INVOCATION_EVENTS_KEYS
+                else INTERMEDIATE_DATA_KEYS
+            )
+            unknown_data = sorted(set(data) - allowed)
+            if unknown_data:
+                model = ("InvocationEvents" if allowed is INVOCATION_EVENTS_KEYS
+                         else "IntermediateData")
+                report.add(
+                    "EVS047", "error", "evalset",
+                    f"unrecognized key(s) in `intermediate_data`: {', '.join(unknown_data)}",
+                    path=path, locator=locator,
+                    fix=f"`{model}` is extra=\"forbid\" and accepts only "
+                        f"{', '.join(sorted(allowed))}",
+                    source=f"{_SRC_EVAL_CASE} ({model}, extra=\"forbid\")",
+                )
         tool_uses = data.get("tool_uses")
         if tool_uses is not None and not isinstance(tool_uses, list):
             report.add("EVS028", "error", "evalset", "`intermediate_data.tool_uses` must be an array",

@@ -5,6 +5,12 @@
 code is a real gate - unlike `adk eval`, which always returns 0. Where a project
 already has `tests/eval/test_eval.py`, this is the simplest honest gate there is.
 
+On ADK 2.10 `AgentEvaluator.evaluate` / `evaluate_eval_set` raise `ValueError`
+when the run would evaluate no eval case at all (an empty evalset, or a `-k`
+expression that matched nothing) and when `num_runs < 1`; on 2.9 both cases ran
+and reported nothing. So a `ValueError` out of the library here is usually an
+empty suite rather than a broken agent.
+
 `AgentEvaluator` also accepts an `agent_name`, which evaluates one sub-agent in
 isolation. `adk eval` has no equivalent, so a multi-agent project that wants to
 gate a single sub-agent has to come through here. `--agent-name` is passed to
@@ -37,7 +43,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-k", dest="expression", help="pytest -k expression")
     parser.add_argument("--num-runs", type=int,
                         help="sets ADK_EVAL_NUM_RUNS; note AgentEvaluator averages across runs, "
-                             "so use /adk:eval-run --runs N for pass@k instead")
+                             "so use /adk:eval-run --runs N for pass@k instead. Must be >= 1: "
+                             "ADK 2.10 raises ValueError for less")
     parser.add_argument("--agent-name",
                         help="evaluate this sub-agent instead of the root agent "
                              "(AgentEvaluator only; `adk eval` cannot do this)")

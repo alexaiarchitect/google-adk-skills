@@ -51,6 +51,7 @@ comes from. Ids are stable.
 |---|---|---|
 | `AGT052` | warn | the instruction yields no testable rule |
 | `AGT053` | info | the instruction has no conditional or prohibition, so there is one path to test |
+| `AGT055` | info | the agent is not statically readable: `Agent(**kwargs)`, or an export that is an object's attribute such as `root_agent = wrapper._agent`. Model, instruction and tool checks are skipped, an expected tool call counts as unverifiable rather than unknown, and the Found block says so in `agent_unresolved` / `agent_unresolved_reason` / `tools_unresolved`; run `load_agent.py` for the loaded facts |
 | `GAP-EVALSET` | gap | no evalset anywhere in the project |
 
 ## Environment

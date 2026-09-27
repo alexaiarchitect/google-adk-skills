@@ -107,6 +107,14 @@ sentences reads as two rules and gets counted twice.
 makes it optional. A missing key without the `?` raises. Node input is not
 available this way.
 
+**2.10 leaves two forms alone**, which 2.9 did not: `${var}` and a
+backslash-escaped `\{var}` are passed through literally (the backslash stays
+in the text), so an instruction that has to show a shell variable or a JSON
+example no longer needs the value in state. Only a bare `{var}` is filled.
+Measured on both wheels: `"Cost ${name}"` renders as `Cost ${name}` on 2.10 and
+as `Cost $Ada` on 2.9.2. `{{var}}` is **not** an escape — it is still
+substituted, on both.
+
 ## Iterating
 
 When an eval fails on ordering or on a missing refusal, the fix usually belongs
@@ -116,7 +124,11 @@ differentiate two tool descriptions that the model is confusing. See
 
 ---
 
-Sources: `adk-python: agents/llm_agent.py` (instruction, state templating);
+Sources: `adk-python: agents/llm_agent.py` (instruction, state templating),
+`flows/llm_flows/prompt/_instructions_utils.py` (`_TEMPLATE_VAR_PATTERN`; 2.10
+adds the `(?<![\$\{\\])` lookbehind, and `utils/instructions_utils.py` is now a
+shim re-exporting it), verified by rendering the forms above on installed 2.9.2
+and 2.10.0 wheels;
 `adk-docs: docs/agents/llm-agents.md`. The SOP framing and the
 prohibition-as-rubric practice follow the LinkedIn Learning course *Evaluating AI
 Agents with Google ADK*, recommended as background reading.

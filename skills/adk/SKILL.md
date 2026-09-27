@@ -97,7 +97,8 @@ Six things, in the order they usually matter:
 1. **Build** an eval-ready agent, or add eval scaffolding to one that exists.
 2. **Review** the agent statically against ADK 2.x rules and a model policy.
 3. **Write** eval cases: happy path, edge, adversarial, memory, regression.
-4. **Choose** criteria from the 13 ADK metrics, with thresholds and rubrics.
+4. **Choose** criteria from the 13 configurable ADK metrics, with thresholds and
+   rubrics.
 5. **Run** them, locally or in CI, and read the results honestly.
 6. **Measure** reliability across repeated runs, and triage what fails.
 

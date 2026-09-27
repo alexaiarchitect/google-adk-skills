@@ -14,6 +14,13 @@ recurring mistakes happen:
 * `num_runs` is raised to "make it more reliable", which averages the scores
   across runs and hides exactly the variance that was being looked for.
 
+Two ways a suite stops on ADK 2.10 that ran (uselessly) on 2.9:
+`AgentEvaluator.evaluate` / `evaluate_eval_set` raise `ValueError` when no eval
+case is evaluated - an empty evalset, or a filter that matched nothing - and when
+`num_runs < 1`. The generated file keeps its own `test_there_is_something_to_evaluate`
+assertion anyway, because a clear pytest failure beats a `ValueError` from inside
+the library, and because on 2.9 nothing raises at all.
+
 This renders a file that does neither, parametrized over every evalset found so
 a failure names the file it came from, with `num_runs` taken from
 `ADK_EVAL_NUM_RUNS` (default 1) and an optional `--agent-name` for evaluating a
@@ -138,7 +145,8 @@ def main(argv: list[str] | None = None) -> int:
     skipped = sorted(Path(p).name for p in layout.evalsets if Path(p).parent != evalset_dir)
     next_steps = [
         f"run it: python3 {Path(__file__).parent.name}/run_pytest_eval.py {layout.project_root}",
-        "keep num_runs at 1; measure reliability with /adk:eval-run --runs N",
+        "keep num_runs at 1; measure reliability with /adk:eval-run --runs N "
+        "(ADK 2.10 raises ValueError for num_runs < 1)",
     ]
     if skipped:
         next_steps.append(

@@ -62,8 +62,10 @@ def main(argv: list[str] | None = None) -> int:
             passing.append({
                 "eval_set_id": run.eval_set_id,
                 "eval_id": case.eval_id,
+                # Gate metrics only: an informational efficiency value has no
+                # threshold to read a verdict against.
                 "metrics": [{"name": m.name, "score": m.score, "threshold": m.threshold}
-                            for m in case.metrics],
+                            for m in case.gate_metrics()],
                 "turns": [{
                     "user": inv.user_text,
                     "expected_tools": [t["name"] for t in inv.expected_tools],

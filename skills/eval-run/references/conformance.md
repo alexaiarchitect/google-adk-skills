@@ -63,13 +63,56 @@ adk conformance test tests/conformance \
 ```
 
 Replay compares the live LLM requests and tool calls against the recording.
-`--mode live` is not implemented yet.
+`--mode live` is not implemented yet. No flag on `record` or `test` changed
+between 2.9.2 and 2.10.0 — the `--help` output is byte-identical.
 
 **It exits non-zero when a case fails.** On failure the command raises
 `click.ClickException("N test(s) failed")`, which click turns into exit 1. That
 makes it the one command in the ADK eval family you can gate CI on directly —
 unlike `adk eval`, which prints failures and still exits 0. Say which one a
 workflow is calling before you trust its green tick.
+
+### The gap in that gate, as of 2.10.0
+
+`_print_test_summary` walks one summary per streaming mode, and **`return`s on the
+first mode that ran no tests** — so a later mode's failures are never printed and
+never raised, and the command exits 0. It also raises on the first failing mode
+only. Two consequences for a CI job: check that the run reported the number of
+tests you expected, and prefer one invocation per streaming mode over relying on
+a single multi-mode run to fail.
+
+A rewrite that summarizes every mode, fails when any mode failed, fails when the
+mode named by `--streaming-mode` ran nothing, and fails when no mode ran anything,
+is on `adk-python` **main after the 2.10.0 tag and is not in any release**
+(`5355c7c6`). Do not plan around it yet; the paragraph above is the behaviour of
+the 2.10.0 wheel.
+
+### Missing recordings
+
+Two different failures, and only one of them is loud.
+
+**A case directory with no recordings file is skipped.** In replay mode
+`cli_test.py` looks for `generated-recordings.yaml` (or
+`generated-recordings-sse.yaml` in `sse` mode) and, when it is absent, prints
+`Skipping <category>/<name>: no recordings` in yellow and moves on. On **both**
+2.9.2 and 2.10.0. Skip every case and the mode runs no tests, which the summary
+reports as "No tests were run." and exits **0** — a conformance job that proves
+nothing while looking fine. This plugin's wrapper therefore refuses the run itself
+with **`CNF020`**, naming each case directory and the file it lacks, before ADK is
+invoked; `--skip-recordings-check` runs anyway, for the case where skipping is what
+you meant.
+
+**Recordings that never got loaded now raise, new in 2.10.0:**
+
+```
+ReplayVerificationError: Replay recordings were not loaded. The ADK web server
+must be started with the replay plugin, e.g. `adk web
+--extra_plugins=google.adk.cli.plugins.replay_plugin.ReplayPlugin`, for `adk
+conformance test` to work.
+```
+
+2.9.2 had no such check and compared against nothing. This is about the *server*,
+not the files: the fix is the `--extra_plugins` argument, not a re-record.
 
 ## Where the files go
 
@@ -104,8 +147,13 @@ Conformance is strict by design. That is both its value and its price.
 
 ---
 
-Sources: `adk-python: cli/conformance/` (`cli_record.py`, `cli_test.py`,
-`test_case.py` (`TestSpec`, `UserMessage`), `adk_web_server_client.py` (the
-`127.0.0.1:8000` default), `_replay_validators.py`), `cli/cli_tools_click.py`
-(`_STREAMING_MODE_CHOICES`, the record/test commands), `cli/agent_test_runner.py`;
-`adk-docs: docs/evaluate/index.md`.
+Sources: `adk-python: cli/conformance/` (`cli_record.py`, `cli_test.py`
+(`_print_test_summary`, read in the installed 2.10.0 wheel), `test_case.py`
+(`TestSpec`, `UserMessage`), `adk_web_server_client.py` (the `127.0.0.1:8000`
+default), `_replay_validators.py`, `cli_test.py`'s `Skipping ...: no recordings` branch
+(identical on both wheels), `_conformance_test_google_llm.py` (the
+`ReplayVerificationError` quoted above, absent from 2.9.2)),
+`cli/cli_tools_click.py` (`_STREAMING_MODE_CHOICES`, the record/test commands),
+`cli/agent_test_runner.py`; `adk-docs: docs/evaluate/index.md`. The multi-mode
+summary rewrite is `adk-python` commit `5355c7c6`, on main after the `v2.10.0`
+tag; `--help` compared between the 2.9.2 and 2.10.0 wheels.

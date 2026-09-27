@@ -98,6 +98,14 @@ Never `adk eval` alone in CI. A project with no pytest gate gets one from
   averages scores across runs, which hides the variance you are measuring.
   `--runs N` keeps each run's results separate so `/adk:eval-analyze` can compute
   pass@k.
+- **An empty suite fails on 2.10, and used to pass.** `AgentEvaluator.evaluate`
+  and `evaluate_eval_set` raise `ValueError` when there are no eval cases, no
+  `*.test.json` under the directory, or `num_runs < 1`. On 2.9.2 all three passed
+  silently, so a gate that had lost its cases was green.
+- **Efficiency values are not verdicts.** On 2.10 every run also reports
+  `tool_call_count_v1`, `inference_call_count_v1`, `token_usage_v1` and
+  `invocation_duration_v1` as informational. They cannot be configured and they
+  gate nothing; `/adk:eval-analyze` keeps them out of the pass/fail count.
 - **`NOT_EVALUATED` is not a regression.** Default `--not-evaluated fail` in CI,
   because a suite that silently stops scoring is worse than one that fails. Use
   `warn` locally, where exit 3 means "inconclusive" rather than "broken".
@@ -109,7 +117,7 @@ Never `adk eval` alone in CI. A project with no pytest gate gets one from
 - **Run the cheap tier first.** There is no point paying a judge to score an
   agent that called the wrong tool.
 - **Resolve the runner honestly.** `$ADK_PYTHON`, a project venv, an `adk` on
-  PATH, then `uv run --with "google-adk[eval]==2.9.*"`. If none works, say so and
+  PATH, then `uv run --with "google-adk[eval]==2.10.*"`. If none works, say so and
   give the install command.
 - **Recording conformance needs a running dev server** on 127.0.0.1:8000 started
   with the recordings plugin; the script checks the port and prints the command.
@@ -134,7 +142,7 @@ Templates: `assets/templates/{eval_registry.json,test_eval.py.tmpl,conformance_s
 | `scripts/run_registry.py --registry F [--tier pr\|nightly] [--suite NAME]` / `--init [--root D] [--out F]` | batch of suites; `--init` builds the manifest by discovery | 0 clean, 1 failures, 2 env |
 | `scripts/run_pytest_eval.py <path> [-k EXPR] [--num-runs N] [--agent-name N]` | the pytest gate | pytest's code, 2 for env |
 | `scripts/gen_test_eval.py [path] [--out F] [--agent-name N] [--dry-run]` | writes a pytest gate for an existing project | 0, 1 refused, 2 usage |
-| `scripts/conformance.py record <case-dir> [--mode none\|sse]` / `test [dirs] [--generate-report]` | record and replay through the runner | 0, 1 failed, 2 env |
+| `scripts/conformance.py record <case-dir> [--mode none\|sse]` / `test [dirs] [--generate-report] [--skip-recordings-check]` | record and replay through the runner; `test --mode replay` refuses (`CNF020`) a case with no `generated-recordings.yaml`, because ADK skips those with a warning and can still exit 0 | 0, 1 failed, 2 env |
 
 ## Completion checklist
 

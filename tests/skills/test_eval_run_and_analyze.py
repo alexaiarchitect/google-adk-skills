@@ -105,6 +105,26 @@ def test_repeated_runs_are_kept_separate_for_pass_at_k(run_script, tmp_agent, fa
     assert len(payload["result_files"]) == 3, "one file per run, not an average"
 
 
+def test_always_on_efficiency_metrics_do_not_change_the_verdict(run_script, tmp_agent, fake_adk_env):
+    """ADK 2.10 appends four informational metric results to every case. They
+    carry `eval_status` 4, so they must not be counted as passes or as skips."""
+    agent = tmp_agent("recipes_good")
+    result = run_with(run_script, agent, FAKE_ADK_PASSED=1, FAKE_ADK_FAILED=1,
+                      FAKE_ADK_EFFICIENCY="1")
+    payload = json.loads(result.stdout)
+    assert payload["totals"] == {"passed": 1, "failed": 1, "not_evaluated": 0}
+    assert result.returncode == 1
+
+    analyzed = run_script(
+        "skills/eval-analyze/scripts/summarize_results.py", agent / "app", "--json",
+    )
+    cases = json.loads(analyzed.stdout)[0]["cases"]
+    for case in cases:
+        assert [m["name"] for m in case["metrics"]] == ["tool_trajectory_avg_score"]
+        assert len(case["efficiency"]) == 4
+        assert case["unevaluated_metrics"] == []
+
+
 def test_a_missing_runner_is_reported_with_the_fix(run_script, agent_dir, monkeypatch):
     monkeypatch.setenv("ADK_PYTHON", "/nonexistent/python")
     result = run_script(
@@ -223,6 +243,47 @@ def test_calibration_only_samples_passing_cases(run_script, fixtures):
     payload = json.loads(result.stdout)
     assert payload["sampled"], "there are passing cases in the fixtures"
     assert all(entry["eval_id"] for entry in payload["sampled"])
+
+
+def test_efficiency_metrics_get_their_own_table_and_no_verdict(run_script, fixtures):
+    """ADK 2.10 reports four informational metrics on every run. They must not
+    read as extra passing metrics, and the case must stay a clean pass."""
+    path = fixtures / "eval_history/app_efficiency_1790000000.123456.evalset_result.json"
+    result = run_script("skills/eval-analyze/scripts/summarize_results.py", path)
+    assert result.returncode == 0, result.stderr
+    assert "1 passed, 0 failed, 0 never scored" in result.stdout
+    assert "Efficiency (informational, lower is better)" in result.stdout
+    assert "| `token_usage_v1` | 312 | tokens |" in result.stdout
+    assert "| `invocation_duration_v1` | 2.5 | seconds |" in result.stdout
+    assert "cached_tokens 40" in result.stdout
+    assert "Never scored" not in result.stdout
+
+
+def test_efficiency_metrics_are_separated_in_the_json_too(run_script, fixtures):
+    path = fixtures / "eval_history/app_efficiency_1790000000.123456.evalset_result.json"
+    result = run_script("skills/eval-analyze/scripts/summarize_results.py", path, "--json")
+    payload = json.loads(result.stdout)[0]
+    case = payload["cases"][0]
+    assert [m["name"] for m in case["metrics"]] == ["tool_trajectory_avg_score"]
+    assert [m["name"] for m in case["efficiency"]] == [
+        "tool_call_count_v1", "inference_call_count_v1",
+        "token_usage_v1", "invocation_duration_v1",
+    ]
+    assert all(m["informational"] for m in case["efficiency"])
+    assert case["unevaluated_metrics"] == [], "status 4 is not NOT_EVALUATED"
+    assert case["inference_failed"] is False
+    assert payload["run"]["efficiency"]["token_usage_v1"]["mean"] == 312.0
+
+
+def test_calibration_ignores_informational_metrics(run_script, fixtures):
+    result = run_script(
+        "skills/eval-analyze/scripts/calibration_sample.py",
+        "--dir", fixtures / "eval_history", "--n", "20", "--json",
+    )
+    payload = json.loads(result.stdout)
+    names = [m["name"] for entry in payload["sampled"] for m in entry["metrics"]]
+    assert names, "the sampled cases do carry gate metrics"
+    assert "token_usage_v1" not in names
 
 
 def test_a_run_that_never_scored_is_not_read_as_a_regression(run_script, fixtures):

@@ -2,9 +2,10 @@
 
 import os
 
+from adk_skills import ADK_MIN_SUPPORTED, ADK_TARGET
 from adk_skills.env import (
-    classify_model_id, default_judge_model, detect_backend, read_dotenv,
-    resolve_runner, version_is_supported,
+    ADK_REQUIREMENT, classify_model_id, default_judge_model, detect_backend, read_dotenv,
+    resolve_runner, version_at_least, version_is_supported,
 )
 
 
@@ -118,16 +119,39 @@ def test_default_judge_model_prefers_the_projects_own_model(tmp_path):
 
 
 def test_only_adk_2x_is_supported():
-    assert version_is_supported("2.9.0") is True
+    assert version_is_supported(f"{ADK_TARGET}.0") is True
     assert version_is_supported("1.14.1") is False
     assert version_is_supported(None) is False
+
+
+def test_the_oldest_supported_release_is_still_supported():
+    """The plugin targets 2.10 and keeps working on 2.9: a 2.9.2 runner is not
+    an error, it just reports fewer things (no efficiency metrics)."""
+    assert ADK_MIN_SUPPORTED == "2.9" and ADK_TARGET == "2.10"
+    assert version_is_supported("2.9.2") is True
+    assert version_at_least("2.9.2", ADK_TARGET) is False
+
+
+def test_the_install_pin_follows_the_targeted_release():
+    assert ADK_REQUIREMENT == f'google-adk[eval]=={ADK_TARGET}.*'
+
+
+def test_versions_compare_per_component_not_as_strings():
+    """"2.9.2" < "2.10.0" is what a string comparison gets backwards, and that
+    pair is exactly the one every 2.10-only behaviour turns on."""
+    assert version_at_least("2.10.0", "2.10") is True
+    assert version_at_least("2.10.1", "2.10") is True
+    assert version_at_least("2.11", "2.10") is True
+    assert version_at_least("2.9.2", "2.10") is False
+    assert version_at_least("2.10.0rc1", "2.10") is True, "a pre-release is not downgraded"
+    assert version_at_least(None, "2.10") is False, "an unknown runner is not assumed new"
 
 
 def test_explicit_adk_python_is_probed_first(tmp_path, fixtures, monkeypatch):
     monkeypatch.setenv("ADK_PYTHON", str(fixtures / "bin" / "fake_adk.py"))
     runner = resolve_runner(tmp_path)
     assert runner.kind == "explicit"
-    assert runner.adk_version == "2.9.0"
+    assert runner.adk_version == f"{ADK_TARGET}.0", "the stand-in reports the targeted release"
     assert runner.verified is True
 
 

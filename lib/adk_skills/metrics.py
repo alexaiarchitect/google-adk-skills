@@ -1,8 +1,9 @@
 """The ADK 2.x evaluation-criteria catalog.
 
-Thirteen metrics ship with ADK. Choosing among them is the decision that
-shapes an eval suite's cost, speed and what it can actually prove, so the facts
-that drive that choice live here in one table:
+Seventeen metrics ship with ADK 2.10 (thirteen in 2.9, plus the four efficiency
+metrics). Choosing among them is the decision that shapes an eval suite's cost,
+speed and what it can actually prove, so the facts that drive that choice live
+here in one table:
 
 * **reference_based** — needs an expected `final_response` or `tool_uses` in the
   eval case. This plugin refuses to combine them with user simulation: a
@@ -20,6 +21,13 @@ that drive that choice live here in one table:
   non-empty (criterion-level rubrics plus type-matching per-case rubrics).
 * **ci_tier** — ``pr`` for deterministic metrics cheap enough to gate every
   change, ``nightly`` for anything that pays a model.
+* **informational** — the four efficiency metrics added in 2.10. They report a
+  value (lower is better) and never pass or fail a case, they take no threshold
+  at all, and ADK runs all four on every 2.10 eval whether or not they are
+  mentioned. Naming one in ``criteria`` is an error, not a no-op:
+  ``MetricEvaluatorRegistry.get_evaluator`` raises ``ValueError`` on 2.10 and
+  ``NotFoundError`` on 2.9. They are catalogued so the plugin can explain them
+  and read them back out of a result file, never so a config can request them.
 """
 
 from __future__ import annotations
@@ -38,6 +46,11 @@ DEFAULT_CRITERIA: dict[str, float] = {
 JUDGE_DEFAULTS = {"judge_model": "gemini-2.5-flash", "num_samples": 5, "parallelism_limit": 1}
 
 MATCH_TYPES = ("EXACT", "IN_ORDER", "ANY_ORDER")
+
+#: The efficiency metrics have no upper bound (`MetricValueInfo` carries no
+#: `Interval`), so the catalog records the range as unbounded rather than
+#: inventing a ceiling.
+INFINITY = float("inf")
 
 
 @dataclass(frozen=True)
@@ -59,6 +72,14 @@ class MetricSpec:
     extra_fields: tuple[str, ...] = ()
     rubric_type: str | None = None
     when: str = ""
+    #: Reports a value and never passes or fails a case (`EvalStatus`
+    #: ``INFORMATIONAL`` = 4). Always on, and impossible to configure.
+    informational: bool = False
+    #: First ADK release that registers the metric, when it is not 2.9.
+    since: str | None = None
+    #: `MetricInfo.requires_threshold`: False for the efficiency metrics, which
+    #: reject a threshold outright.
+    requires_threshold: bool = True
 
     @property
     def cost(self) -> str:
@@ -70,7 +91,11 @@ class MetricSpec:
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
-        data["value_range"] = list(self.value_range)
+        # An unbounded maximum is written as null: `Infinity` is not valid JSON,
+        # and a consumer that sees null knows there is no ceiling.
+        data["value_range"] = [
+            None if bound == float("inf") else bound for bound in self.value_range
+        ]
         data["extra_fields"] = list(self.extra_fields)
         data["cost"] = self.cost
         return data
@@ -220,6 +245,66 @@ METRIC_CATALOG: dict[str, MetricSpec] = {
         user_sim_compatible=True, default_threshold=0.8, ci_tier="nightly",
         when="Simulated conversations, when tool use matters but is not scripted.",
     ),
+    # ----------------------------------------------------------------------
+    # Efficiency metrics, ADK 2.10. Reference-free, informational, always on:
+    # `get_eval_metrics_from_config` appends all four to every run, and each
+    # evaluator rejects a threshold rather than ignoring it. Descriptions are
+    # the `MetricInfo.description` strings from
+    # `evaluation/metric_info_providers.py`, condensed to one sentence.
+    # ----------------------------------------------------------------------
+    "tool_call_count_v1": _spec(
+        name="tool_call_count_v1",
+        summary="Counts the tool (function) calls the agent made per invocation, averaged "
+                "across the eval case.",
+        criterion_class="(none)",
+        value_range=(0.0, INFINITY),
+        reference_based=False, reference_kind=None, requires_rubrics=False, needs_judge=False, needs_vertex=False,
+        user_sim_compatible=True, default_threshold=0.0, ci_tier="pr",
+        informational=True, since="2.10", requires_threshold=False,
+        when="Read it, do not gate on it: it reports the value for tracking and does not "
+             "pass or fail the eval case. Nothing to configure - ADK 2.10 reports it on "
+             "every run.",
+    ),
+    "inference_call_count_v1": _spec(
+        name="inference_call_count_v1",
+        summary="Counts the inference (model) calls the agent made per invocation, averaged "
+                "across the eval case.",
+        criterion_class="(none)",
+        value_range=(0.0, INFINITY),
+        reference_based=False, reference_kind=None, requires_rubrics=False, needs_judge=False, needs_vertex=False,
+        user_sim_compatible=True, default_threshold=0.0, ci_tier="pr",
+        informational=True, since="2.10", requires_threshold=False,
+        when="A proxy for attempts or reasoning steps. Read alongside token usage it "
+             "separates the two ways a turn gets expensive: more calls, or a larger "
+             "context per call.",
+    ),
+    "token_usage_v1": _spec(
+        name="token_usage_v1",
+        summary="Sums the tokens consumed by the model across all model calls in an "
+                "invocation, averaged across the eval case.",
+        criterion_class="(none)",
+        value_range=(0.0, INFINITY),
+        reference_based=False, reference_kind=None, requires_rubrics=False, needs_judge=False, needs_vertex=False,
+        user_sim_compatible=True, default_threshold=0.0, ci_tier="pr",
+        informational=True, since="2.10", requires_threshold=False,
+        extra_fields=(),
+        when="The score is the total; the breakdown (total, input/prompt/cached/tool-use, "
+             "output/candidates/reasoning) arrives in the result's "
+             "`details.token_usage_details`, using ADK telemetry's definitions.",
+    ),
+    "invocation_duration_v1": _spec(
+        name="invocation_duration_v1",
+        summary="Reports the wall-clock seconds an invocation took, averaged across the "
+                "eval case.",
+        criterion_class="(none)",
+        value_range=(0.0, INFINITY),
+        reference_based=False, reference_kind=None, requires_rubrics=False, needs_judge=False, needs_vertex=False,
+        user_sim_compatible=True, default_threshold=0.0, ci_tier="pr",
+        informational=True, since="2.10", requires_threshold=False,
+        when="Noisier than the counts, since it moves with model-server load and network: "
+             "read it as an indication rather than a regression signal. An invocation this "
+             "eval run did not itself produce reports no value.",
+    ),
 }
 
 METRIC_NAMES = tuple(METRIC_CATALOG)
@@ -227,7 +312,12 @@ REFERENCE_BASED = tuple(n for n, s in METRIC_CATALOG.items() if s.reference_base
 JUDGE_METRICS = tuple(n for n, s in METRIC_CATALOG.items() if s.needs_judge)
 VERTEX_METRICS = tuple(n for n, s in METRIC_CATALOG.items() if s.needs_vertex)
 RUBRIC_METRICS = tuple(n for n, s in METRIC_CATALOG.items() if s.requires_rubrics)
-DETERMINISTIC_METRICS = tuple(n for n, s in METRIC_CATALOG.items() if not s.needs_judge)
+#: Deterministic metrics that can actually gate: the informational ones are
+#: deterministic too, but they never fail a case, so they are not a gate.
+DETERMINISTIC_METRICS = tuple(
+    n for n, s in METRIC_CATALOG.items() if not s.needs_judge and not s.informational
+)
+INFORMATIONAL_METRICS = tuple(n for n, s in METRIC_CATALOG.items() if s.informational)
 
 
 def get(name: str) -> MetricSpec | None:
@@ -283,9 +373,28 @@ def incompatible_with_user_sim(metric_names: Iterable[str]) -> list[str]:
     return [n for n in metric_names if (s := METRIC_CATALOG.get(n)) and not s.user_sim_compatible]
 
 
+def informational_metrics(metric_names: Iterable[str] | None = None) -> list[str]:
+    """The always-on, never-failing efficiency metrics.
+
+    Called with no argument it lists all of them; called with the metric names
+    from a config it lists the ones that config wrongly tries to configure.
+    """
+    if metric_names is None:
+        return list(INFORMATIONAL_METRICS)
+    return [n for n in metric_names if (s := METRIC_CATALOG.get(n)) and s.informational]
+
+
 def pr_tier_violations(metric_names: Iterable[str]) -> list[str]:
     """Metrics too slow or too costly to gate every pull request."""
     return [n for n in metric_names if (s := METRIC_CATALOG.get(n)) and s.ci_tier != "pr"]
+
+
+def range_label(spec: MetricSpec) -> str:
+    """How wide the metric's values are, in words a table can hold."""
+    low, high = spec.value_range
+    if high == INFINITY:
+        return f"{low:g}+ (unbounded, lower is better)"
+    return f"{low:g}-{high:g}"
 
 
 def table_rows() -> list[dict[str, str]]:
@@ -298,8 +407,8 @@ def table_rows() -> list[dict[str, str]]:
             "reference": "yes" if spec.reference_based else "no",
             "rubrics": "required" if spec.requires_rubrics else "no",
             "user_sim": "yes" if spec.user_sim_compatible else "no",
-            "range": f"{spec.value_range[0]:g}-{spec.value_range[1]:g}",
-            "default_threshold": f"{spec.default_threshold:g}",
-            "ci_tier": spec.ci_tier,
+            "range": range_label(spec),
+            "default_threshold": "n/a" if spec.informational else f"{spec.default_threshold:g}",
+            "ci_tier": "informational" if spec.informational else spec.ci_tier,
         })
     return rows

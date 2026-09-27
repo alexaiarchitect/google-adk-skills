@@ -25,6 +25,12 @@ validator exists to catch:
   not the way you meant.
 * The config must be JSON. ``EvalConfig.model_validate_json`` is what reads it,
   so a YAML file cannot be passed to ``--config_file_path``.
+* The four ADK 2.10 efficiency metrics (``tool_call_count_v1``,
+  ``inference_call_count_v1``, ``token_usage_v1``, ``invocation_duration_v1``)
+  must not appear in ``criteria`` at all. ``EvalConfig.model_validate`` accepts
+  them on both 2.9 and 2.10 - a threshold coerces silently - and the run then
+  raises when the evaluator is looked up. They are reported automatically on
+  every 2.10 run, so there is nothing to configure.
 """
 
 from __future__ import annotations
@@ -36,14 +42,16 @@ from pathlib import Path
 from typing import Any
 
 from . import DEPRECATED_MODELS
-from .env import BackendInfo, classify_model_id
+from .env import BackendInfo, classify_model_id, version_at_least
 from .evalset import key_style, normalize_keys
 from .metrics import (
+    INFORMATIONAL_METRICS,
     JUDGE_DEFAULTS,
     MATCH_TYPES,
     METRIC_CATALOG,
     cost_tier,
     incompatible_with_user_sim,
+    informational_metrics,
     is_known,
     suggest,
 )
@@ -67,6 +75,10 @@ CRITERION_FIELDS: dict[str, frozenset[str]] = {
     "BaseCriterion": BASE_CRITERION_FIELDS,
     # Metrics scored by the Vertex evaluation service take no judge options.
     "VertexCriterion": BASE_CRITERION_FIELDS,
+    # The efficiency metrics validate into no criterion type at all: the
+    # evaluator requires `threshold is None and criterion is None` and raises
+    # otherwise, so every field here is a field too many.
+    "(none)": frozenset(),
 }
 
 JUDGE_OPTION_FIELDS = frozenset({"judge_model", "judge_model_config", "num_samples", "parallelism_limit"})
@@ -174,9 +186,15 @@ def validate_config(
     backend: BackendInfo | None = None,
     agent_dir: Path | str | None = None,
     known_tools: set[str] | None = None,
+    adk_version: str | None = None,
 ) -> GapReport:
     """Check a config against the metric catalog, the criterion schemas and the
-    backend that has to serve it."""
+    backend that has to serve it.
+
+    `adk_version` is the version of the runner that will execute this config,
+    when one was probed. It only changes the informational note about the
+    always-on efficiency metrics: every error here holds on both 2.9 and 2.10.
+    """
     report = report or GapReport(subject=loaded.path, skill="eval-criteria")
     path = loaded.path
 
@@ -241,6 +259,8 @@ def validate_config(
             known_tools=known_tools,
         )
 
+    _note_efficiency_metrics(criteria, report, path, adk_version=adk_version)
+
     _validate_custom_metrics(custom_metrics, criteria, report, path, agent_dir=agent_dir)
 
     if loaded.uses_user_simulation():
@@ -258,6 +278,36 @@ def validate_config(
         _validate_user_simulator(doc["user_simulator_config"], report, path)
 
     return report
+
+
+def _note_efficiency_metrics(
+    criteria: dict[str, Any],
+    report: GapReport,
+    path: str,
+    *,
+    adk_version: str | None,
+) -> None:
+    """One note per config: 2.10 reports the four efficiency metrics anyway.
+
+    Only worth saying when the run will actually be on 2.10. An older runner
+    reports nothing extra, so the note would be noise; an unknown runner gets it,
+    because ``ADK_TARGET`` is what the plugin installs.
+    """
+    if not criteria:
+        return
+    if adk_version is not None and not version_at_least(adk_version, "2.10"):
+        return
+    already = set(informational_metrics(criteria))
+    report.add(
+        "CFG071", "info", "config",
+        "ADK 2.10 also reports four informational efficiency metrics alongside these "
+        "criteria (lower is better, never a pass or a fail): "
+        + ", ".join(INFORMATIONAL_METRICS),
+        path=path, locator="criteria",
+        fix="nothing to configure; read them with /adk:eval-analyze"
+            + (" and take the named one out of `criteria`" if already else ""),
+        source="adk-python: evaluation/eval_config.py (get_eval_metrics_from_config)",
+    )
 
 
 def _validate_criterion(
@@ -282,6 +332,24 @@ def _validate_criterion(
             path=path, locator=locator,
             fix="use a catalog metric, or register it under `custom_metrics`",
             source=_SRC_METRICS,
+        )
+        return
+
+    if spec is not None and spec.informational:
+        # Measured on both wheels: the config layer accepts the name and the run
+        # then raises. There is no way to name it harmlessly - `null` is refused
+        # by pydantic, and any threshold is refused by the evaluator.
+        report.add(
+            "CFG070", "error", "config",
+            f"{name} is an informational efficiency metric and cannot be configured: on "
+            "ADK 2.10 the run raises ValueError (\"does not support a threshold: it "
+            "reports a value and never passes or fails\") and on 2.9 the metric is not "
+            "registered at all (NotFoundError)",
+            path=path, locator=locator,
+            fix="remove it from `criteria` entirely; ADK 2.10 reports all four efficiency "
+                "metrics automatically on every eval, and /adk:eval-analyze shows them in "
+                "their own table",
+            source="adk-python: evaluation/_efficiency_evaluators.py",
         )
         return
 

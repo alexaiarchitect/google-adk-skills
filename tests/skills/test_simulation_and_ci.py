@@ -67,7 +67,7 @@ def _env_config(run_script) -> dict:
 
 
 def test_environment_simulation_uses_the_real_adk_field_names(run_script):
-    """The names ADK 2.9 actually declares. `mock_strategy` and `probability`
+    """The names ADK declares, checked against 2.9.2 and 2.10.0 alike. `mock_strategy` and `probability`
     do not exist: a config using them validates as extras and simulates
     nothing."""
     config = _env_config(run_script)

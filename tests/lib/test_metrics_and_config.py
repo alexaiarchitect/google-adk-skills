@@ -11,11 +11,34 @@ def ids(report: GapReport) -> set[str]:
 
 
 def test_catalog_covers_every_prebuilt_metric():
-    assert len(m.METRIC_CATALOG) == 13
+    # 13 registered in ADK 2.9.2, plus the four efficiency metrics added in 2.10.
+    assert len(m.METRIC_CATALOG) == 17
     for name, spec in m.METRIC_CATALOG.items():
         assert spec.name == name
         assert spec.value_range[0] < spec.value_range[1]
         assert spec.ci_tier in ("pr", "nightly")
+
+
+def test_the_efficiency_metrics_are_catalogued_as_informational_and_2_10_only():
+    assert set(m.informational_metrics()) == {
+        "tool_call_count_v1", "inference_call_count_v1",
+        "token_usage_v1", "invocation_duration_v1",
+    }
+    for name in m.informational_metrics():
+        spec = m.METRIC_CATALOG[name]
+        assert spec.since == "2.10"
+        assert spec.requires_threshold is False, "the evaluator rejects a threshold"
+        assert spec.cost == "free" and spec.reference_based is False
+        assert spec.requires_rubrics is False and spec.user_sim_compatible is True
+        assert spec.value_range[1] == m.INFINITY, "no Interval, so no ceiling"
+
+
+def test_informational_metrics_are_not_a_gate():
+    """Deterministic, free and always on - but they never fail a case, so they
+    are not something a suite can gate on."""
+    assert not set(m.informational_metrics()) & set(m.DETERMINISTIC_METRICS)
+    assert m.cost_tier(m.informational_metrics()) == "free"
+    assert m.informational_metrics(["safety_v1", "token_usage_v1"]) == ["token_usage_v1"]
 
 
 def test_only_deterministic_metrics_are_pr_tier():
@@ -38,7 +61,10 @@ def test_vertex_only_metrics_are_named_correctly():
 
 
 def test_response_evaluation_score_is_the_only_one_to_five_metric():
-    ranges = {n: s.value_range for n, s in m.METRIC_CATALOG.items() if s.value_range != (0.0, 1.0)}
+    ranges = {
+        n: s.value_range for n, s in m.METRIC_CATALOG.items()
+        if s.value_range != (0.0, 1.0) and not s.informational
+    }
     assert ranges == {"response_evaluation_score": (1.0, 5.0)}
 
 
@@ -152,3 +178,43 @@ def test_bad_match_type_is_rejected_and_case_variants_are_not(tmp_path):
     good = tmp_path / "good.json"
     good.write_text('{"criteria": {"tool_trajectory_avg_score": {"threshold": 1.0, "match_type": "in-order"}}}')
     assert "CFG017" not in ids(validate_config(load_config(good)))
+
+
+def test_an_efficiency_metric_in_criteria_is_an_error_on_both_releases(tmp_path):
+    """Measured: `EvalConfig.model_validate` accepts the name on 2.9.2 and 2.10.0
+    alike, and the run then raises - ValueError on 2.10 ("does not support a
+    threshold"), NotFoundError on 2.9. So the config is wrong either way."""
+    config = tmp_path / "eval_config.json"
+    config.write_text(
+        '{"criteria": {"tool_trajectory_avg_score": 1.0, "token_usage_v1": {"threshold": 100}}}'
+    )
+    for version in (None, "2.9.2", "2.10.0"):
+        report = validate_config(load_config(config), adk_version=version)
+        assert "CFG070" in ids(report), version
+        finding = [f for f in report.findings if f.id == "CFG070"][0]
+        assert finding.severity == "error"
+        assert "remove it from `criteria`" in (finding.fix or "")
+        # Not also reported as an out-of-range threshold: there is no range.
+        assert "CFG014" not in ids(report)
+
+
+def test_the_efficiency_note_is_written_once_and_only_for_2_10(tmp_path):
+    config = tmp_path / "eval_config.json"
+    config.write_text('{"criteria": {"tool_trajectory_avg_score": 1.0}}')
+
+    on_2_10 = validate_config(load_config(config), adk_version="2.10.0")
+    notes = [f for f in on_2_10.findings if f.id == "CFG071"]
+    assert len(notes) == 1, "once per config, not once per metric"
+    assert notes[0].severity == "info"
+    assert "token_usage_v1" in notes[0].message
+
+    assert "CFG071" not in ids(validate_config(load_config(config), adk_version="2.9.2"))
+    # An unprobed runner gets the note: the plugin installs the version it targets.
+    assert "CFG071" in ids(validate_config(load_config(config), adk_version=None))
+
+
+def test_an_empty_criteria_map_gets_no_efficiency_note(tmp_path):
+    config = tmp_path / "eval_config.json"
+    config.write_text('{"criteria": {}}')
+    found = ids(validate_config(load_config(config)))
+    assert "CFG007" in found and "CFG071" not in found

@@ -64,7 +64,7 @@ submits anyway. There is no `forbidden_tools` key, and none is needed.
 ### `final_session_state` is not checked
 
 `EvalCase.final_session_state` parses, serializes and round-trips, and no
-evaluator in ADK 2.9 ever reads it. A case that "asserts" state through it
+evaluator through ADK 2.10 ever reads it. A case that "asserts" state through it
 asserts nothing, and passes whatever the agent did.
 
 **Do not rely on it.** Assert state the way the run can actually observe it:
@@ -86,10 +86,23 @@ There is no single rule — it depends which object the key is on:
 | `EvalSet` | **ignored** (dropped on parse) |
 | `EvalCase`, `SessionInput` | **kept** (`extra="allow"`), and read by nothing |
 | `Invocation`, `IntermediateData`, `ConversationScenario`, `Rubric` | **rejected** (`extra="forbid"`) |
+| `InvocationEvent` | **dropped** (`extra="ignore"`, 2.10+) |
 
 So a typo inside `intermediate_data` stops the file loading with a clear error,
 while the same typo one level up on the eval case is silent. The validator in
 `/adk:eval-review` reports both.
+
+`InvocationEvent` is the exception ADK 2.10 added deliberately: the eval editor in
+`adk web` writes UI-only transcript indices (`invocationIndex`, `toolUseIndex`)
+onto each event, and saving a case used to be refused for them. They are now
+dropped on parse — which also means a misspelled key on an event is silent, so
+take the same care there as on an eval case. **`Invocation` itself still forbids
+extras**, so a typo one level up is still an error, and this plugin still reports
+it as one (`EVS021`).
+A case captured from a 2.10 run may carry `duration` and the
+`{"invocation_events": [...]}` form of `intermediate_data`; both are legal on 2.10
+(the validator notes the first as `EVS049`), and such a file does not load on
+2.9.2, which forbids the extra field.
 
 ### Invocation
 
@@ -101,6 +114,7 @@ while the same typo one level up on the eval case is silent. The validator in
 | `intermediate_data.tool_uses` | the expected calls, in order, with arguments |
 | `intermediate_data.tool_responses` | optional; what the tools returned |
 | `intermediate_data.intermediate_responses` | `[author, parts]` pairs for intermediate messages |
+| `duration` | 2.10+, output only: wall-clock seconds, written by a run that performed the inference. Do not hand-write it — a case you author carries no timing, and `invocation_duration_v1` reports nothing for it |
 
 ### Session input
 
@@ -177,6 +191,14 @@ the docs and the CLI.
 No fixed turns means no reference, so reference-based metrics cannot score these.
 See `/adk:eval-simulation`.
 
+## Editing a case in place
+
+On 2.10 updating a case **keeps its position** in `eval_cases`: the entry is
+replaced where it is. Through 2.9 the manager removed the old case and appended
+the new one, so every edit through the API or the dev UI quietly moved that case
+to the end of the file and made the next diff unreadable. Nothing about the
+schema changed — only whether editing a case reorders the file.
+
 ## Legacy format
 
 A top-level JSON list of `{name, data: [{query, expected_tool_use, reference}],
@@ -185,7 +207,12 @@ Migrate it with `migrate_legacy.py` for a stable id and a readable diff.
 
 ---
 
-Sources: `adk-python: evaluation/eval_case.py`, `evaluation/eval_set.py`,
-`evaluation/common.py`, `evaluation/evaluation_generator.py`,
-`evaluation/local_eval_sets_manager.py`, `evaluation/conversation_scenarios.py`;
-`adk-docs: docs/evaluate/index.md`.
+Sources: `adk-python: evaluation/eval_case.py` (the per-model `extra` settings,
+`InvocationEvent.model_config` and `Invocation.duration`),
+`evaluation/eval_set.py`, `evaluation/common.py` (`EvalBaseModel`'s
+`extra="forbid"` default), `evaluation/evaluation_generator.py`,
+`evaluation/local_eval_sets_manager.py`,
+`evaluation/_eval_sets_manager_utils.py` (`update_eval_case_in_eval_set`, which
+replaces in place on 2.10 and removed-then-appended on 2.9),
+`evaluation/conversation_scenarios.py`; `adk-docs: docs/evaluate/index.md`.
+Compared across installed 2.9.2 and 2.10.0 wheels.

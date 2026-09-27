@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 
 from adk_skills.metrics import (  # noqa: E402
-    DEFAULT_CRITERIA, JUDGE_DEFAULTS, MATCH_TYPES, METRIC_CATALOG, suggest,
+    DEFAULT_CRITERIA, JUDGE_DEFAULTS, MATCH_TYPES, METRIC_CATALOG, range_label, suggest,
 )
 from adk_skills.report import EXIT_OK, EXIT_USAGE  # noqa: E402
 
@@ -32,20 +32,34 @@ def describe(name: str) -> str:
         "",
         spec.summary,
         "",
+    ]
+    if spec.informational:
+        lines.extend([
+            f"**Informational, ADK {spec.since}+ only, and always on.** It reports a value "
+            "and never passes or fails a case, so it is not a gate. Do not put it in "
+            "`criteria`: ADK 2.10 raises `ValueError` (\"does not support a threshold\") and "
+            "2.9 raises `NotFoundError`. All four efficiency metrics are reported "
+            "automatically on every 2.10 eval run.",
+            "",
+        ])
+    lines.extend([
         f"- cost: **{spec.cost}**" + {
             "free": " (deterministic, no model calls)",
             "judge": " (a judge model scores each invocation, times num_samples)",
             "vertex": " (Vertex AI Gen AI Evaluation Service: needs project and location)",
         }[spec.cost],
         f"- criterion class: `{spec.criterion_class}`",
-        f"- value range: {spec.value_range[0]:g} to {spec.value_range[1]:g}, higher is better",
-        f"- suggested threshold: {spec.default_threshold:g}",
+        f"- value range: {range_label(spec)}"
+        + ("" if spec.informational else ", higher is better"),
+        "- threshold: none, and one is rejected" if spec.informational
+        else f"- suggested threshold: {spec.default_threshold:g}",
         f"- needs a reference in the eval case: {'yes, ' + spec.reference_kind if spec.reference_based else 'no'}",
         f"- needs rubrics: {'yes' if spec.requires_rubrics else 'no'}"
         + (f" (per-case rubrics must have type `{spec.rubric_type}`)" if spec.rubric_type else ""),
         f"- works with user simulation: {'yes' if spec.user_sim_compatible else 'no'}",
-        f"- CI tier: {spec.ci_tier}",
-    ]
+        "- CI tier: informational (free, and reported whether you ask for it or not)"
+        if spec.informational else f"- CI tier: {spec.ci_tier}",
+    ])
     if spec.extra_fields:
         lines.append(f"- criterion fields: {', '.join(f'`{f}`' for f in spec.extra_fields)}")
     if spec.name == "tool_trajectory_avg_score":
@@ -64,8 +78,9 @@ def table(names: list[str]) -> str:
             f"| `{spec.name}` | {spec.cost} | {spec.reference_kind or 'no'} | "
             f"{'required' if spec.requires_rubrics else 'no'} | "
             f"{'yes' if spec.user_sim_compatible else 'no'} | "
-            f"{spec.value_range[0]:g}-{spec.value_range[1]:g} | "
-            f"{spec.default_threshold:g} | {spec.ci_tier} |"
+            f"{range_label(spec)} | "
+            f"{'n/a' if spec.informational else format(spec.default_threshold, 'g')} | "
+            f"{'informational' if spec.informational else spec.ci_tier} |"
         )
     return "\n".join(lines)
 
@@ -110,6 +125,11 @@ def main(argv: list[str] | None = None) -> int:
         print("Unset judge options default to "
               f"`{JUDGE_DEFAULTS['judge_model']}` with num_samples={JUDGE_DEFAULTS['num_samples']}; "
               "always set them explicitly.")
+        informational = [n for n in names if METRIC_CATALOG[n].informational]
+        if informational:
+            print("The `informational` rows are the ADK 2.10 efficiency metrics: reported "
+                  "automatically on every run, lower is better, and never a pass or a fail. "
+                  "Leave them out of `criteria` - naming one there raises.")
     return EXIT_OK
 
 

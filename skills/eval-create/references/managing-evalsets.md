@@ -52,6 +52,14 @@ Two cautions, both of which follow from what the UI is for:
 Results of a UI run land in the same place as a CLI run:
 `<agent>/.adk/eval_history/*.evalset_result.json`.
 
+Two 2.10 improvements to editing through the UI or the API. **An edited case keeps
+its position** in the file — through 2.9 the manager removed the case and appended
+the updated one, so every edit reordered the evalset and made the diff unreadable.
+And the UI's own transcript indices (`invocationIndex`, `toolUseIndex`, written
+onto each event) are now **dropped on save** instead of being rejected, because
+`InvocationEvent` became `extra="ignore"`. `Invocation` itself still refuses
+unknown keys.
+
 ## The `adk eval_set` CLI
 
 Three subcommands, all taking the agent directory and an eval set id:
@@ -149,7 +157,11 @@ session", "Edit current eval case", the metric dialog, `adk eval` arguments);
 `adk-python/src/google/adk/cli/cli_tools_click.py` (`eval_set create`,
 `add_eval_case`, `generate_eval_cases` signatures and `--eval_storage_uri`);
 `adk-python/src/google/adk/evaluation/local_eval_sets_manager.py` (id rules and
-the skip-on-existing behaviour); `adk-python/src/google/adk/evaluation/
+the skip-on-existing behaviour);
+`adk-python/src/google/adk/evaluation/_eval_sets_manager_utils.py`
+(`update_eval_case_in_eval_set`, in place on 2.10 and remove-then-append on 2.9);
+`adk-python/src/google/adk/evaluation/eval_case.py`
+(`InvocationEvent.model_config`, `extra="ignore"` in 2.10); `adk-python/src/google/adk/evaluation/
 gcs_eval_sets_manager.py` and `gcs_eval_set_results_manager.py` (GCS storage).
 Background reading: the LinkedIn Learning course "Evaluating AI Agents with
 Google ADK", which covers the dev-UI evaluation workflow.

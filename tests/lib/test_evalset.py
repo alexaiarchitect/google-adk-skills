@@ -225,6 +225,76 @@ def test_unknown_keys_are_errors_exactly_where_adk_forbids_them(tmp_path):
     assert severities["EVS040"] == "warn", "EvalSet ignores extras"
 
 
+def _case_with(invocation: dict) -> dict:
+    return {
+        "eval_set_id": "captured",
+        "eval_cases": [{
+            "eval_id": "happy_travel_within_policy",
+            "conversation": [invocation],
+            "session_input": {"app_name": "app", "user_id": "evaluator"},
+        }],
+    }
+
+
+def test_a_case_captured_from_a_2_10_run_validates(tmp_path):
+    """`Invocation.duration` is new in ADK 2.10 and legal: a case captured from a
+    2.10 run carries it, and flagging it would call a real field a typo."""
+    import json
+
+    path = tmp_path / "x.evalset.json"
+    path.write_text(json.dumps(_case_with({
+        "invocation_id": "inv_1",
+        "user_content": {"parts": [{"text": "Submit CLM-000412 for 900 dollars of travel."}],
+                         "role": "user"},
+        "final_response": {"parts": [{"text": "Submitted CLM-000412."}], "role": "model"},
+        "intermediate_data": {"tool_uses": [{"name": "lookup_policy", "args": {}}]},
+        "creation_timestamp": 1790000000.5,
+        "duration": 2.5,
+    })))
+    report = validate_evalset(load_evalset(path))
+    assert report.count("error") == 0, [f.id for f in report.findings if f.severity == "error"]
+    assert "EVS021" not in ids(report)
+    # Measured on the wheels: 2.9.2 refuses `duration` as an extra input, 2.10
+    # reads it, so the note is about portability rather than a mistake.
+    note = [f for f in report.findings if f.id == "EVS049"]
+    assert len(note) == 1 and note[0].severity == "info"
+    assert "2.9.2 refuses the file" in (note[0].fix or "")
+
+
+def test_the_captured_invocation_events_shape_is_accepted(tmp_path):
+    """`intermediate_data` is a union: `{"invocation_events": [...]}` is what a
+    captured run writes, and it is not an unrecognized key."""
+    import json
+
+    path = tmp_path / "x.evalset.json"
+    path.write_text(json.dumps(_case_with({
+        "invocation_id": "inv_1",
+        "user_content": {"parts": [{"text": "hi"}], "role": "user"},
+        "final_response": {"parts": [{"text": "ok"}], "role": "model"},
+        "intermediate_data": {"invocation_events": [
+            {"author": "app", "content": {"parts": [{"text": "ok"}], "role": "model"},
+             "usage_metadata": {"total_token_count": 312}, "model_version": "gemini-flash-latest"},
+        ]},
+        "duration": 1.25,
+    })))
+    report = validate_evalset(load_evalset(path))
+    assert report.count("error") == 0, [f.id for f in report.findings if f.severity == "error"]
+
+
+def test_mixing_the_two_intermediate_data_shapes_is_an_error(tmp_path):
+    import json
+
+    path = tmp_path / "x.evalset.json"
+    path.write_text(json.dumps(_case_with({
+        "invocation_id": "inv_1",
+        "user_content": {"parts": [{"text": "hi"}], "role": "user"},
+        "intermediate_data": {"tool_uses": [], "invocation_events": []},
+    })))
+    report = validate_evalset(load_evalset(path))
+    message = [f.message for f in report.findings if f.id == "EVS047"][0]
+    assert "mixes the two shapes" in message
+
+
 def test_a_scenario_typo_is_an_error(tmp_path):
     import json
 
@@ -294,6 +364,36 @@ def test_intermediate_responses_must_be_author_parts_pairs(tmp_path):
         }],
     }))
     assert "EVS111" in ids(validate_evalset(load_evalset(path)))
+
+
+def test_no_unknown_tool_error_when_the_agent_cannot_be_read(fixtures, tmp_path):
+    """The kwargs_agent fixture binds `export_to_ledger` only under a feature
+    flag, and its whole construction is unreadable, so an expected call to it
+    cannot be called a mistake."""
+    import json
+
+    from adk_skills.tools_ast import extract_module, tool_resolver
+
+    facts = extract_module(fixtures / "agents/kwargs_agent")
+    path = tmp_path / "x.evalset.json"
+    path.write_text(json.dumps(_case_with({
+        "invocation_id": "inv_1",
+        "user_content": {"parts": [{"text": "Submit CLM-000412 for 900 dollars of travel."}],
+                         "role": "user"},
+        "final_response": {"parts": [{"text": "Submitted CLM-000412."}], "role": "model"},
+        "intermediate_data": {"tool_uses": [
+            {"name": "lookup_policy", "args": {}},
+            {"name": "submit_claim", "args": {}},
+            {"name": "export_to_ledger", "args": {}},
+        ]},
+    })))
+    report = validate_evalset(
+        load_evalset(path),
+        known_tools=facts.bound_tool_names,
+        tool_resolver=tool_resolver(facts),
+    )
+    assert "EVS036" not in ids(report), [f.message for f in report.findings if f.id == "EVS036"]
+    assert report.count("error") == 0
 
 
 def test_a_resolver_decides_what_counts_as_an_unknown_tool(fixtures):

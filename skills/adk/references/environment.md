@@ -60,7 +60,7 @@ services, Workload Identity in CI, and per-project quota and billing.
 Evaluation lives behind an extra:
 
 ```bash
-pip install "google-adk[eval]==2.9.*"
+pip install "google-adk[eval]==2.10.*"
 ```
 
 `google.adk.evaluation` swallows the `ImportError` when the extra is missing, so
@@ -75,7 +75,7 @@ Scripts that need ADK resolve a runner in this order:
 1. **`$ADK_PYTHON`** — an explicit interpreter path. Set this when you know best.
 2. **A virtualenv at or above the agent** — `.venv/bin/python`, `venv/bin/python`.
 3. **The interpreter that owns an `adk` on `PATH`**.
-4. **`uv run --with "google-adk[eval]==2.9.*" python`** — installs into a
+4. **`uv run --with "google-adk[eval]==2.10.*" python`** — installs into a
    throwaway environment. Needs `uv` (`brew install uv`).
 
 If none resolve, do not guess: report it and give the fix.
@@ -85,7 +85,7 @@ If none resolve, do not guess: report it and give the fix.
 python3 -c "import google.adk; print(google.adk.version.__version__)"
 
 # a project venv, when uv is unavailable
-python3 -m venv .venv && .venv/bin/pip install "google-adk[eval]==2.9.*"
+python3 -m venv .venv && .venv/bin/pip install "google-adk[eval]==2.10.*"
 ADK_PYTHON=.venv/bin/python python3 <script>
 ```
 

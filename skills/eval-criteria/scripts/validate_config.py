@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 
-from adk_skills.env import detect_backend  # noqa: E402
+from adk_skills.env import detect_backend, resolve_runner  # noqa: E402
 from adk_skills.eval_config import load_config, validate_config  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
 from adk_skills.metrics import cost_tier  # noqa: E402
@@ -35,6 +35,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--agent-dir", help="agent, for tool names and backend detection")
     parser.add_argument("--no-backend", action="store_true",
                         help="skip backend checks (useful in CI where credentials differ)")
+    parser.add_argument("--no-probe", action="store_true",
+                        help="do not look for an interpreter with google.adk; version-specific "
+                             "notes are then written for the version this plugin targets")
+    parser.add_argument("--adk-version",
+                        help="the ADK version this config will run on, instead of probing")
     parser.add_argument("--format", choices=("json", "md"), default="md")
     parser.add_argument("--json", action="store_const", const="json", dest="format")
     parser.add_argument("--strict", action="store_true", help="treat warnings as failures")
@@ -61,6 +66,14 @@ def main(argv: list[str] | None = None) -> int:
 
     backend = None if args.no_backend else detect_backend(agent_dir or target.parent)
 
+    # Which ADK will run this config decides one note only (CFG071): the four
+    # efficiency metrics exist from 2.10 on. Every error is version-independent,
+    # so a failed probe costs nothing but that note.
+    adk_version = args.adk_version
+    if adk_version is None and not args.no_probe:
+        runner = resolve_runner(agent_dir or layout.agent_dir, layout.project_root)
+        adk_version = runner.adk_version
+
     loaded = load_config(config_path)
     report = GapReport(subject=str(config_path), skill="eval-criteria")
     report.discovered = {
@@ -71,8 +84,10 @@ def main(argv: list[str] | None = None) -> int:
         "needs_response_reference": loaded.has_reference_metrics(),
         "agent_dir": agent_dir,
         "backend": backend.backend if backend else "not checked",
+        "adk_version": adk_version or "not detected",
     }
-    validate_config(loaded, report=report, backend=backend, agent_dir=agent_dir, known_tools=known_tools)
+    validate_config(loaded, report=report, backend=backend, agent_dir=agent_dir,
+                    known_tools=known_tools, adk_version=adk_version)
 
     print(report.render(args.format))
     if report.has_errors():

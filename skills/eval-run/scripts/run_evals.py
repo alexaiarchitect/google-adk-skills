@@ -39,7 +39,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 
 from adk_skills.adk_subprocess import describe_runner, run_adk_eval  # noqa: E402
-from adk_skills.env import detect_backend, resolve_runner, version_is_supported  # noqa: E402
+from adk_skills.env import (  # noqa: E402
+    ADK_REQUIREMENT, detect_backend, resolve_runner, version_is_supported,
+)
 from adk_skills.eval_config import load_config  # noqa: E402
 from adk_skills.evalset import load_evalset  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
@@ -226,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
 
             if outcome.missing_eval_extra:
                 print('error: the eval extra is not installed. '
-                      'Install with: pip install "google-adk[eval]==2.9.*"', file=sys.stderr)
+                      f'Install with: pip install "{ADK_REQUIREMENT}"', file=sys.stderr)
                 return EXIT_USAGE
             if not outcome.command.ok and not outcome.new_result_files:
                 print(f"error: the run failed before producing results:\n{outcome.command.tail()}",

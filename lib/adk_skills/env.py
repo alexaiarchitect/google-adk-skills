@@ -339,11 +339,40 @@ def adk_version(runner: RunnerSpec) -> str | None:
     return _has_adk(runner.argv)
 
 
+def _version_tuple(version: str) -> tuple[int, ...]:
+    """`"2.10.0rc1"` -> `(2, 10, 0)`. Non-numeric tails are dropped rather than
+    guessed at, so a pre-release compares equal to its release."""
+    parts: list[int] = []
+    for chunk in version.strip().split("."):
+        digits = ""
+        for char in chunk:
+            if char.isdigit():
+                digits += char
+            else:
+                break
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple(parts)
+
+
 def version_is_supported(version: str | None) -> bool:
-    """This plugin targets ADK 2.x."""
+    """This plugin targets ADK 2.x: 2.9 and 2.10 are both supported."""
     if not version:
         return False
     return version.split(".", 1)[0] == ADK_TARGET.split(".", 1)[0]
+
+
+def version_at_least(version: str | None, minimum: str = ADK_TARGET) -> bool:
+    """Is `version` at least `minimum`, comparing numerically per component?
+
+    `"2.9.2"` is **older** than `"2.10.0"`, which a string comparison gets
+    wrong, and that pair is exactly the one every 2.10-only behaviour turns on.
+    An unknown version is not assumed to be new enough.
+    """
+    if not version:
+        return False
+    return _version_tuple(version) >= _version_tuple(minimum)
 
 
 def default_judge_model(backend: BackendInfo | None = None) -> str:

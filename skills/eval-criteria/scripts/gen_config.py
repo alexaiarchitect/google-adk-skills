@@ -14,6 +14,11 @@ Whatever the tier, the generated config always names `judge_model` and
 `num_samples` rather than letting them default, because the library default is
 a deprecated model sampled five times.
 
+No tier ever emits the four ADK 2.10 efficiency metrics, and `--metrics` refuses
+them: they take no threshold, they are reported on every 2.10 run whether asked
+for or not, and naming one in `criteria` makes the run raise (`ValueError` on
+2.10, `NotFoundError` on 2.9). Read them with /adk:eval-analyze instead.
+
     gen_config.py --tier pr --out tests/eval/eval_config.json
     gen_config.py --tier custom --metrics "tool_trajectory_avg_score=1.0:IN_ORDER,hallucinations_v1=0.8"
     gen_config.py --tier nightly --rubrics-file rubrics.json --judge-model gemini-flash-latest
@@ -35,7 +40,8 @@ from adk_skills.env import default_judge_model, detect_backend  # noqa: E402
 from adk_skills.eval_config import LoadedConfig, validate_config  # noqa: E402
 from adk_skills.evalset import snake_to_camel  # noqa: E402
 from adk_skills.metrics import (  # noqa: E402
-    MATCH_TYPES, METRIC_CATALOG, cost_tier, incompatible_with_user_sim, suggest,
+    MATCH_TYPES, METRIC_CATALOG, cost_tier, incompatible_with_user_sim,
+    informational_metrics, suggest,
 )
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport  # noqa: E402
 from adk_skills.templating import WritePlan, dumps_json  # noqa: E402
@@ -141,6 +147,15 @@ def main(argv: list[str] | None = None) -> int:
         specs = [parse_metric_spec(item) for item in args.metrics.split(",") if item.strip()]
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
+    refused = informational_metrics(name for name, _, _ in specs)
+    if refused:
+        print(f"error: {', '.join(refused)} cannot be put in a config: "
+              "informational efficiency metrics take no threshold, and naming one in "
+              "`criteria` makes the run raise (ValueError on ADK 2.10, NotFoundError on "
+              "2.9). ADK 2.10 reports all four on every eval automatically; read them with "
+              "/adk:eval-analyze.", file=sys.stderr)
         return EXIT_USAGE
 
     for name, _, match_type in specs:

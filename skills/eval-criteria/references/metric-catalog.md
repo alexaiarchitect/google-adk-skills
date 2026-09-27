@@ -1,4 +1,11 @@
-# The 13 ADK evaluation metrics
+# The ADK evaluation metrics: 17 registered, 13 configurable
+
+ADK 2.10 registers 17 metrics, and this plugin's catalog has all 17. Thirteen of
+them are the ones you put in `criteria` — the table below. The other four are the
+efficiency metrics: always on, never configured, informational only (last
+section). `metric_info.py` lists them with tier `informational` and a value range
+of `0+` (JSON: `[0.0, null]`, unbounded), which is how you tell them apart from a
+configurable metric at a glance.
 
 | metric | cost | reference | rubrics | user sim | range | tier |
 |---|---|---|---|---|---|---|
@@ -28,7 +35,8 @@ blanks.
 
 With **no config at all**, ADK uses `tool_trajectory_avg_score` 1.0 and
 `response_match_score` 0.8 — so an unconfigured run silently fails cases on
-wording.
+wording. On 2.10 the four efficiency metrics are appended to whatever you
+configured, including that default pair.
 
 ## The deterministic pair
 
@@ -44,7 +52,7 @@ skipped validation or a reordered pipeline.
 | `IN_ORDER` | every expected call appears in the expected relative order; extra calls in between are allowed |
 | `ANY_ORDER` | every expected call appears, in any order |
 
-`ignore_args` (2.9) compares names only. It makes a red suite green without
+`ignore_args` (2.9+, unchanged in 2.10) compares names only. It makes a red suite green without
 making the agent better — the right tool with the wrong id passes — so keep it
 off wherever the result gates a release.
 
@@ -121,6 +129,7 @@ below 1 can never fail.
 | Is the answer well-formed for a user? | `rubric_based_final_response_quality_v1` |
 | Is it safe to put in front of people? | `safety_v1` |
 | Does it hold up across a real conversation? | `multi_turn_*`, with user simulation |
+| How expensive did a turn get? | nothing to configure — the efficiency four are reported for you on 2.10 |
 
 ## Cost
 
@@ -129,10 +138,89 @@ cases with 2 invocations each, two rubric metrics, `num_samples: 3`, is 240 judg
 calls per run — before pass@k multiplies it. That is the whole argument for the
 tiering: deterministic metrics on every change, judge metrics nightly.
 
+## Efficiency (informational, 2.10+)
+
+Four metrics that report a number and never pass or fail anything. **ADK 2.10
+appends all four to every eval automatically** — you do not ask for them, and
+there is no way to ask for them.
+
+| metric | unit | cost | reference | threshold |
+|---|---|---|---|---|
+| `tool_call_count_v1` | tool calls per invocation | free | none | none — rejected |
+| `inference_call_count_v1` | model calls per invocation | free | none | none — rejected |
+| `token_usage_v1` | tokens per invocation (`total_tokens`) | free | none | none — rejected |
+| `invocation_duration_v1` | wall-clock **seconds** per invocation | free | none | none — rejected |
+
+Each is computed per invocation and **averaged** over the eval case; invocations
+that report nothing are left out of the average. All four write
+`eval_status: 4` (`INFORMATIONAL`), overall and per invocation, so they never
+land in a pass or fail column — `/adk:eval-analyze` shows them in their own
+table.
+
+**Naming one in `criteria` is an error, not a no-op.** There is no way to write
+the name without a threshold (`null` is refused by pydantic), and a threshold is
+what the evaluator rejects — on 2.10, at the moment the run reaches the metric:
+
+```
+ValueError: `tool_call_count_v1` does not support a threshold: it reports a value
+and never passes or fails. Remove it from `criteria` entirely; it is reported
+automatically on every eval.
+```
+
+On 2.9 the same config fails at the same point with a different error,
+`NotFoundError: tool_call_count_v1 not found in registry.`, because the metric
+does not exist there at all. Config-level validation catches neither: `EvalConfig`
+accepts any metric name on both versions, which is why this plugin reports it
+(`CFG070`) before you run.
+
+`token_usage_v1` also carries `details.token_usage_details`: `total_tokens`,
+`input_tokens`, `prompt_tokens`, `cached_tokens`, `tool_use_tokens`,
+`output_tokens`, `candidates_tokens`, `reasoning_tokens`.
+
+ADK's own wording, verbatim from `MetricInfo.description`:
+
+> **`tool_call_count_v1`** — "This metric counts the number of tool (function)
+> calls the agent made per invocation, averaged across the eval case. It is an
+> informational efficiency metric: it reports the value for tracking and does not
+> pass or fail the eval case."
+
+> **`inference_call_count_v1`** — "This metric counts the number of inference
+> (model) calls the agent made per invocation, averaged across the eval case. It
+> is a proxy for the number of attempts or reasoning steps taken, and read
+> alongside token usage it separates the two ways a turn gets expensive: more
+> calls, or a larger context per call. It is an informational efficiency metric:
+> it reports the value for tracking and does not pass or fail the eval case."
+
+> **`token_usage_v1`** — "This metric sums the tokens consumed by the model
+> across all model calls in an invocation, averaged across the eval case. The
+> score is the total; every token type is reported alongside it as a nested
+> breakdown -- total, then input (prompt, of which cached, plus tool use) and
+> output (candidates plus reasoning) -- using the same definitions as ADK's
+> telemetry token metrics. It is an informational efficiency metric: it reports
+> the value for tracking and does not pass or fail the eval case."
+
+> **`invocation_duration_v1`** — "This metric reports the wall-clock seconds an
+> invocation took, averaged across the eval case. The duration is measured while
+> the agent runs; an invocation not produced by this eval run reports no value.
+> Wall-clock time is noisier than the token and call counts, since it moves with
+> model-server load and network, so read it as an indication rather than a
+> regression signal. It is an informational efficiency metric: it reports the
+> value for tracking and does not pass or fail the eval case."
+
+Read them as a trend across runs, not as a gate: a duration that doubles is a
+question, not a failure, and the two call counts tell you whether a turn got
+expensive through more attempts or a bigger context.
+
 ---
 
 Sources: `adk-python: evaluation/eval_metrics.py`,
 `evaluation/metric_evaluator_registry.py`, `evaluation/metric_info_providers.py`,
 `evaluation/hallucinations_v1.py`, `evaluation/rubric_based_*.py`,
 `evaluation/safety_evaluator.py`, `evaluation/response_evaluator.py`,
-`evaluation/eval_config.py`; `adk-docs: docs/evaluate/criteria.md`.
+`evaluation/eval_config.py`; `adk-docs: docs/evaluate/criteria.md`. The
+efficiency four: `adk-python: evaluation/_efficiency_evaluators.py` (new in
+2.10.0, `_reject_threshold`), `evaluation/metric_info_providers.py` (the
+descriptions quoted above, and `requires_threshold`),
+`evaluation/metric_evaluator_registry.py` (`_register_standard_metrics`),
+`evaluation/eval_config.py` (`get_eval_metrics_from_config` appends them);
+measured on installed wheels 2.9.2 and 2.10.0.

@@ -39,6 +39,11 @@ LLM_AGENT_CALLS = {"Agent", "LlmAgent"}
 DEPRECATED_AGENT_CALLS = {"SequentialAgent", "ParallelAgent", "LoopAgent"}
 AGENT_CALLS = LLM_AGENT_CALLS | DEPRECATED_AGENT_CALLS | {"Workflow"}
 
+#: Module-level names the ADK loader looks for. An assignment to one of these
+#: whose right-hand side is an attribute of some object (`wrapper._agent`) hides
+#: the agent behind a runtime object, so nothing about it can be read here.
+EXPORT_NAMES = ("root_agent", "app", "agent")
+
 #: Wrappers whose bound trajectory name is the *wrapped function's* name.
 #: `FunctionTool(func=fn)` is reported to the model as `fn`, so an eval case
 #: names `fn`, not the variable the wrapper was assigned to.
@@ -319,6 +324,10 @@ class ModuleFacts:
     callables: set[str] = field(default_factory=set)
     state_writes: list[StateWrite] = field(default_factory=list)
     syntax_errors: list[str] = field(default_factory=list)
+    #: Export name -> the expression it was assigned, for exports that resolve to
+    #: an object's attribute rather than to an `Agent(...)`/`App(...)` call, e.g.
+    #: ``{"root_agent": "coordinator_wrapper._agent"}``.
+    unresolved_exports: dict[str, str] = field(default_factory=dict)
 
     @property
     def app(self) -> AppSpec | None:
@@ -334,9 +343,48 @@ class ModuleFacts:
         return self.apps[0] if self.apps else None
 
     @property
+    def agent_unresolved_reason(self) -> str | None:
+        """Why the exported agent cannot be read from the source, if it cannot.
+
+        Two shapes defeat static reading, and both are in real projects:
+
+        * ``Agent(**kwargs)`` - the kwargs dict is assembled at runtime, often
+          conditionally, so `name`, `model`, `instruction` and `tools` are all
+          unknowable rather than absent;
+        * ``root_agent = wrapper._agent`` - the export is an attribute of an
+          object built at import time, so there is no constructor call to read.
+
+        Returning a reason is what lets every check that depends on those fields
+        say it was skipped instead of quietly reporting nothing.
+        """
+        reasons: list[str] = []
+        agent = self.root_agent()
+        if agent is not None and agent.kwargs_unresolved:
+            reasons.append(
+                f"`{agent.call}(**kwargs)` at {Path(agent.file or '?').name}:{agent.lineno} "
+                "builds every field at runtime"
+            )
+        for var, expr in sorted(self.unresolved_exports.items()):
+            reasons.append(
+                f"`{var} = {expr}` exports an attribute of an object, not an "
+                f"{'App' if var == 'app' else 'Agent'}(...) call"
+            )
+        return "; ".join(reasons) or None
+
+    @property
+    def agent_unresolved(self) -> bool:
+        """True when the exported agent's construction is not statically readable."""
+        return self.agent_unresolved_reason is not None
+
+    @property
     def tools_unresolved(self) -> bool:
-        """Did any agent bind tools through an expression we could not read?"""
-        return any(agent.tools_unresolved for agent in self.agents)
+        """Did any agent bind tools through an expression we could not read?
+
+        An unreadable agent construction counts: a tool list that is never
+        written down cannot be enumerated, so the absence of a name proves
+        nothing about the run.
+        """
+        return any(agent.tools_unresolved for agent in self.agents) or self.agent_unresolved
 
     @property
     def bound_tool_names(self) -> set[str]:
@@ -383,6 +431,9 @@ class ModuleFacts:
             "bound_tools": sorted(self.bound_tool_names),
             "opaque_tools": dict(sorted(self.opaque_tools.items())),
             "tools_unresolved": self.tools_unresolved,
+            "agent_unresolved": self.agent_unresolved,
+            "agent_unresolved_reason": self.agent_unresolved_reason,
+            "unresolved_exports": dict(sorted(self.unresolved_exports.items())),
             "tool_collisions": self.tool_collisions,
             "state_writes": [w.to_dict() for w in self.state_writes],
             "syntax_errors": self.syntax_errors,
@@ -1031,6 +1082,16 @@ def extract_file(path: Path | str, facts: ModuleFacts | None = None) -> ModuleFa
                 app.file = file_key
                 facts.apps.append(app)
 
+    # Pass 4: exports that hide the agent behind a runtime object, e.g.
+    # `root_agent = coordinator_wrapper._agent`. Module level only: an attribute
+    # assignment inside a function or a class body is not an export.
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Attribute):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id in EXPORT_NAMES:
+                facts.unresolved_exports[target.id] = _unparse(node.value) or "?"
+
     # `session.state["x"] = ...` bypasses the event history.
     _collect_state_writes(tree, file_key, facts)
     return facts
@@ -1330,6 +1391,21 @@ def analyze(facts: ModuleFacts) -> list[Finding]:
             fix="assign through ctx.state / tool_context.state so the change lands in an event; "
                 "a direct write is not persisted and is not replayed",
             source=_SRC_STATE_DOC)
+
+    if facts.agent_unresolved:
+        root = facts.root_agent()
+        add("AGT055", "info",
+            "agent construction is not statically readable "
+            f"({facts.agent_unresolved_reason}); model, instruction and tool checks were "
+            "skipped, use load_agent.py for the loaded facts",
+            path=root.file if root else None,
+            locator=f"line {root.lineno}" if root else None,
+            fix="nothing is necessarily wrong: this is a note that the review is partial. "
+                "`load_agent.py <project>` imports the agent through ADK's own loader and "
+                "reports the resolved name, model, instruction size and tools; an expected "
+                "tool call is also treated as unverifiable rather than unknown while this "
+                "holds",
+            source="adk-python: cli/utils/agent_loader.py")
 
     if facts.agents and facts.app is None:
         add("AGT014", "info", "no `App` is exported",

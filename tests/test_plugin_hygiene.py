@@ -333,3 +333,24 @@ def test_the_course_is_credited_where_its_methodology_is_used():
         if "LinkedIn Learning" in p.read_text(encoding="utf-8")
     ]
     assert len(credited) >= 8, "attribution belongs on every reference that uses the methodology"
+
+
+def test_no_shipped_asset_is_gitignored():
+    """The plugin's own `.gitignore` once matched `.env.example.tmpl` through the
+    `.env.*` rule, so the published repo lacked the scaffold's env template.
+    Every file under an assets directory must be publishable."""
+    import shutil
+    import subprocess
+
+    if not shutil.which("git") or not (PLUGIN_ROOT / ".git").exists():
+        pytest.skip("not a git checkout")
+    assets = sorted(
+        str(p.relative_to(PLUGIN_ROOT))
+        for p in PLUGIN_ROOT.glob("skills/*/assets/**/*") if p.is_file()
+    )
+    assert assets
+    proc = subprocess.run(
+        ["git", "check-ignore", "--no-index", *assets],
+        cwd=PLUGIN_ROOT, capture_output=True, text=True,
+    )
+    assert proc.stdout.strip() == "", f"ignored shipped assets:\n{proc.stdout}"

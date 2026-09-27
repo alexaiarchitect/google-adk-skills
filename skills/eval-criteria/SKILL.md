@@ -2,9 +2,10 @@
 name: eval-criteria
 description: >-
   Chooses and configures Google ADK evaluation criteria, and writes the eval
-  config. Covers all 13 prebuilt metrics, thresholds and what a threshold can
-  and cannot prove, trajectory match types (EXACT, IN_ORDER, ANY_ORDER,
-  ignore_args), judge model options and sampling cost, rubric authoring
+  config. Covers all 13 configurable prebuilt metrics (and the 4 always-on
+  efficiency ones), thresholds and what a threshold can and cannot prove,
+  trajectory match types (EXACT, IN_ORDER, ANY_ORDER, ignore_args), judge model
+  options and sampling cost, rubric authoring
   including restraint rubrics that prove an agent held back, groundedness
   checks, safety and the other Vertex-only metrics, custom metrics, and
   cost-tiered configs for CI. Use when asked "which metric should I use", "set
@@ -88,6 +89,11 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
   `GOOGLE_GENAI_USE_VERTEXAI` says. They are the `vertex` tier because it is a
   separate, separately billed service that ignores `judge_model_options` — not
   because a key is insufficient.
+- **The four efficiency metrics cannot be configured.** On ADK 2.10
+  `tool_call_count_v1`, `inference_call_count_v1`, `token_usage_v1` and
+  `invocation_duration_v1` are appended to every eval automatically and reported
+  as informational values. Naming one in `criteria` is an error at run time, so
+  never write one into a config — there is no flag for it and nothing to add.
 - **Check the range before the threshold.** `response_evaluation_score` runs 1 to
   5; a threshold of 0.8 on it can never fail.
 - **Where the file goes matters.** `test_config.json` beside a single evalset is
@@ -97,7 +103,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 
 | Question | File |
 |---|---|
-| All 13 metrics: what each proves, needs and costs | [metric-catalog.md](references/metric-catalog.md) |
+| All 13 configurable metrics, plus the 4 always-on efficiency ones | [metric-catalog.md](references/metric-catalog.md) |
 | Criterion fields, judge options, custom metrics, config shape | [criterion-schemas.md](references/criterion-schemas.md) |
 | Writing rubrics a judge can answer consistently | [rubric-authoring.md](references/rubric-authoring.md) |
 | Groundedness and safety in depth | [groundedness-and-safety.md](references/groundedness-and-safety.md) |
@@ -111,9 +117,9 @@ Templates: `assets/templates/configs/` (one per criterion family) and
 
 | Command | Does | Exit codes |
 |---|---|---|
-| `scripts/metric_info.py [name] [--tier pr\|nightly] [--user-sim] [--json]` | the catalog, or one metric in detail | 0, 2 unknown name |
-| `scripts/gen_config.py --tier pr\|nightly\|custom [--metrics ...] [--rubrics-file F] [--judge-model M] [--num-samples N] [--style snake\|camel] [--out F] [--dry-run]` | writes a config and validates it | 0, 1 contradictory, 2 usage |
-| `scripts/validate_config.py <config\|agent-dir> [--agent-dir D] [--no-backend] [--strict]` | checks an existing config | 0 clean, 1 findings, 2 bad target |
+| `scripts/metric_info.py [name] [--tier pr\|nightly] [--user-sim] [--json]` | the catalog (17 entries: 13 configurable, 4 informational), or one metric in detail | 0, 2 unknown name |
+| `scripts/gen_config.py --tier pr\|nightly\|custom [--metrics ...] [--rubrics-file F] [--judge-model M] [--num-samples N] [--style snake\|camel] [--out F] [--dry-run]` | writes a config and validates it. No tier emits an efficiency metric and `--metrics` refuses one (exit 2) — there is nothing to add, so there is no flag for it | 0, 1 contradictory, 2 usage |
+| `scripts/validate_config.py <config\|agent-dir> [--agent-dir D] [--no-backend] [--no-probe] [--adk-version V] [--strict]` | checks an existing config, and reports the resolved `adk_version`: `CFG070` (error) for an efficiency metric named in `criteria`, `CFG071` (info) that 2.10 reports the four anyway. `--no-probe` skips resolving the runner, `--adk-version` states it | 0 clean, 1 findings, 2 bad target |
 | `scripts/gen_rubrics.py --kind positive\|restraint\|trajectory [--tool T --condition C] [--spec JSON] [--lint F]` | builds and lints rubrics | 0 clean, 1 findings, 2 usage |
 | `scripts/gen_custom_metric.py --name N --out F [--kind sync\|async] [--threshold F] [--with-metric-info] [--dry-run]` | scaffolds a custom metric that reads `criterion.threshold` and returns per-invocation results, plus its config snippet | 0 written, 1 refused, 2 usage |
 

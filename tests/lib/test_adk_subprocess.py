@@ -10,6 +10,7 @@ import pytest
 from adk_skills.adk_subprocess import (
     build_adk_cmd, describe_runner, parse_summary, run_adk_eval, run_command,
 )
+from adk_skills import ADK_TARGET
 from adk_skills.env import RunnerSpec
 
 
@@ -19,7 +20,7 @@ def fake_runner(fixtures):
         kind="explicit",
         argv=["python3", str(fixtures / "bin" / "fake_adk.py")],
         source="fake",
-        adk_version="2.9.0",
+        adk_version=f"{ADK_TARGET}.0",
         verified=True,
     )
 

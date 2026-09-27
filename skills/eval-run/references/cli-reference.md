@@ -7,8 +7,15 @@ adk eval AGENT_MODULE_FILE_PATH [EVAL_SET_FILE_PATH_OR_ID ...]
          [--config_file_path PATH]
          [--print_detailed_results]
          [--eval_storage_uri gs://BUCKET/PREFIX]
-         [--log_level DEBUG|INFO|WARNING|ERROR]
+         [--enable_features NAME,NAME] [--disable_features NAME,NAME]
+         [--log_level debug|info|warning|error|critical]
 ```
+
+That is the whole list, and it is **identical on 2.9.2 and 2.10.0** — the `--help`
+output of `adk eval`, `adk eval_set`, `adk eval_set generate_eval_cases`,
+`adk conformance record` and `adk conformance test` is byte-for-byte the same
+between the two releases. No eval or conformance flag was added, renamed or
+removed in 2.10.
 
 | Argument | Notes |
 |---|---|
@@ -17,6 +24,7 @@ adk eval AGENT_MODULE_FILE_PATH [EVAL_SET_FILE_PATH_OR_ID ...]
 | `--config_file_path` | required unless `test_config.json` sits beside a single evalset |
 | `--print_detailed_results` | per-case detail, including actual versus expected |
 | `--eval_storage_uri` | store eval sets and results in GCS instead of `.adk/eval_history/` |
+| `--enable_features` / `--disable_features` | comma-separated experimental feature names, an alternative to the environment variables |
 
 ### What it does not have
 
@@ -26,7 +34,9 @@ adk eval AGENT_MODULE_FILE_PATH [EVAL_SET_FILE_PATH_OR_ID ...]
   averages, or running the command again, which is what `run_evals.py --runs N`
   does.
 - **No parallelism flag.** `InferenceConfig.parallelism` and
-  `EvaluateConfig.parallelism` exist, but only on the programmatic path.
+  `EvaluateConfig.parallelism` exist, but only on the programmatic path. On 2.10 a
+  value below 1 raises ``ValueError: `parallelism` must be at least 1, got N.``
+  where 2.9.2 built a semaphore of 0 and hung forever.
 
 ### And one more thing about the summary
 
@@ -54,6 +64,14 @@ adk eval_set generate_eval_cases <agent-dir> <eval_set_id> \
 
 `generate_eval_cases` uses the Vertex AI evaluation SDK, so it needs a project
 and location. See `/adk:eval-simulation`.
+
+Which sub-command owns which flag is easy to get wrong, so: `--scenarios_file`
+and `--session_input_file` are **both required** by `add_eval_case` and exist
+nowhere else; `--user_simulation_config_file` is required by
+`generate_eval_cases`; `create` takes no options of its own. And
+`--sampler_config_file_path` / `--optimizer_config_file_path` belong to
+**`adk optimize`**, a top-level command for prompt optimization — not to
+`adk eval` and not to any `eval_set` sub-command.
 
 ## Running and inspecting
 
@@ -98,4 +116,7 @@ Sources: `adk-python: cli/cli_tools_click.py`, `cli/cli_eval.py`, `cli/cli.py`,
 `cli/utils/logs.py` (`log_to_tmp_folder`), `cli/agent_test_runner.py`,
 `evaluation/eval_config.py`, `evaluation/local_eval_set_results_manager.py`,
 `evaluation/_eval_set_results_manager_utils.py` (`create_eval_set_result`),
-`cli/utils/evals.py`; `adk-docs: docs/evaluate/index.md`.
+`cli/utils/evals.py`, `evaluation/local_eval_service.py`
+(`_parallelism_semaphore`, the 2.10 guard); `adk-docs: docs/evaluate/index.md`.
+Every flag list above was diffed between the installed 2.9.2 and 2.10.0 wheels'
+`--help` output.
