@@ -55,7 +55,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 4. **Confirm before editing anything.** If the user wants fixes applied, make the
    smallest change that addresses each finding, and re-run the review.
 
-## The ten dimensions
+## The eleven dimensions
 
 | # | Dimension | What goes wrong |
 |---|---|---|
@@ -69,6 +69,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 | 8 | environment | no backend configured; missing project or location |
 | 9 | eval readiness | an instruction with no branch, so there is nothing to test |
 | 10 | blocking calls | `time.sleep`, `requests`, `subprocess` in a synchronous tool |
+| 11 | context caching | a cached prefix that changes per request, a long instruction nothing caches, an out-of-range `ContextCacheConfig`, caching no eval case can exercise (`AGT060`–`AGT063`), and plugin imports that need 2.11 or a public path (`AGT065`, `AGT066`), and a prefix too small for the cache floor (`AGT067`) |
 
 ## Decision rules
 
@@ -96,6 +97,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 | Every finding id, what triggers it, and its ADK source | [review-checklist.md](references/review-checklist.md) |
 | The model policy and why it exists | [model-policy.md](references/model-policy.md) |
 | Decoding a failed load | [load-check.md](references/load-check.md) |
+| Context caching: the decision, the prefix rules, measuring it | [`../agent-create/references/context-caching.md`](../agent-create/references/context-caching.md) |
 
 The 1.x-to-2.x drift table lives in the router skill:
 `../adk/references/adk-1x-to-2x-migration.md`.

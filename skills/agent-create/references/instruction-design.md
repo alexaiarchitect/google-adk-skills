@@ -107,13 +107,30 @@ sentences reads as two rules and gets counted twice.
 makes it optional. A missing key without the `?` raises. Node input is not
 available this way.
 
-**2.10 leaves two forms alone**, which 2.9 did not: `${var}` and a
+**2.10 and later leave two forms alone**, which 2.9 did not: `${var}` and a
 backslash-escaped `\{var}` are passed through literally (the backslash stays
 in the text), so an instruction that has to show a shell variable or a JSON
 example no longer needs the value in state. Only a bare `{var}` is filled.
-Measured on both wheels: `"Cost ${name}"` renders as `Cost ${name}` on 2.10 and
+Measured on both wheels: `"Cost ${name}"` renders as `Cost ${name}` on 2.10+ and
 as `Cost $Ada` on 2.9.2. `{{var}}` is **not** an escape — it is still
 substituted, on both.
+
+## Static and dynamic parts
+
+A long instruction that is resent every turn is a candidate for context caching,
+and caching only works if the cached part never changes. So split it:
+
+- **`static_instruction`** — the role, the numbered steps, the prohibitions, the
+  refusal and auto-correction paragraphs. A plain literal; ADK sends it verbatim
+  and does **not** fill `{var}` there.
+- **`instruction`** — only what varies per session or turn: `{cost_centre?}`,
+  today's date, an `InstructionProvider`. With `static_instruction` set it moves
+  into the user content, after the static prefix.
+
+Dynamic text at the front of the prompt invalidates the cache on every request;
+at the end it costs nothing. The coverage-matrix extractor reads both fields, so
+the split does not hide a rule from it. When the split is worth making, and how
+to prove it saved anything: [context-caching.md](context-caching.md).
 
 ## Iterating
 
@@ -128,7 +145,8 @@ Sources: `adk-python: agents/llm_agent.py` (instruction, state templating),
 `flows/llm_flows/prompt/_instructions_utils.py` (`_TEMPLATE_VAR_PATTERN`; 2.10
 adds the `(?<![\$\{\\])` lookbehind, and `utils/instructions_utils.py` is now a
 shim re-exporting it), verified by rendering the forms above on installed 2.9.2
-and 2.10.0 wheels;
-`adk-docs: docs/agents/llm-agents.md`. The SOP framing and the
+and 2.10.0 wheels, with the 2.11.0 pattern re-read unchanged;
+`adk-docs: docs/agents/llm-agents.md`, `docs/context/caching.md`
+(the static/dynamic split; `agents/llm_agent.py`'s `static_instruction` docstring). The SOP framing and the
 prohibition-as-rubric practice follow the LinkedIn Learning course *Evaluating AI
 Agents with Google ADK*, recommended as background reading.

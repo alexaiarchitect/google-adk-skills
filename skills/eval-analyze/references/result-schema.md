@@ -7,7 +7,7 @@
 ```
 
 `adk create` gitignores `.adk/`. With `--eval_storage_uri gs://...` the same
-content goes to Cloud Storage instead. Unchanged on 2.10: the history still lands
+content goes to Cloud Storage instead. Unchanged on 2.10 and 2.11: the history still lands
 inside the **agent module** directory, not at the project root, so a recipes
 layout writes to `<project>/app/.adk/eval_history/`.
 
@@ -71,7 +71,7 @@ results has been scored by nothing.
 
 ## A failed case with no metrics at all
 
-Verified against ADK 2.9.2 and re-measured on 2.10.0: when inference itself fails — a bad API key, a model
+Verified against ADK 2.9.2 and re-measured on 2.10.0 and 2.11.0: when inference itself fails — a bad API key, a model
 that is not available, a tool that raised — the case is written with
 `final_eval_status: 2` and an **empty** `overall_eval_metric_results`, and no
 per-invocation entries.
@@ -146,5 +146,6 @@ Sources: `adk-python: evaluation/eval_result.py`, `evaluation/eval_metrics.py`
 `evaluation/_efficiency_evaluators.py`, `evaluation/eval_rubrics.py`,
 `evaluation/local_eval_set_results_manager.py`,
 `evaluation/local_eval_service.py`, `cli/cli_tools_click.py`. Result files
-re-measured on installed 2.9.2 and 2.10.0 wheels; the efficiency entry shape was
+re-measured on installed 2.9.2, 2.10.0 and 2.11.0 wheels (on 2.11.0 a
+credential-less run still writes `final_eval_status: 2` with no metrics); the efficiency entry shape was
 read off the evaluators driven over a synthetic invocation.

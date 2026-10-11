@@ -46,7 +46,7 @@ across sessions, `app:` app-wide, `temp:` for the current invocation only.
 | `EvalCaseResult.eval_set_file`, `.eval_metric_results` | deprecated; use `eval_set_id` and `overall_eval_metric_results` |
 | `AgentEvaluator(criteria={...})` | deprecated; pass an `EvalConfig` |
 | dev-server eval routes | moved under `/dev/...` with hyphenated paths; underscore variants are deprecated aliases |
-| `ignore_args` on tool trajectory | new in 2.9, unchanged in 2.10 |
+| `ignore_args` on tool trajectory | new in 2.9, unchanged through 2.11 |
 | the four efficiency metrics | new in 2.10: reported on every eval, informational (`eval_status: 4`), and refused if you name them in `criteria` |
 | `EvalStatus` | gained `INFORMATIONAL = 4` in 2.10; anything parsing the int must not read 4 as a pass or a fail |
 | `NOT_EVALUATED` | reported as "not a score regression" by `AgentEvaluator`, still counted as failed by the `adk eval` summary |

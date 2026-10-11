@@ -1,7 +1,7 @@
 # `adk` — Claude Code skills for Google ADK agents and evaluations
 
 Eleven skills for building, reviewing and evaluating Google Agent Development Kit
-(Python) agents. Checked against **ADK 2.10**; 2.9 compatible.
+(Python) agents. Checked against **ADK 2.11**; 2.9 compatible.
 
 The premise: an agent's instruction is a promise written in prose, and **eval
 cases are the only form of that promise a machine can check**. Prose drifts
@@ -69,7 +69,7 @@ Generated configs here always name the model and the sample count.
 fixed expected answer, so trajectory and response matching are unavailable. Keep
 a separate config for simulated suites.
 
-**ADK 2.10 adds four metrics you cannot configure.** `tool_call_count_v1`,
+**ADK 2.10 added four metrics you cannot configure** (unchanged in 2.11). `tool_call_count_v1`,
 `inference_call_count_v1`, `token_usage_v1` and `invocation_duration_v1` are
 appended to every eval and reported as informational values — lower is better, no
 threshold, no pass or fail. Naming one in `criteria` raises at run time, so this
@@ -86,13 +86,13 @@ Anything that actually runs ADK resolves an interpreter in this order:
 1. `$ADK_PYTHON`
 2. a virtualenv at or above the agent
 3. the interpreter owning an `adk` on `PATH`
-4. `uv run --with "google-adk[eval]==2.10.*"`
+4. `uv run --with "google-adk[eval]==2.11.*"`
 
 ```bash
 # either
 brew install uv
 # or
-python3 -m venv .venv && .venv/bin/pip install "google-adk[eval]==2.10.*"
+python3 -m venv .venv && .venv/bin/pip install "google-adk[eval]==2.11.*"
 export ADK_PYTHON=.venv/bin/python
 ```
 
@@ -149,6 +149,11 @@ ADK behaviour is cited from `google/adk-python`, `google/adk-docs` and
 `google/adk-recipes` (Apache-2.0) — see `THIRD_PARTY_NOTICES.md`. Every reference
 page ends with the files it was distilled from, so any claim about ADK can be
 checked.
+
+The context-caching, eval-engineering and shadow-rollout pages draw on three
+Google-authored articles (on context caching in agent harnesses, on continuous
+evaluation, and on eval-driven development at Firebase), paraphrased and cited by
+title and URL; the list is in `THIRD_PARTY_NOTICES.md`.
 
 The evaluation practices described here — trajectory over final answer, the case
 taxonomy, the branch-coverage rule, restraint rubrics, pass@k, the failure

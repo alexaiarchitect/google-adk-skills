@@ -1,0 +1,87 @@
+{
+  "eval_set_id": "claims",
+  "name": "Expense claims with a follow-up turn",
+  "description": "Two turns in one session, so a run can show the cached prefix being reused.",
+  "eval_cases": [
+    {
+      "eval_id": "happy_travel_then_follow_up",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {
+            "parts": [
+              {
+                "text": "Submit claim CLM-000412 for 900 dollars of travel on the engineering cost centre."
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "Submitted CLM-000412 for 900 USD against the engineering cost centre."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "intermediate_responses": [],
+            "tool_uses": [
+              {
+                "name": "lookup_policy",
+                "args": {
+                  "category": "travel"
+                }
+              },
+              {
+                "name": "check_cost_centre_funds",
+                "args": {
+                  "cost_centre": "engineering",
+                  "amount_usd": 900.0
+                }
+              },
+              {
+                "name": "submit_claim",
+                "args": {
+                  "claim_id": "CLM-000412",
+                  "cost_centre": "engineering",
+                  "amount_usd": 900.0
+                }
+              }
+            ]
+          }
+        },
+        {
+          "invocation_id": "inv_2",
+          "user_content": {
+            "parts": [
+              {
+                "text": "Which cost centre did that go to?"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "CLM-000412 was charged to the engineering cost centre."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "intermediate_responses": [],
+            "tool_uses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "cached_agent",
+        "user_id": "evaluator",
+        "state": {
+          "claimant_name": "R. Okafor"
+        }
+      }
+    }
+  ]
+}

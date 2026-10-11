@@ -27,6 +27,14 @@ either layout. Reach for it when the order of operations is a rule rather than a
 preference - a step enforced by an edge needs no eval case to defend it, because
 the model was never asked.
 
+`--with-cache` splits the instruction for context caching: the procedure (the
+SOP) becomes a literal `static_instruction`, the byte-identical prefix the
+cache stores, a short `instruction` carries the per-turn part, and the `App`
+gets `context_cache_config=ContextCacheConfig(min_tokens=2048, ttl_seconds=600,
+cache_intervals=5)`. The flat layout gains an `App` for it. Caching starts on a
+session's second turn, so it only pays off for multi-turn conversations with a
+long procedure; it does not combine with `--workflow`.
+
 Exit codes: 0 written, 1 refused (name or existing files), 2 usage error.
 """
 
@@ -175,7 +183,8 @@ def build_instruction(description: str, tools: list[dict[str, Any]], sop: str | 
     return DEFAULT_INSTRUCTION.format(description=description, steps=steps, prohibitions=prohibitions)
 
 
-def starter_evalset(agent_name: str, app_name: str, tools: list[dict[str, Any]]) -> str:
+def starter_evalset(agent_name: str, app_name: str, tools: list[dict[str, Any]],
+                    *, multi_turn: bool = False) -> str:
     calls = [{"name": tool["name"], "args": {"req": {
         field["name"]: (field["values"][0] if field["kind"] == "literal"
                         else "TODO" if field["kind"] == "pattern"
@@ -198,6 +207,30 @@ def starter_evalset(agent_name: str, app_name: str, tools: list[dict[str, Any]])
             "session_input": {"app_name": app_name, "user_id": "evaluator", "state": {}},
         }],
     }
+    if multi_turn:
+        # A cache is never created on a session's first request, so only a case
+        # with a second turn can show `cached_tokens` in the results.
+        document["eval_cases"].append({
+            "eval_id": "happy_TODO_follow_up_turn",
+            "conversation": [
+                {
+                    "invocation_id": "inv_1",
+                    "user_content": {"parts": [{"text": "TODO: a request that should succeed."}],
+                                     "role": "user"},
+                    "final_response": {"parts": [{"text": ""}], "role": "model"},
+                    "intermediate_data": {"intermediate_responses": [], "tool_uses": calls},
+                },
+                {
+                    "invocation_id": "inv_2",
+                    "user_content": {"parts": [{"text": "TODO: a follow-up question about "
+                                                        "the same request."}],
+                                     "role": "user"},
+                    "final_response": {"parts": [{"text": ""}], "role": "model"},
+                    "intermediate_data": {"intermediate_responses": [], "tool_uses": []},
+                },
+            ],
+            "session_input": {"app_name": app_name, "user_id": "evaluator", "state": {}},
+        })
     return json.dumps(document, indent=2) + "\n"
 
 
@@ -209,6 +242,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workflow", action="store_true",
                         help="scaffold a graph workflow (two function nodes plus an "
                              "Agent node) instead of a single prompted agent")
+    parser.add_argument("--with-cache", action="store_true",
+                        help="put the SOP in static_instruction and enable context caching "
+                             "on the App (ContextCacheConfig min_tokens=2048, ttl_seconds=600, "
+                             "cache_intervals=5)")
     parser.add_argument("--tools", default="", help="name:field=type,...;name:...")
     parser.add_argument("--description", default="", help="one line; the routing model reads this")
     parser.add_argument("--sop-file", help="a file holding the instruction, instead of a template")
@@ -222,6 +259,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: agent name {args.name!r} must be a Python identifier and not \"user\"",
               file=sys.stderr)
         return EXIT_FINDINGS
+
+    if args.with_cache and args.workflow:
+        print("error: --with-cache does not combine with --workflow; scaffold the workflow, "
+              "then set static_instruction on the Agent node and context_cache_config on "
+              "the App by hand", file=sys.stderr)
+        return EXIT_USAGE
 
     try:
         tools = parse_tools(args.tools)
@@ -275,9 +318,10 @@ def main(argv: list[str] | None = None) -> int:
 
     # The workflow module inlines its schemas and tools, so the split
     # tools.py / schemas.py pair would be a second, diverging copy.
+    agent_file = "agent_cached.py.tmpl" if args.with_cache else "agent.py.tmpl"
     agent_template = ("workflow/agent_workflow.py.tmpl" if args.workflow
-                      else f"{args.layout}/agent.py.tmpl"
-                      if args.layout == "flat" else "recipes/app/agent.py.tmpl")
+                      else f"flat/{agent_file}"
+                      if args.layout == "flat" else f"recipes/app/{agent_file}")
 
     if args.layout == "recipes":
         add_template("recipes/app/__init__.py.tmpl", root / app_name / "__init__.py")
@@ -292,14 +336,16 @@ def main(argv: list[str] | None = None) -> int:
         add_template("test_eval.py.tmpl", root / "tests/eval/test_eval.py",
                      base=EVAL_RUN_TEMPLATES)
         plan.add(root / "tests/eval/evalsets/happy.evalset.json",
-                 starter_evalset(args.name, app_name, tools), force=args.force)
+                 starter_evalset(args.name, app_name, tools, multi_turn=args.with_cache),
+                 force=args.force)
     else:
         add_template("flat/__init__.py.tmpl", root / app_name / "__init__.py")
         add_template(agent_template, root / app_name / "agent.py")
         add_template("flat/.env.example.tmpl", root / app_name / ".env.example")
         add_template("flat/test_config.json.tmpl", root / app_name / "test_config.json")
         plan.add(root / app_name / "happy.test.json",
-                 starter_evalset(args.name, app_name, tools), force=args.force)
+                 starter_evalset(args.name, app_name, tools, multi_turn=args.with_cache),
+                 force=args.force)
 
     next_steps = [
         "fill in the TODOs in the tool docstrings: they are the model's only description",
@@ -308,7 +354,15 @@ def main(argv: list[str] | None = None) -> int:
         "node is a branch the eval suite does not have to cover",
         "read references/workflow-graphs.md before adding nodes - a node that sets "
         "its output twice raises",
-    ] if args.workflow else []) + [
+    ] if args.workflow else []) + ([
+        "keep `STATIC_INSTRUCTION` free of anything that varies (dates, names, "
+        "f-strings): it is the cached prefix; per-turn context goes in `INSTRUCTION`",
+        "add a multi-turn eval case: caching starts on the second turn, and "
+        "`cached_tokens` in the results is how you see it working",
+        "the cache only engages once the static prefix passes the model floor (2048 "
+        "tokens on Gemini 2.5, 4096 on Gemini 3); a short procedure gets AGT067 from "
+        "/adk:agent-review, and then caching is overhead rather than a saving",
+    ] if args.with_cache else []) + [
         "state the real ordering and refusal rules in the instruction",
         "replace the placeholder eval case with a request that should succeed",
         "then: /adk:eval-create to cover each branch, /adk:eval-criteria to choose metrics",
@@ -318,6 +372,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({
             "agent": args.name, "app_name": app_name, "layout": args.layout,
             "workflow": args.workflow,
+            "with_cache": args.with_cache,
             "tools": [t["name"] for t in tools],
             "write_plan": plan.to_dict(),
             "written": [] if args.dry_run else plan.apply(),

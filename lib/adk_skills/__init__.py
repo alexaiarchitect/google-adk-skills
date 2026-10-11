@@ -9,7 +9,7 @@ need ADK shell out through :mod:`adk_skills.adk_subprocess`.
 __version__ = "0.1.0"
 
 # The ADK release this plugin's rules were checked against.
-ADK_TARGET = "2.10"
+ADK_TARGET = "2.11"
 
 # The oldest release still expected to work. Everything the plugin does runs on
 # 2.9 as well; where behaviour differs (the efficiency metrics, the

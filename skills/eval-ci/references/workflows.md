@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install "google-adk[eval]==2.10.*"
+      - run: pip install "google-adk[eval]==2.11.*"
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}

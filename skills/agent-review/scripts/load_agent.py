@@ -55,6 +55,10 @@ try:
         result["export"] = "app"
         result["app_name"] = loaded.name
         result["plugins"] = [type(p).__name__ for p in (loaded.plugins or [])]
+        cache = getattr(loaded, "context_cache_config", None)
+        result["context_cache_config"] = (
+            cache.model_dump(exclude_none=True) if cache is not None else None
+        )
         agent = loaded.root_agent
     elif loaded is not None:
         yaml_config = os.path.join(agents_dir, agent_name, "root_agent.yaml")
@@ -89,6 +93,19 @@ try:
         result["sub_agents"] = [getattr(s, "name", "?") for s in (getattr(agent, "sub_agents", None) or [])]
         instruction = getattr(agent, "instruction", "")
         result["instruction_chars"] = len(instruction) if isinstance(instruction, str) else -1
+        static = getattr(agent, "static_instruction", None)
+        if static is None:
+            result["static_instruction_chars"] = 0
+        elif isinstance(static, str):
+            result["static_instruction_chars"] = len(static)
+        else:
+            parts = getattr(static, "parts", None)
+            if parts is None:
+                parts = static if isinstance(static, list) else [static]
+            result["static_instruction_chars"] = sum(
+                len(p) if isinstance(p, str) else len(getattr(p, "text", None) or "")
+                for p in parts
+            )
     result["loaded"] = True
 except Exception as exc:
     result["loaded"] = False

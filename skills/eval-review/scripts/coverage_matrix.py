@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     agent = facts.root_agent()
     dynamic = bool(agent and getattr(agent, "instruction_is_dynamic", False))
     llm_root = bool(agent and agent.call in LLM_AGENT_CALLS)
-    rules = extract_sop_rules(agent.instruction_text if agent else None, facts.bound_tool_names)
+    rules = extract_sop_rules(agent.spec_text if agent else None, facts.bound_tool_names)
 
     paths = [Path(p) for p in (args.evalset or layout.evalsets)]
     docs = {}

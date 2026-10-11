@@ -610,6 +610,32 @@ def _validate_custom_metrics(
             report.add("CFG052", "error", "config", "custom metric config must be an object",
                        path=path, locator=locator, source=_SRC_CONFIG)
             continue
+        unknown = sorted(set(config) - CUSTOM_METRIC_KEYS)
+        if unknown:
+            hint = ("; the metric's value range goes under `metric_info.metric_value_info."
+                    "interval` (min_value / max_value)") if "metric" in unknown else ""
+            report.add(
+                "CFG057", "warn", "config",
+                f"unrecognized key(s) on custom metric {name!r}: {', '.join(unknown)}; "
+                "CustomMetricConfig ignores them" + hint,
+                path=path, locator=locator,
+                fix="the keys are `code_config`, `metric_info` and `description`",
+                source="adk-python: evaluation/eval_config.py (CustomMetricConfig)",
+            )
+        info = config.get("metric_info")
+        if info is not None:
+            problem = _metric_info_problem(info)
+            if problem:
+                report.add(
+                    "CFG058", "error", "config",
+                    f"`metric_info` on custom metric {name!r} {problem}, so EvalConfig "
+                    "fails to load",
+                    path=path, locator=f"{locator}.metric_info",
+                    fix='{"metric_name": "<name>", "metric_value_info": {"interval": '
+                        '{"min_value": 0.0, "max_value": 1.0}}}; ADK overwrites '
+                        "`metric_name` with the key, but the field is still required",
+                    source="adk-python: evaluation/eval_metrics.py (MetricInfo)",
+                )
         code_config = config.get("code_config")
         if not isinstance(code_config, dict) or not code_config.get("name"):
             report.add("CFG053", "error", "config",
@@ -640,6 +666,38 @@ def _validate_custom_metrics(
             fix="ADK blanks `eval_metric.threshold` before calling a custom function",
             source="adk-python: evaluation/custom_metric_evaluator.py",
         )
+
+
+#: `CustomMetricConfig` fields (2.9.2 and 2.11.0 alike; extra keys are ignored,
+#: not rejected, so a misspelt one silently does nothing).
+CUSTOM_METRIC_KEYS = frozenset({"code_config", "metric_info", "description"})
+
+
+def _metric_info_problem(info: Any) -> str | None:
+    """What `MetricInfo.model_validate` would reject, or None.
+
+    Required: `metric_name` and `metric_value_info`; an `interval` inside the
+    latter needs numeric `min_value` and `max_value`.
+    """
+    if not isinstance(info, dict):
+        return "must be an object"
+    if not info.get("metric_name"):
+        return "has no `metric_name`"
+    value_info = info.get("metric_value_info")
+    if not isinstance(value_info, dict):
+        return "has no `metric_value_info`"
+    interval = value_info.get("interval")
+    if interval is None:
+        return None
+    if not isinstance(interval, dict):
+        return "has a `metric_value_info.interval` that is not an object"
+    missing = [key for key in ("min_value", "max_value")
+               if not isinstance(interval.get(key), (int, float)) or isinstance(interval.get(key), bool)]
+    if missing:
+        return f"has an interval without a numeric {' and '.join(missing)}"
+    if interval["min_value"] > interval["max_value"]:
+        return "has an interval whose min_value is above its max_value"
+    return None
 
 
 def _dotted_path_exists(dotted: str, agent_dir: Path | str) -> bool:

@@ -12,10 +12,13 @@ For each failing case it reports:
 * **rubric verdicts**, by id, so a judge failure names the property that failed.
 * **NOT_EVALUATED** separately from failure, because "the judge was unreachable"
   and "the agent regressed" need different fixes.
-* the **efficiency** figures ADK 2.10 reports on every run (tool calls,
+* the **efficiency** figures ADK 2.10+ reports on every run (tool calls,
   inference calls, tokens, seconds per invocation) in their own table. They carry
   `eval_status` 4 (`INFORMATIONAL`): a value, never a verdict, so they are not
-  counted as passes, failures or skips.
+  counted as passes, failures or skips. The `cached` column and the cache-hit
+  ratio (`cached_tokens / prompt_tokens`) show whether context caching served
+  part of the prompt; both read "n/a" when the run did not report them (ADK 2.9
+  has no efficiency metrics). To compare two runs, use `compare_runs.py`.
 
     summarize_results.py <agent-dir | result.json | --dir eval_history>
                          [--latest] [--eval-id ID] [--format json|md]
@@ -38,7 +41,8 @@ from adk_skills.report import (  # noqa: E402
     EXIT_FINDINGS, EXIT_INCONCLUSIVE, EXIT_OK, EXIT_USAGE,
 )
 from adk_skills.results import (  # noqa: E402
-    CaseResult, RunResult, find_result_files, latest_per_evalset, parse_result,
+    CaseResult, RunResult, cache_hit_ratio, find_result_files, latest_per_evalset,
+    parse_result,
 )
 from adk_skills.trajectory import cascade_suspect, diff, quadrant
 
@@ -61,6 +65,19 @@ NOT_EVALUATED_CAUSES = (
 )
 
 
+def _cache_entry(case: CaseResult) -> dict | None:
+    """Cached and prompt tokens for the case, and their ratio; None when the run
+    reported no token breakdown."""
+    usage = case.token_usage()
+    if not usage:
+        return None
+    return {
+        "cached_tokens": usage.get("cached_tokens"),
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "cache_hit_ratio": cache_hit_ratio(usage),
+    }
+
+
 def analyze_case(case: CaseResult) -> dict:
     trajectory = case.metric(TRAJECTORY_METRIC)
     response = next((case.metric(name) for name in RESPONSE_METRICS if case.metric(name)), None)
@@ -72,6 +89,7 @@ def analyze_case(case: CaseResult) -> dict:
         # verdict, so mixing them in would read as extra passes.
         "metrics": [m.to_dict() for m in case.gate_metrics()],
         "efficiency": [m.to_dict() for m in case.efficiency_metrics()],
+        "cache": _cache_entry(case),
         "failing_metrics": [m.name for m in case.failing_metrics()],
         "unevaluated_metrics": [m.name for m in case.unevaluated_metrics()],
         # A failed case with no metric results at all did not score badly: the run
@@ -113,7 +131,7 @@ def analyze_case(case: CaseResult) -> dict:
     return entry
 
 
-#: The unit each 2.10 efficiency metric reports, per invocation.
+#: The unit each efficiency metric (ADK 2.10+) reports, per invocation.
 EFFICIENCY_UNITS = {
     "tool_call_count_v1": "tool calls",
     "inference_call_count_v1": "model calls",
@@ -132,19 +150,35 @@ def efficiency_table(metrics: list[dict]) -> list[str]:
         return []
     lines = [
         "",
-        "**Efficiency (informational, lower is better).** Reported by ADK 2.10 on every "
+        "**Efficiency (informational, lower is better).** Reported by ADK 2.10+ on every "
         "run, per invocation, averaged over the case. No thresholds, no pass or fail: "
-        "compare against your own earlier runs.",
+        "compare against your own earlier runs (`compare_runs.py`).",
         "",
-        "| metric | value | unit |",
-        "|---|---|---|",
+        "| metric | value | unit | cached |",
+        "|---|---|---|---|",
     ]
+    ratio_line = None
     for metric in metrics:
         score = "n/a" if metric["score"] is None else f"{metric['score']:g}"
+        cached = "-"
+        usage = metric.get("token_usage") or {}
+        if metric["name"] == "token_usage_v1":
+            value = usage.get("cached_tokens")
+            cached = "n/a" if value is None else f"{value:g}"
+            ratio = cache_hit_ratio(usage)
+            ratio_line = (
+                f"Cache-hit ratio: {ratio:.1%} of prompt tokens came from the context cache "
+                f"(cached {usage['cached_tokens']:g} / prompt {usage['prompt_tokens']:g})."
+                if ratio is not None else
+                "Cache-hit ratio: n/a (no cached or prompt token count reported)."
+            )
         lines.append(
             f"| `{metric['name']}` | {score} | "
-            f"{EFFICIENCY_UNITS.get(metric['name'], 'per invocation')} |"
+            f"{EFFICIENCY_UNITS.get(metric['name'], 'per invocation')} | {cached} |"
         )
+    if ratio_line:
+        lines.append("")
+        lines.append(ratio_line)
     for metric in metrics:
         usage = metric.get("token_usage") or {}
         if usage:
@@ -161,6 +195,9 @@ def render(run: RunResult, cases: list[dict], *, filtered: bool = False) -> str:
     lines = [f"# {Path(run.path).name}", ""]
     lines.append(f"`{run.eval_set_id}`: **{run.passed} passed, {run.failed} failed, "
                  f"{run.not_evaluated} never scored** of {len(run.cases)} case(s).")
+    ratio = run.token_means()["cache_hit_ratio"]
+    if ratio is not None:
+        lines.append(f"Context cache served {ratio:.1%} of this run's prompt tokens.")
     if filtered:
         lines.append("")
         lines.append(f"Showing {len(cases)} of them.")

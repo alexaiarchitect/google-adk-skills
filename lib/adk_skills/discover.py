@@ -18,7 +18,7 @@ from typing import Any, Iterable, Sequence
 from . import ADK_TARGET
 from .env import (
     BACKEND_REQUIREMENT, BackendInfo, RunnerSpec, detect_backend, resolve_runner,
-    version_is_supported,
+    version_at_least, version_is_supported,
 )
 from .eval_config import LoadedConfig, load_config, validate_config
 from .evalset import LoadedEvalSet, load_evalset, stats, validate_evalset
@@ -26,7 +26,10 @@ from .layout import LayoutInfo, detect_layout
 from .metrics import DEFAULT_CRITERIA, cost_tier
 from .report import GapReport, Option
 from .results import find_result_files, latest_per_evalset, parse_result
-from .tools_ast import LLM_AGENT_CALLS, ModuleFacts, extract_module, tool_resolver
+from .tools_ast import (
+    LLM_AGENT_CALLS, PLUGIN_EXPORTS, ModuleFacts, cache_suite_findings, extract_module,
+    tool_resolver,
+)
 
 ALL_FOCUS = ("layout", "env", "agent", "evalsets", "configs", "results", "coverage", "ci")
 
@@ -92,6 +95,15 @@ class Discovery:
     @property
     def tool_names(self) -> set[str]:
         return self.facts.bound_tool_names if self.facts else set()
+
+    @property
+    def context_cache_config(self) -> dict[str, Any] | None:
+        """The App's `ContextCacheConfig` kwargs: None when caching is off, `{}`
+        when it is on but not readable from the source."""
+        if not self.facts:
+            return None
+        app = next((a for a in self.facts.apps if a.context_cache_set), None)
+        return None if app is None else dict(app.context_cache_config or {})
 
     @property
     def resolver(self):
@@ -160,7 +172,7 @@ class Discovery:
         agent = self.facts.root_agent()
         dynamic = bool(agent and agent.instruction_is_dynamic)
         rules = [] if dynamic else extract_sop_rules(
-            agent.instruction_text if agent else None, self.tool_names
+            agent.spec_text if agent else None, self.tool_names
         )
         docs = {
             path: loaded.doc
@@ -244,6 +256,11 @@ class Discovery:
                 "agent_unresolved": self.facts.agent_unresolved,
                 "agent_unresolved_reason": self.facts.agent_unresolved_reason,
                 "instruction_dynamic": agent.instruction_is_dynamic if agent else False,
+                "static_instruction_chars": agent.static_instruction_len if agent else 0,
+                "static_instruction_dynamic": bool(agent and agent.static_instruction_dynamic),
+                "cache_prefix_tokens_estimate":
+                    agent.cache_prefix_tokens_estimate if agent else 0,
+                "context_cache_config": self.context_cache_config,
                 "sub_agents": agent.sub_agents if agent else [],
                 "app_exported": self.facts.app is not None,
                 "plugins": self.facts.app.plugins if self.facts.app else [],
@@ -397,6 +414,30 @@ class Discovery:
             report.extend(self.facts.findings)
             for error in self.facts.syntax_errors:
                 report.add("AGT000", "error", "agent", f"could not parse: {error}")
+            self._add_plugin_version_findings(report)
+            if "evalsets" in self.focus:
+                report.extend(cache_suite_findings(
+                    self.facts, [loaded.doc for loaded in self.evalsets.values()]))
+
+    def _add_plugin_version_findings(self, report: GapReport) -> None:
+        """AGT066: a plugin the project imports is newer than the runner."""
+        version = self.runner.adk_version if self.runner else None
+        if not self.facts or not version:
+            return
+        for name, since in sorted(PLUGIN_EXPORTS.items()):
+            if since == "2.0" or version_at_least(version, since):
+                continue
+            if not any(item.endswith(f".{name}") for item in self.facts.imports):
+                continue
+            report.add(
+                "AGT066", "error", "agent",
+                f"`{name}` needs ADK {since} or later, and the runner is ADK {version}, "
+                "so the import fails before the agent loads",
+                path=self.layout.agent_module_file,
+                fix=f"upgrade the project to google-adk>={since}, or drop the plugin; it is "
+                    "lazily exported from `google.adk.plugins`",
+                source="adk-python: plugins/__init__.py",
+            )
 
     def _add_evalset_findings(self, report: GapReport) -> None:
         if "evalsets" not in self.focus:

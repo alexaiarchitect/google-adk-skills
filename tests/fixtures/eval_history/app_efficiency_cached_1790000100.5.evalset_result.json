@@ -1,0 +1,531 @@
+{
+ "eval_set_result_id": "app_efficiency_cached_1790000100.5",
+ "eval_set_result_name": "app_efficiency_cached_1790000100.5",
+ "eval_set_id": "efficiency_cached",
+ "creation_timestamp": 1790000100.5,
+ "eval_case_results": [
+  {
+   "eval_set_file": "efficiency_cached",
+   "eval_set_id": "efficiency_cached",
+   "eval_id": "happy_travel_within_policy",
+   "final_eval_status": 1,
+   "eval_metric_results": null,
+   "overall_eval_metric_results": [
+    {
+     "metric_name": "tool_trajectory_avg_score",
+     "threshold": 1.0,
+     "score": 1.0,
+     "eval_status": 1,
+     "criterion": {
+      "threshold": 1.0
+     }
+    },
+    {
+     "metric_name": "tool_call_count_v1",
+     "score": 1.0,
+     "eval_status": 4,
+     "details": {}
+    },
+    {
+     "metric_name": "inference_call_count_v1",
+     "score": 2.0,
+     "eval_status": 4,
+     "details": {}
+    },
+    {
+     "metric_name": "token_usage_v1",
+     "score": 300.0,
+     "eval_status": 4,
+     "details": {
+      "token_usage_details": {
+       "total_tokens": 300.0,
+       "input_tokens": 245.0,
+       "prompt_tokens": 238.0,
+       "cached_tokens": 190.0,
+       "tool_use_tokens": 7.0,
+       "output_tokens": 55.0,
+       "candidates_tokens": 50.0,
+       "reasoning_tokens": 5.0
+      }
+     }
+    },
+    {
+     "metric_name": "invocation_duration_v1",
+     "score": 1.8,
+     "eval_status": 4,
+     "details": {}
+    }
+   ],
+   "overall_token_usage_details": {
+    "total_tokens": 300.0,
+    "input_tokens": 245.0,
+    "prompt_tokens": 238.0,
+    "cached_tokens": 190.0,
+    "tool_use_tokens": 7.0,
+    "output_tokens": 55.0,
+    "candidates_tokens": 50.0,
+    "reasoning_tokens": 5.0
+   },
+   "eval_metric_result_per_invocation": [
+    {
+     "actual_invocation": {
+      "invocation_id": "e-1",
+      "user_content": {
+       "parts": [
+        {
+         "text": "Submit claim CLM-000412 for 900 dollars of travel on the engineering cost centre."
+        }
+       ],
+       "role": "user"
+      },
+      "final_response": {
+       "parts": [
+        {
+         "text": "Submitted CLM-000412 for 900 USD against engineering."
+        }
+       ],
+       "role": "model"
+      },
+      "intermediate_data": {
+       "tool_uses": [
+        {
+         "name": "lookup_policy",
+         "args": {
+          "req": {
+           "category": "travel"
+          }
+         }
+        }
+       ]
+      },
+      "creation_timestamp": 1790000100.0,
+      "duration": 1.8
+     },
+     "expected_invocation": {
+      "invocation_id": "x-1",
+      "user_content": {
+       "parts": [
+        {
+         "text": "Submit claim CLM-000412 for 900 dollars of travel on the engineering cost centre."
+        }
+       ],
+       "role": "user"
+      },
+      "final_response": {
+       "parts": [
+        {
+         "text": "Submitted CLM-000412 for 900 USD against engineering."
+        }
+       ],
+       "role": "model"
+      },
+      "intermediate_data": {
+       "tool_uses": [
+        {
+         "name": "lookup_policy",
+         "args": {
+          "req": {
+           "category": "travel"
+          }
+         }
+        }
+       ]
+      }
+     },
+     "eval_metric_results": [
+      {
+       "metric_name": "tool_trajectory_avg_score",
+       "threshold": 1.0,
+       "score": 1.0,
+       "eval_status": 1,
+       "criterion": {
+        "threshold": 1.0
+       }
+      },
+      {
+       "metric_name": "tool_call_count_v1",
+       "score": 1.0,
+       "eval_status": 4,
+       "details": {}
+      },
+      {
+       "metric_name": "inference_call_count_v1",
+       "score": 2.0,
+       "eval_status": 4,
+       "details": {}
+      },
+      {
+       "metric_name": "token_usage_v1",
+       "score": 300.0,
+       "eval_status": 4,
+       "details": {
+        "token_usage_details": {
+         "total_tokens": 300.0,
+         "input_tokens": 245.0,
+         "prompt_tokens": 238.0,
+         "cached_tokens": 190.0,
+         "tool_use_tokens": 7.0,
+         "output_tokens": 55.0,
+         "candidates_tokens": 50.0,
+         "reasoning_tokens": 5.0
+        }
+       }
+      },
+      {
+       "metric_name": "invocation_duration_v1",
+       "score": 1.8,
+       "eval_status": 4,
+       "details": {}
+      }
+     ],
+     "token_usage_details": {
+      "total_tokens": 300.0,
+      "input_tokens": 245.0,
+      "prompt_tokens": 238.0,
+      "cached_tokens": 190.0,
+      "tool_use_tokens": 7.0,
+      "output_tokens": 55.0,
+      "candidates_tokens": 50.0,
+      "reasoning_tokens": 5.0
+     },
+     "overall_eval_status": 1
+    }
+   ],
+   "session_id": "___eval___session___f0a1c2d3-cached-1",
+   "user_id": "evaluator"
+  },
+  {
+   "eval_set_file": "efficiency_cached",
+   "eval_set_id": "efficiency_cached",
+   "eval_id": "happy_equipment_then_follow_up",
+   "final_eval_status": 1,
+   "eval_metric_results": null,
+   "overall_eval_metric_results": [
+    {
+     "metric_name": "tool_trajectory_avg_score",
+     "threshold": 1.0,
+     "score": 1.0,
+     "eval_status": 1,
+     "criterion": {
+      "threshold": 1.0
+     }
+    },
+    {
+     "metric_name": "tool_call_count_v1",
+     "score": 1.5,
+     "eval_status": 4,
+     "details": {}
+    },
+    {
+     "metric_name": "inference_call_count_v1",
+     "score": 2.5,
+     "eval_status": 4,
+     "details": {}
+    },
+    {
+     "metric_name": "token_usage_v1",
+     "score": 410.0,
+     "eval_status": 4,
+     "details": {
+      "token_usage_details": {
+       "total_tokens": 410.0,
+       "input_tokens": 350.0,
+       "prompt_tokens": 343.0,
+       "cached_tokens": 300.0,
+       "tool_use_tokens": 7.0,
+       "output_tokens": 60.0,
+       "candidates_tokens": 54.0,
+       "reasoning_tokens": 6.0
+      }
+     }
+    },
+    {
+     "metric_name": "invocation_duration_v1",
+     "score": 2.0,
+     "eval_status": 4,
+     "details": {}
+    }
+   ],
+   "overall_token_usage_details": {
+    "total_tokens": 410.0,
+    "input_tokens": 350.0,
+    "prompt_tokens": 343.0,
+    "cached_tokens": 300.0,
+    "tool_use_tokens": 7.0,
+    "output_tokens": 60.0,
+    "candidates_tokens": 54.0,
+    "reasoning_tokens": 6.0
+   },
+   "eval_metric_result_per_invocation": [
+    {
+     "actual_invocation": {
+      "invocation_id": "e-2",
+      "user_content": {
+       "parts": [
+        {
+         "text": "Submit claim CLM-000977 for 640 dollars of equipment on the operations cost centre."
+        }
+       ],
+       "role": "user"
+      },
+      "final_response": {
+       "parts": [
+        {
+         "text": "Submitted CLM-000977 for 640 USD against operations."
+        }
+       ],
+       "role": "model"
+      },
+      "intermediate_data": {
+       "tool_uses": [
+        {
+         "name": "lookup_policy",
+         "args": {
+          "req": {
+           "category": "equipment"
+          }
+         }
+        },
+        {
+         "name": "check_cost_centre_funds",
+         "args": {
+          "req": {
+           "cost_centre": "operations",
+           "amount_usd": 640.0
+          }
+         }
+        },
+        {
+         "name": "submit_claim",
+         "args": {
+          "req": {
+           "claim_id": "CLM-000977",
+           "cost_centre": "operations",
+           "amount_usd": 640.0
+          }
+         }
+        }
+       ]
+      },
+      "creation_timestamp": 1790000101.0,
+      "duration": 2.6
+     },
+     "expected_invocation": {
+      "invocation_id": "x-2",
+      "user_content": {
+       "parts": [
+        {
+         "text": "Submit claim CLM-000977 for 640 dollars of equipment on the operations cost centre."
+        }
+       ],
+       "role": "user"
+      },
+      "final_response": {
+       "parts": [
+        {
+         "text": "Submitted CLM-000977 for 640 USD against operations."
+        }
+       ],
+       "role": "model"
+      },
+      "intermediate_data": {
+       "tool_uses": [
+        {
+         "name": "lookup_policy",
+         "args": {
+          "req": {
+           "category": "equipment"
+          }
+         }
+        },
+        {
+         "name": "check_cost_centre_funds",
+         "args": {
+          "req": {
+           "cost_centre": "operations",
+           "amount_usd": 640.0
+          }
+         }
+        },
+        {
+         "name": "submit_claim",
+         "args": {
+          "req": {
+           "claim_id": "CLM-000977",
+           "cost_centre": "operations",
+           "amount_usd": 640.0
+          }
+         }
+        }
+       ]
+      }
+     },
+     "eval_metric_results": [
+      {
+       "metric_name": "tool_trajectory_avg_score",
+       "threshold": 1.0,
+       "score": 1.0,
+       "eval_status": 1,
+       "criterion": {
+        "threshold": 1.0
+       }
+      },
+      {
+       "metric_name": "tool_call_count_v1",
+       "score": 3.0,
+       "eval_status": 4,
+       "details": {}
+      },
+      {
+       "metric_name": "inference_call_count_v1",
+       "score": 4.0,
+       "eval_status": 4,
+       "details": {}
+      },
+      {
+       "metric_name": "token_usage_v1",
+       "score": 520.0,
+       "eval_status": 4,
+       "details": {
+        "token_usage_details": {
+         "total_tokens": 520.0,
+         "input_tokens": 460.0,
+         "prompt_tokens": 446.0,
+         "cached_tokens": 380.0,
+         "tool_use_tokens": 14.0,
+         "output_tokens": 60.0,
+         "candidates_tokens": 54.0,
+         "reasoning_tokens": 6.0
+        }
+       }
+      },
+      {
+       "metric_name": "invocation_duration_v1",
+       "score": 2.6,
+       "eval_status": 4,
+       "details": {}
+      }
+     ],
+     "token_usage_details": {
+      "total_tokens": 520.0,
+      "input_tokens": 460.0,
+      "prompt_tokens": 446.0,
+      "cached_tokens": 380.0,
+      "tool_use_tokens": 14.0,
+      "output_tokens": 60.0,
+      "candidates_tokens": 54.0,
+      "reasoning_tokens": 6.0
+     },
+     "overall_eval_status": 1
+    },
+    {
+     "actual_invocation": {
+      "invocation_id": "e-3",
+      "user_content": {
+       "parts": [
+        {
+         "text": "Which cost centre did that go to?"
+        }
+       ],
+       "role": "user"
+      },
+      "final_response": {
+       "parts": [
+        {
+         "text": "CLM-000977 was charged to operations."
+        }
+       ],
+       "role": "model"
+      },
+      "intermediate_data": {
+       "tool_uses": []
+      },
+      "creation_timestamp": 1790000104.0,
+      "duration": 1.4
+     },
+     "expected_invocation": {
+      "invocation_id": "x-3",
+      "user_content": {
+       "parts": [
+        {
+         "text": "Which cost centre did that go to?"
+        }
+       ],
+       "role": "user"
+      },
+      "final_response": {
+       "parts": [
+        {
+         "text": "CLM-000977 was charged to operations."
+        }
+       ],
+       "role": "model"
+      },
+      "intermediate_data": {
+       "tool_uses": []
+      }
+     },
+     "eval_metric_results": [
+      {
+       "metric_name": "tool_trajectory_avg_score",
+       "threshold": 1.0,
+       "score": 1.0,
+       "eval_status": 1,
+       "criterion": {
+        "threshold": 1.0
+       }
+      },
+      {
+       "metric_name": "tool_call_count_v1",
+       "score": 0.0,
+       "eval_status": 4,
+       "details": {}
+      },
+      {
+       "metric_name": "inference_call_count_v1",
+       "score": 1.0,
+       "eval_status": 4,
+       "details": {}
+      },
+      {
+       "metric_name": "token_usage_v1",
+       "score": 300.0,
+       "eval_status": 4,
+       "details": {
+        "token_usage_details": {
+         "total_tokens": 300.0,
+         "input_tokens": 240.0,
+         "prompt_tokens": 240.0,
+         "cached_tokens": 220.0,
+         "tool_use_tokens": 0.0,
+         "output_tokens": 60.0,
+         "candidates_tokens": 54.0,
+         "reasoning_tokens": 6.0
+        }
+       }
+      },
+      {
+       "metric_name": "invocation_duration_v1",
+       "score": 1.4,
+       "eval_status": 4,
+       "details": {}
+      }
+     ],
+     "token_usage_details": {
+      "total_tokens": 300.0,
+      "input_tokens": 240.0,
+      "prompt_tokens": 240.0,
+      "cached_tokens": 220.0,
+      "tool_use_tokens": 0.0,
+      "output_tokens": 60.0,
+      "candidates_tokens": 54.0,
+      "reasoning_tokens": 6.0
+     },
+     "overall_eval_status": 1
+    }
+   ],
+   "session_id": "___eval___session___f0a1c2d3-cached-2",
+   "user_id": "evaluator"
+  }
+ ]
+}

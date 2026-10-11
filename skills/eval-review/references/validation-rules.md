@@ -11,11 +11,11 @@ rule comes from. Ids are stable.
 | `EVS002` | error | no `eval_set_id` |
 | `EVS003` | error | `eval_set_id` outside `^[a-zA-Z0-9_]+$` (ADK enforces this when it writes an eval set, so a dash or a dot breaks the round trip) |
 | `EVS004`/`EVS005` | error | `eval_cases` missing, or not an array |
-| `EVS006` | warn | `eval_cases` is empty: the file asserts nothing — and on ADK 2.10 the pytest path raises `ValueError` for it, where 2.9 ran and reported nothing |
+| `EVS006` | warn | `eval_cases` is empty: the file asserts nothing — and on ADK 2.10+ the pytest path raises `ValueError` for it, where 2.9 ran and reported nothing |
 | `EVS040` | warn | unrecognized top-level key. `EvalSet` ignores extras, so a typo is silent |
 | `EVS041` | warn | the file mixes camelCase and snake_case keys |
 | `EVS047` | error | key on `intermediate_data` that fits neither of its two shapes (`IntermediateData` with `tool_uses`, or `InvocationEvents` with `invocation_events`, which is what a captured run writes), or the two shapes mixed in one object; both forbid extras, so the file fails to load |
-| `EVS049` | info | the case carries a 2.10-only invocation field (`duration`): 2.10 reads it, ADK 2.9.2 refuses the whole file with `extra_forbidden` |
+| `EVS049` | info | the case carries a 2.10+ invocation field (`duration`): 2.10 and later read it, ADK 2.9.2 refuses the whole file with `extra_forbidden` |
 | `EVS050` | warn | legacy list format; ADK converts it on read and assigns a random `eval_set_id` |
 
 ## Cases (`EVS01x`, `EVS03x`, `EVS06x`)
@@ -50,7 +50,7 @@ directory instead. Recommended value: the agent directory name.
 | Id | Severity | Trigger |
 |---|---|---|
 | `EVS020` | error | invocation is not an object |
-| `EVS021` | error | unrecognized key on the invocation. `Invocation` is `extra="forbid"` — still true on 2.10 — so the file fails to load. Its legal keys on 2.10 are `invocation_id`, `user_content`, `final_response`, `intermediate_data`, `creation_timestamp`, `duration`, `rubrics`, `app_details`; `InvocationEvent`, by contrast, gained `extra="ignore"` in 2.10, so an unknown key on an **event** is dropped rather than rejected |
+| `EVS021` | error | unrecognized key on the invocation. `Invocation` is `extra="forbid"` — still true on 2.11 — so the file fails to load. Its legal keys on 2.10 and 2.11 are `invocation_id`, `user_content`, `final_response`, `intermediate_data`, `creation_timestamp`, `duration`, `rubrics`, `app_details`; `InvocationEvent`, by contrast, gained `extra="ignore"` in 2.10, so an unknown key on an **event** is dropped rather than rejected |
 | `EVS022`/`EVS023` | error | no `user_content`; `user_content` with no text and no other part |
 | `EVS024` | warn | `user_content.role` is not `user` |
 | `EVS025` | error | no `final_response` text while a **response**-reference metric is active |
@@ -93,9 +93,13 @@ eval-review report next to a config or conformance one:
 
 | Id | Severity | Trigger |
 |---|---|---|
-| `CFG070` | error | `criteria` names one of the four ADK 2.10 efficiency metrics. They take no threshold: 2.10 raises `ValueError` at run time, 2.9 raises `NotFoundError`, and no config-level validation in either version catches it. Remove the entry — they are reported automatically |
-| `CFG071` | info | ADK 2.10 also reports those four informational metrics on every run, so a result file carries entries your config never asked for. Reported when the resolved runner is 2.10 or newer, or unknown |
+| `CFG070` | error | `criteria` names one of the four ADK 2.10 efficiency metrics. They take no threshold: 2.10+ raises `ValueError` at run time, 2.9 raises `NotFoundError`, and no config-level validation in either version catches it. Remove the entry — they are reported automatically |
+| `CFG071` | info | ADK 2.10+ also reports those four informational metrics on every run, so a result file carries entries your config never asked for. Reported when the resolved runner is 2.10 or newer, or unknown |
+| `CFG057` | warn | an unrecognized key on a `custom_metrics` entry (e.g. `metric`), which ADK ignores; the range belongs in `metric_info.metric_value_info.interval` |
+| `CFG058` | error | `metric_info` on a custom metric lacks `metric_name` or `metric_value_info`, or its interval lacks numeric `min_value` / `max_value`, so the config fails to load |
+| `CNF015` | error (exit 2) | a conformance case has `input.yaml` or `test.yaml` and no `spec.yaml`. `adk conformance record --help` still names those files on 2.9.2–2.11.0, but the code reads only `spec.yaml` |
 | `CNF020` | error | a conformance case directory has no `generated-recordings.yaml` (or `-sse` variant) for replay mode. ADK skips such a case with a yellow warning and the run can still exit 0 |
+| `CNF021` | error (exit 2) | streaming mode `bidi`: the CLI accepts it, and ADK's recorder and replayer raise "Unsupported streaming mode" |
 
 ## Coverage (`EVS07x`, `GAP-*`)
 
@@ -119,7 +123,7 @@ Trajectory matching compares arguments as dictionaries, so:
 
 Sources: `adk-python: evaluation/eval_case.py` (the per-model `extra` settings and
 `Invocation.duration`, read on the 2.10.0 wheel), `evaluation/agent_evaluator.py`
-(the empty-eval-set `ValueError`, 2.10 only), `evaluation/eval_set.py`,
+(the empty-eval-set `ValueError`, 2.10+; absent from 2.9), `evaluation/eval_set.py`,
 `evaluation/common.py`, `evaluation/local_eval_sets_manager.py`,
 `evaluation/evaluation_generator.py`, `evaluation/trajectory_evaluator.py`,
 `runners.py`, `tools/function_tool.py`, `flows/llm_flows/functions.py`;

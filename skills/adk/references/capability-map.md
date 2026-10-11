@@ -33,6 +33,14 @@ any of them can also be invoked directly.
 - **vertex** — the Vertex AI Gen AI Evaluation Service. `safety_v1`,
   `response_evaluation_score`, `multi_turn_*`. Needs a project and location.
 
+## Which level of metric each skill deals in
+
+The three-level taxonomy (computation, rubric judge, managed autorater) and the
+discovery/defense split are laid out in [eval-engineering.md](eval-engineering.md).
+In short: the `free` tier is the computation level, `judge` the rubric level,
+`vertex` the managed level; `/adk:agent-debug` and the dev UI are discovery,
+`/adk:eval-run` and `/adk:eval-ci` are defense.
+
 ## A normal sequence
 
 Building something new:
@@ -45,6 +53,12 @@ Taking over something that exists:
 
 ```
 /adk:adk  →  /adk:agent-review  →  /adk:eval-review  →  /adk:eval-create (close gaps)  →  /adk:eval-run
+```
+
+Improving something on purpose (the eval-driven loop):
+
+```
+/adk:eval-create (the case first)  →  /adk:eval-run (baseline)  →  change  →  /adk:eval-run  →  /adk:eval-analyze compare_runs.py
 ```
 
 Something is failing:
@@ -63,4 +77,6 @@ out through a resolved interpreter and say which one they used.
 
 ---
 
-Sources: this plugin.
+Sources: this plugin; the discovery/defense framing from Vlad Kolesnikov, "From
+'vibe checks' to continuous evaluation: engineering reliable AI agents", Google
+Cloud blog, 2026-02-28, https://cloud.google.com/blog/topics/developers-practitioners/from-vibe-checks-to-continuous-evaluation-engineering-reliable-ai-agents.

@@ -61,6 +61,13 @@ to 50 runs and an explicit per-case floor. Five runs cannot distinguish 95% from
 A nightly failure that only appears in a job nobody reads is not a gate. Wire it
 to wherever the team actually looks.
 
+## Past the release tier: deploy is not release
+
+The tiers above gate code. For a deployed agent the last step can be gated too:
+deploy the new revision with no traffic, tagged with the commit, run the gate,
+and only then move traffic to it. The pattern, with a GitHub Actions sketch and
+no shipped template: [shadow-rollout.md](shadow-rollout.md).
+
 ## NOT_EVALUATED in CI
 
 Fail on it. A never-scored case means the judge could not be reached, a reference

@@ -1,0 +1,46 @@
+"""{{AGENT_DESCRIPTION}}"""
+
+import os
+
+from google.adk.agents import Agent
+from google.adk.agents.context_cache_config import ContextCacheConfig
+from google.adk.apps import App
+
+from .tools import {{TOOL_NAMES}}
+
+#: The model is read from the environment so the agent survives a model
+#: retirement. `gemini-flash-latest` is an alias, not a dated id.
+MODEL = os.getenv("MODEL_NAME", "gemini-flash-latest")
+
+#: The operating procedure: identical on every request, so it is the prefix the
+#: context cache stores. ADK sends `static_instruction` verbatim as the system
+#: instruction and never fills `{placeholders}` in it, so nothing that varies -
+#: a date, a user name, an f-string - belongs here.
+STATIC_INSTRUCTION = """{{INSTRUCTION}}"""
+
+#: The per-turn part. It is sent after the cached prefix, so it may change on
+#: every turn without invalidating the cache. `{turn_context?}` is filled from
+#: session state when the key exists and left empty when it does not.
+INSTRUCTION = """Apply the operating procedure in your system instruction to this request.
+Context for this turn, from session state: {turn_context?}"""
+
+root_agent = Agent(
+    name="{{AGENT_NAME}}",
+    model=MODEL,
+    description="{{AGENT_DESCRIPTION}}",
+    static_instruction=STATIC_INSTRUCTION,
+    instruction=INSTRUCTION,
+    tools=[{{TOOL_NAMES}}],
+)
+
+#: Context caching. It starts on a session's second turn, and only once the
+#: prefix reaches the model's floor (2,048 tokens on Gemini 2.5, 4,096 on
+#: Gemini 3), so it pays off on multi-turn sessions with a long procedure.
+#: `cache_intervals` is how many invocations reuse one cache before a refresh
+#: (1..100); `ttl_seconds` how long it lives. Check `cached_tokens` in the
+#: eval results' `token_usage_v1` details to see it working.
+CACHE_CONFIG = ContextCacheConfig(min_tokens=2048, ttl_seconds=600, cache_intervals=5)
+
+#: The loader prefers an `App`, and plugins, context caching and resumability
+#: only reach a run - including an eval run - through one.
+app = App(name="{{APP_NAME}}", root_agent=root_agent, context_cache_config=CACHE_CONFIG)

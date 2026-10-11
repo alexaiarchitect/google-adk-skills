@@ -117,6 +117,7 @@ Six things, in the order they usually matter:
 |---|---|
 | How every skill in this plugin behaves | [interaction-protocol.md](references/interaction-protocol.md) |
 | What each skill does, what it needs, what it costs | [capability-map.md](references/capability-map.md) |
+| The frame: discovery vs defense, three metric levels, the eval-driven loop | [eval-engineering.md](references/eval-engineering.md) |
 | The report format and finding-id scheme | [gap-report-format.md](references/gap-report-format.md) |
 | Backends, `.env`, Vertex, picking a Python runner | [environment.md](references/environment.md) |
 | The layouts ADK accepts, and where eval files belong | [layouts.md](references/layouts.md) |

@@ -2,19 +2,20 @@
 
 {{METRIC_DESCRIPTION}}
 
-Register it in the eval config by its dotted path:
+Register it in the eval config: name it in `criteria` with its threshold, and
+point `custom_metrics` at this function by its dotted path. `CONFIG_SNIPPET`
+below is that entry; merge it into the config file:
 
-    {
-      "criteria": {
-        "{{METRIC_NAME}}": {
-          "threshold": {{THRESHOLD}},
-          "custom_function_path": "{{DOTTED_PATH}}"
-        }
-      }
-    }
+{{CONFIG_SNIPPET_TEXT}}
+
+`custom_metrics.<name>` takes `code_config.name` (the dotted path), an optional
+`description`, and an optional `metric_info` whose value range lives under
+`metric_value_info.interval` (`min_value` / `max_value`). Any other key is
+ignored. Without `metric_info`, ADK registers the metric with the interval
+0.0-1.0.
 
 The module has to be importable from wherever the evaluation runs, because ADK
-resolves that path with `importlib.import_module`. Keeping it inside the agent
+resolves the path with `importlib.import_module`. Keeping it inside the agent
 package is the reliable way to arrange that.
 
 **The one gotcha.** `_CustomMetricEvaluator` copies the `EvalMetric` and sets
@@ -26,17 +27,21 @@ it raises or silently passes everything. The threshold lives on
 
 from __future__ import annotations
 
-from typing import Optional
+{{STDLIB_IMPORTS}}from typing import Optional
 
 from google.adk.evaluation.eval_case import ConversationScenario
-from google.adk.evaluation.eval_case import Invocation
+{{ADK_IMPORTS}}from google.adk.evaluation.eval_case import Invocation
 from google.adk.evaluation.eval_metrics import EvalMetric
-from google.adk.evaluation.evaluator import EvalStatus
+{{METRIC_INFO_IMPORTS}}from google.adk.evaluation.evaluator import EvalStatus
 from google.adk.evaluation.evaluator import EvaluationResult
 from google.adk.evaluation.evaluator import PerInvocationResult
 
 #: Used when the config names the metric without a criterion of its own.
 DEFAULT_THRESHOLD = {{THRESHOLD}}
+
+#: The eval config entry that registers this metric. Validate it with
+#: `EvalConfig.model_validate(CONFIG_SNIPPET)`.
+CONFIG_SNIPPET = {{CONFIG_SNIPPET_PY}}
 
 
 def _threshold(eval_metric: EvalMetric) -> float:
@@ -51,28 +56,15 @@ def _threshold(eval_metric: EvalMetric) -> float:
     return DEFAULT_THRESHOLD if threshold is None else float(threshold)
 
 
-def _score_one(
-    actual: Invocation,
-    expected: Optional[Invocation],
-) -> float:
-    """Score a single invocation, between 0.0 and 1.0.
+def _status(score: Optional[float], threshold: float) -> EvalStatus:
+    """No score is NOT_EVALUATED, never a failure: conflating the two is how a
+    broken suite looks green, or a healthy one red."""
+    if score is None:
+        return EvalStatus.NOT_EVALUATED
+    return EvalStatus.PASSED if score >= threshold else EvalStatus.FAILED
 
-    TODO: the real rule. This is the whole reason for a custom metric - it
-    should be something deterministic that the built-in catalog cannot express,
-    such as a business invariant ("a submitted claim id must match the one the
-    user gave") or a domain check a judge would score inconsistently.
 
-    Keep it deterministic. A custom metric that calls a model is a judge metric
-    with none of the calibration machinery, and it will drift.
-    """
-    del expected                       # TODO: compare against the golden trace
-    tool_names = []
-    intermediate = getattr(actual, "intermediate_data", None)
-    for tool_use in getattr(intermediate, "tool_uses", None) or []:
-        name = getattr(tool_use, "name", None)
-        if name:
-            tool_names.append(name)
-    return 1.0 if tool_names else 0.0
+{{SCORE_FUNCTION}}
 
 
 {{FUNCTION_BODY}}

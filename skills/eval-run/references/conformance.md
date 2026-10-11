@@ -36,9 +36,16 @@ come from `StreamingMode`, matched case-insensitively:
 |---|---|
 | `none` | records `generated-session.yaml` and `generated-recordings.yaml` |
 | `sse` | records the `-sse.yaml` variants of both |
-| `bidi` | parses, then raises `ValueError("Unsupported streaming mode: ...")` — in record and in test |
+| `bidi` | parses, then raises `ValueError("Unsupported streaming mode: ...")` — in record and in test, on 2.9.2, 2.10.0 and 2.11.0. This plugin's wrapper refuses it up front (`CNF021`, exit 2) |
 
-Files are written beside a hand-written `spec.yaml`:
+Files are written beside a hand-written `spec.yaml`, the only input file the
+code reads (it collects `spec.yaml` files recursively and loads each as a
+`TestSpec`). **`adk conformance record --help` is stale on every release through
+2.11.0:** it still describes `input.yaml` → `test.yaml`, and neither name is read.
+`adk conformance test --help` says `spec.yaml`; main has since rewritten the
+record help. The plugin's wrapper refuses a case with `input.yaml` or
+`test.yaml` and no `spec.yaml` (`CNF015`, exit 2) instead of letting ADK skip it.
+2.9.2 and 2.11.0 run the same recording and replay code.
 
 ```yaml
 description: Approves a travel claim within policy.
@@ -64,7 +71,7 @@ adk conformance test tests/conformance \
 
 Replay compares the live LLM requests and tool calls against the recording.
 `--mode live` is not implemented yet. No flag on `record` or `test` changed
-between 2.9.2 and 2.10.0 — the `--help` output is byte-identical.
+between 2.9.2, 2.10.0 and 2.11.0 — the `--help` output is byte-identical.
 
 **It exits non-zero when a case fails.** On failure the command raises
 `click.ClickException("N test(s) failed")`, which click turns into exit 1. That
@@ -72,20 +79,18 @@ makes it the one command in the ADK eval family you can gate CI on directly —
 unlike `adk eval`, which prints failures and still exits 0. Say which one a
 workflow is calling before you trust its green tick.
 
-### The gap in that gate, as of 2.10.0
+### The gap in that gate, closed in 2.11.0
 
-`_print_test_summary` walks one summary per streaming mode, and **`return`s on the
-first mode that ran no tests** — so a later mode's failures are never printed and
-never raised, and the command exits 0. It also raises on the first failing mode
-only. Two consequences for a CI job: check that the run reported the number of
-tests you expected, and prefer one invocation per streaming mode over relying on
-a single multi-mode run to fail.
+On **2.9.2 and 2.10.0** `_print_test_summary` walks one summary per streaming
+mode and **`return`s on the first mode that ran no tests**, so a later mode's
+failures are never printed or raised and the command exits 0; it also raises on
+the first failing mode only.
 
-A rewrite that summarizes every mode, fails when any mode failed, fails when the
-mode named by `--streaming-mode` ran nothing, and fails when no mode ran anything,
-is on `adk-python` **main after the 2.10.0 tag and is not in any release**
-(`5355c7c6`). Do not plan around it yet; the paragraph above is the behaviour of
-the 2.10.0 wheel.
+**2.11.0** ships the rewrite (`5355c7c6`): every mode is summarized, and the
+command fails when any mode failed, when the mode named by `--streaming-mode`
+ran nothing, or when no mode ran anything at all. On a 2.11 pin a single
+multi-mode run is a sound gate. On 2.9 or 2.10, check that the run reported the
+number of tests you expected and prefer one invocation per streaming mode.
 
 ### Missing recordings
 
@@ -94,10 +99,11 @@ Two different failures, and only one of them is loud.
 **A case directory with no recordings file is skipped.** In replay mode
 `cli_test.py` looks for `generated-recordings.yaml` (or
 `generated-recordings-sse.yaml` in `sse` mode) and, when it is absent, prints
-`Skipping <category>/<name>: no recordings` in yellow and moves on. On **both**
-2.9.2 and 2.10.0. Skip every case and the mode runs no tests, which the summary
-reports as "No tests were run." and exits **0** — a conformance job that proves
-nothing while looking fine. This plugin's wrapper therefore refuses the run itself
+`Skipping <category>/<name>: no recordings` in yellow and moves on, on every
+release through 2.11.0. Skip every case and the mode runs no tests: 2.9.2 and
+2.10.0 report "No tests were run." and exit **0** — a conformance job that proves
+nothing while looking fine. 2.11.0 fails that run, but still skips any single
+case that lacks its file while the rest pass. This plugin's wrapper therefore refuses the run itself
 with **`CNF020`**, naming each case directory and the file it lacks, before ADK is
 invoked; `--skip-recordings-check` runs anyway, for the case where skipping is what
 you meant.
@@ -148,12 +154,12 @@ Conformance is strict by design. That is both its value and its price.
 ---
 
 Sources: `adk-python: cli/conformance/` (`cli_record.py`, `cli_test.py`
-(`_print_test_summary`, read in the installed 2.10.0 wheel), `test_case.py`
+(`_print_test_summary`, read in the installed 2.10.0 and 2.11.0 wheels), `test_case.py`
 (`TestSpec`, `UserMessage`), `adk_web_server_client.py` (the `127.0.0.1:8000`
 default), `_replay_validators.py`, `cli_test.py`'s `Skipping ...: no recordings` branch
-(identical on both wheels), `_conformance_test_google_llm.py` (the
+(identical on all three wheels), `_conformance_test_google_llm.py` (the
 `ReplayVerificationError` quoted above, absent from 2.9.2)),
 `cli/cli_tools_click.py` (`_STREAMING_MODE_CHOICES`, the record/test commands),
 `cli/agent_test_runner.py`; `adk-docs: docs/evaluate/index.md`. The multi-mode
-summary rewrite is `adk-python` commit `5355c7c6`, on main after the `v2.10.0`
-tag; `--help` compared between the 2.9.2 and 2.10.0 wheels.
+summary rewrite is `adk-python` commit `5355c7c6`, released in `v2.11.0`;
+`--help` compared between the 2.9.2, 2.10.0 and 2.11.0 wheels.

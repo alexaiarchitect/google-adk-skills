@@ -1,6 +1,6 @@
 # The ADK evaluation metrics: 17 registered, 13 configurable
 
-ADK 2.10 registers 17 metrics, and this plugin's catalog has all 17. Thirteen of
+ADK 2.10 and 2.11 register 17 metrics, and this plugin's catalog has all 17. Thirteen of
 them are the ones you put in `criteria` — the table below. The other four are the
 efficiency metrics: always on, never configured, informational only (last
 section). `metric_info.py` lists them with tier `informational` and a value range
@@ -35,7 +35,7 @@ blanks.
 
 With **no config at all**, ADK uses `tool_trajectory_avg_score` 1.0 and
 `response_match_score` 0.8 — so an unconfigured run silently fails cases on
-wording. On 2.10 the four efficiency metrics are appended to whatever you
+wording. On 2.10+ the four efficiency metrics are appended to whatever you
 configured, including that default pair.
 
 ## The deterministic pair
@@ -52,7 +52,7 @@ skipped validation or a reordered pipeline.
 | `IN_ORDER` | every expected call appears in the expected relative order; extra calls in between are allowed |
 | `ANY_ORDER` | every expected call appears, in any order |
 
-`ignore_args` (2.9+, unchanged in 2.10) compares names only. It makes a red suite green without
+`ignore_args` (2.9+, unchanged through 2.11) compares names only. It makes a red suite green without
 making the agent better — the right tool with the wrong id passes — so keep it
 off wherever the result gates a release.
 
@@ -129,7 +129,7 @@ below 1 can never fail.
 | Is the answer well-formed for a user? | `rubric_based_final_response_quality_v1` |
 | Is it safe to put in front of people? | `safety_v1` |
 | Does it hold up across a real conversation? | `multi_turn_*`, with user simulation |
-| How expensive did a turn get? | nothing to configure — the efficiency four are reported for you on 2.10 |
+| How expensive did a turn get? | nothing to configure — the efficiency four are reported for you on 2.10+ |
 
 ## Cost
 
@@ -140,8 +140,8 @@ tiering: deterministic metrics on every change, judge metrics nightly.
 
 ## Efficiency (informational, 2.10+)
 
-Four metrics that report a number and never pass or fail anything. **ADK 2.10
-appends all four to every eval automatically** — you do not ask for them, and
+Four metrics that report a number and never pass or fail anything. **ADK 2.10 and later
+append all four to every eval automatically** — you do not ask for them, and
 there is no way to ask for them.
 
 | metric | unit | cost | reference | threshold |
@@ -159,7 +159,7 @@ table.
 
 **Naming one in `criteria` is an error, not a no-op.** There is no way to write
 the name without a threshold (`null` is refused by pydantic), and a threshold is
-what the evaluator rejects — on 2.10, at the moment the run reaches the metric:
+what the evaluator rejects — on 2.10+, at the moment the run reaches the metric:
 
 ```
 ValueError: `tool_call_count_v1` does not support a threshold: it reports a value
@@ -223,4 +223,5 @@ efficiency four: `adk-python: evaluation/_efficiency_evaluators.py` (new in
 descriptions quoted above, and `requires_threshold`),
 `evaluation/metric_evaluator_registry.py` (`_register_standard_metrics`),
 `evaluation/eval_config.py` (`get_eval_metrics_from_config` appends them);
-measured on installed wheels 2.9.2 and 2.10.0.
+measured on installed wheels 2.9.2 and 2.10.0; the 17-metric registry and
+`_reject_threshold` re-read on 2.11.0.

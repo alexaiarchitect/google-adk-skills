@@ -19,7 +19,7 @@ model you configure. Consequences:
   bill, not a stricter credential.
 - They fail differently from a judge metric: no usable credential at all shows up
   as `NOT_EVALUATED`, not as a low score.
-- **`safety_v1` now asks the service for a pinned spec version.** 2.10 requests
+- **`safety_v1` now asks the service for a pinned spec version.** 2.10 and later request
   `PrebuiltMetric.SAFETY(version="v1")` where 2.9.2 requested `SAFETY` and took
   whatever the service considered current. The version string is internal — it
   appears in no config and no result file, and the score still means 1.0 for no
@@ -108,6 +108,24 @@ billing. If you have neither credential, this is what is still available:
 With a Gemini API key you have all of the above **and** the five Vertex-served
 metrics. With no credential at all you have only the free row.
 
+## What the `[eval]` extra installs
+
+These metrics reach the service through `google-cloud-aiplatform[evaluation]`,
+which `google-adk[eval]` pulls in. The pin differs by release, measured from the
+wheels' metadata:
+
+| `google-adk[eval]` | `google-cloud-aiplatform[evaluation]` | resolved in a fresh venv (2026-10-11) |
+|---|---|---|
+| 2.9.2 | `>=1.148`, no upper bound | 2.4.0 |
+| 2.11.0 | `>=1.148,<2` | 1.165.1 |
+
+So a 2.9 environment built today gets the 2.x SDK and a 2.11 environment the
+1.x one; neither installs `google-cloud-agentplatform`. `adk-python` main has
+moved to `aiplatform[evaluation]>=2.2` plus `agentplatform`, but that is after
+the 2.11.0 tag and in no release. If a Vertex-backed metric behaves differently
+between two machines, compare `pip show google-cloud-aiplatform` before anything
+else.
+
 ## GCS eval storage
 
 Unrelated to metrics, same credentials: `adk eval --eval_storage_uri
@@ -120,5 +138,7 @@ Sources: `adk-python: evaluation/vertex_ai_eval_facade.py` (`__init__` reads
 `GOOGLE_API_KEY` before the project pair),
 `evaluation/safety_evaluator.py` (`_VERTEX_SAFETY_SPEC_VERSION = "v1"`, new in
 2.10.0), `evaluation/response_evaluator.py`,
-`cli/utils/evals.py`; `adk-docs: docs/evaluate/criteria.md`,
-`docs/evaluate/index.md`.
+`cli/utils/evals.py`; the `Requires-Dist ... extra == "eval"` lines of the
+installed 2.9.2 and 2.11.0 wheels' `METADATA` (the `>=2.2` / `agentplatform`
+migration is `adk-python` commit `77d4dcd`, main only); `adk-docs:
+docs/evaluate/criteria.md`, `docs/evaluate/index.md`.

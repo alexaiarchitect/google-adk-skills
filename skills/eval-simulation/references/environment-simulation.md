@@ -10,7 +10,7 @@ It is configured on the **agent** side, not in the eval config, because it chang
 what the tools return rather than how results are scored.
 
 The whole feature is gated `@experimental(FeatureName.ENVIRONMENT_SIMULATION)`.
-The shapes below were read on 2.9.2 and re-read on 2.10.0 — identical, field for
+The shapes below were read on 2.9.2 and re-read on 2.10.0 and 2.11.0 — identical, field for
 field. Re-check them on an upgrade all the same.
 
 ## Where the classes live
@@ -190,6 +190,6 @@ Sources: `adk-python: tools/environment_simulation/environment_simulation_config
 `tools/environment_simulation/environment_simulation_plugin.py`,
 `tools/environment_simulation/__init__.py`;
 `adk-docs: docs/evaluate/environment_simulation.md`; every field above compared
-between the installed 2.9.2 and 2.10.0 wheels. The `gemini-2.5-flash`
+between the installed 2.9.2, 2.10.0 and 2.11.0 wheels. The `gemini-2.5-flash`
 policy is this plugin's, sourced from `adk-recipes: AGENTS.md`, not from ADK —
 ADK still defaults `simulation_model` to it.

@@ -45,12 +45,13 @@ run-level ones (`on_user_message_callback`, `before_run_callback`,
 keyword-only.
 
 Built-ins worth knowing — **and where each one actually imports from**, because
-only four are re-exported by the package:
+only some are re-exported by the package:
 
 | Plugin | Import from |
 |---|---|
 | `LoggingPlugin`, `DebugLoggingPlugin` | `google.adk.plugins` |
 | `ReflectAndRetryToolPlugin`, `ReflectAndRetryModelPlugin` | `google.adk.plugins` |
+| `ToolCallIntegrityPlugin`, `ToolCallIntegrityError` (**2.11+**) | `google.adk.plugins` — lazily exported; `ImportError` on 2.9 and 2.10 |
 | `GlobalInstructionPlugin` (replaces the deprecated `global_instruction`) | `google.adk.plugins.global_instruction_plugin` |
 | `SaveFilesAsArtifactsPlugin` | `google.adk.plugins.save_files_as_artifacts_plugin` |
 | `AutoTracingPlugin` | `google.adk.plugins.auto_tracing_plugin` |
@@ -58,10 +59,38 @@ only four are re-exported by the package:
 | `ModelArmorPlugin`, `ModelArmorConfig` | `google.adk.integrations.model_armor` — **not** under `plugins` at all |
 
 `google.adk.plugins.__all__` is exactly `BasePlugin`, `PluginManager` and the
-first two rows, so `from google.adk.plugins import GlobalInstructionPlugin`
-raises `ImportError` — the package's `__getattr__` lazily resolves only the four
-names it lists. The others need their submodule path, and it is the same six names
-on 2.9.2 and 2.10.0.
+names in the first three rows, so `from google.adk.plugins import
+GlobalInstructionPlugin` raises `ImportError` — the package's `__getattr__`
+lazily resolves only the names it lists. The others need their submodule path.
+The lazy list was four names on 2.9.2 and 2.10.0; 2.11.0 adds the integrity pair,
+so code that imports them has to require `google-adk>=2.11`.
+
+### Tool-call integrity (2.11)
+
+`ToolCallIntegrityPlugin(secret_key=b"...")` signs every function call with an
+HMAC as its event is emitted, re-verifies every stored call before each run, and
+lets a tool execute only when its call verifies. It exists for sessions kept in a
+store someone else could write to: a tampered call cannot be given a valid
+stamp. `secret_key` also takes a list for rotation (the first key signs, all
+verify); `allow_unstamped_calls=True` logs instead of raising for calls stored
+before the plugin was installed. Register it **first** in `plugins=[...]`.
+A failed check surfaces as a `RuntimeError` whose `__cause__` is
+`ToolCallIntegrityError`. Tools run as workflow nodes are not covered.
+
+An eval case starts a fresh session, so the plugin signs and verifies its own
+calls and stays out of the way. Events restored through the create-session API
+or `adk run --resume` are marked restored: not verified, and their calls are
+never executed.
+
+### Two other 2.11 additions, in one line each
+
+- **`ModelConsultTool`** (`from google.adk.tools import ModelConsultTool`) lets
+  the executing model escalate a hard step to an advisor model mid-run (default
+  advisor `gemini-3.1-pro-preview`, a preview id the model policy warns about).
+  The advisor's call is a tool call, so it shows in the trajectory and an eval
+  case has to expect it.
+- **`abort_signal`** on `Runner.run_async` takes an `asyncio.Event`; setting it
+  cancels the invocation. Useful in a harness that enforces its own time budget.
 
 ### Model Armor
 
@@ -137,6 +166,10 @@ Plus: everything in `event.output` must be JSON-serializable.
 
 Sources: `adk-python: apps/app.py`, `agents/llm_agent.py`, `plugins/__init__.py`
 (`__all__` and the lazy `__getattr__`), `plugins/`,
+`plugins/_tool_call_integrity_plugin.py` (2.11.0, commit `b7efc4e`),
+`tools/model_consult/_model_consult_tool.py` (`DEFAULT_ADVISOR_MODEL`),
+`runners.py` (`abort_signal`), the three read on the installed 2.11.0 wheel and
+confirmed absent from 2.9.2,
 `integrations/model_armor/` (`_plugin.py`, `_config.py`, `__init__.py`'s
 `__all__` and its import error), `agents/context.py`
 (the output setter), `workflow/_workflow.py` (terminal-output finalization),

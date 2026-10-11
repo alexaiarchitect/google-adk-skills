@@ -357,7 +357,7 @@ def _version_tuple(version: str) -> tuple[int, ...]:
 
 
 def version_is_supported(version: str | None) -> bool:
-    """This plugin targets ADK 2.x: 2.9 and 2.10 are both supported."""
+    """This plugin targets ADK 2.x: 2.9 through 2.11 are all supported."""
     if not version:
         return False
     return version.split(".", 1)[0] == ADK_TARGET.split(".", 1)[0]

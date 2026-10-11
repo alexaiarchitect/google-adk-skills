@@ -45,6 +45,24 @@ comes from. Ids are stable.
 | `AGT051` | **error** | nothing loadable exported | `AgentLoader` looks for `app`, then `root_agent`; `adk eval` and `AgentEvaluator` additionally accept `get_agent_async`, so a factory-only module evaluates but will not load in `adk web` / `adk run` |
 | `AGT000` | **error** | the file could not be parsed | |
 
+## Context caching
+
+When each is worth acting on, and how to prove a caching change paid:
+`../../agent-create/references/context-caching.md`.
+
+| Id | Severity | Trigger | Why |
+|---|---|---|---|
+| `AGT060` | warn | `static_instruction` built with an f-string, `.format()`, `%`, a `datetime`/`date`/`time`/`uuid`/`random`/`secrets` call, a `{var}` placeholder, or an `InstructionProvider` / lambda (followed through `Content`/`Part` wrapping, lists, `+`, `dedent`, module constants) | it is the cached prefix, so any change invalidates the cache; and ADK sends it verbatim, so placeholders are never filled. Move the varying part to `instruction=` |
+| `AGT061` | info | an instruction of ≥ 8,000 characters, no `static_instruction`, no App `context_cache_config` | about 2k tokens resent every request; split and cache it if the agent is multi-turn |
+| `AGT062` | **error** | `ContextCacheConfig` out of bounds (`cache_intervals` 1–100, `ttl_seconds` > 0, `min_tokens` ≥ 0) or an unknown field; a name bound to a constant is followed | building the App raises `ValidationError` |
+| `AGT063` | info | caching on, and every eval case is one turn with no expected tool call | each session makes one model request, and the first only records a fingerprint: the suite cannot show a cache hit |
+| `AGT065` | warn | a plugin imported from `google.adk.plugins._…` | a private module path; import from `google.adk.plugins` (`ToolCallIntegrityPlugin` / `Error` need 2.11+) |
+| `AGT066` | **error** | `ToolCallIntegrityPlugin` with a resolved runner older than 2.11 (reported by discovery) | the import fails before the agent loads; the only check gated on 2.11 |
+| `AGT067` | info | `context_cache_config` is set but the estimated static prefix (instruction chars / 4 plus about 60 tokens per bound tool, exposed as `cache_prefix_tokens_estimate`) is below `max(min_tokens, 2048)`; skipped when the prefix is built at runtime | ADK creates a cache only once the previous request reached `min_tokens`, and the model floor is 2048 (Gemini 2.5) or 4096 (Gemini 3), so early turns never qualify and later hits are mostly history; grow the procedure, lower `min_tokens` only above the floor, or drop the config. The upstream `cache_analysis` sample earns this note (about 3,370 tokens against `min_tokens=4096`) |
+
+No `AGT064`: `global_instruction` is `AGT002`. `AGT020` does not fire when only
+`static_instruction` is set.
+
 ## Evaluation readiness
 
 | Id | Severity | Trigger |
@@ -77,8 +95,9 @@ imports; evals prove it behaves.
 ---
 
 Sources: `adk-python: agents/base_agent.py`, `agents/llm_agent.py`,
-`agents/loop_agent.py`, `apps/app.py`, `tools/function_tool.py`,
+`agents/loop_agent.py`, `apps/app.py`, `agents/context_cache_config.py`
+(`AGT062`'s bounds), `tools/function_tool.py`,
 `cli/utils/agent_loader.py`, `agents/config_agent_utils.py`;
 `adk-docs: docs/tools-custom/function-tools.md`, `docs/sessions/state.md`,
-`docs/2.0/index.md`; `adk-recipes: AGENTS.md` (`AGT005`, the model-deprecation
+`docs/2.0/index.md`, `docs/context/caching.md` (`AGT060`–`AGT063`, `AGT065`–`AGT067`); `adk-recipes: AGENTS.md` (`AGT005`, the model-deprecation
 policy — the sole source for it).

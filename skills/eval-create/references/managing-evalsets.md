@@ -159,9 +159,9 @@ session", "Edit current eval case", the metric dialog, `adk eval` arguments);
 `adk-python/src/google/adk/evaluation/local_eval_sets_manager.py` (id rules and
 the skip-on-existing behaviour);
 `adk-python/src/google/adk/evaluation/_eval_sets_manager_utils.py`
-(`update_eval_case_in_eval_set`, in place on 2.10 and remove-then-append on 2.9);
+(`update_eval_case_in_eval_set`, in place on 2.10+ and remove-then-append on 2.9);
 `adk-python/src/google/adk/evaluation/eval_case.py`
-(`InvocationEvent.model_config`, `extra="ignore"` in 2.10); `adk-python/src/google/adk/evaluation/
+(`InvocationEvent.model_config`, `extra="ignore"` since 2.10); `adk-python/src/google/adk/evaluation/
 gcs_eval_sets_manager.py` and `gcs_eval_set_results_manager.py` (GCS storage).
 Background reading: the LinkedIn Learning course "Evaluating AI Agents with
 Google ADK", which covers the dev-UI evaluation workflow.

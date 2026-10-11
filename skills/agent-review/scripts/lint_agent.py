@@ -12,7 +12,11 @@ Ten dimensions:
 3. agent configuration — the kwargs that raise at construction
 4. tool contracts — docstrings, type hints, return shapes, raising versus returning
 5. state — writes that never persist
-6. App wiring — plugins, caching, resumability reach a run through an App
+6. App wiring — plugins, caching, resumability reach a run through an App;
+   a cached prefix that changes per request (AGT060), a large uncached
+   instruction (AGT061), an out-of-range ContextCacheConfig (AGT062), caching
+   with eval cases that each make one model request (AGT063), a cached prefix
+   too small to engage (AGT067), private plugin imports (AGT065)
 7. ADK 2.x drift — deprecated workflow shells, `global_instruction`, YAML config
 8. environment — backend configured, model id available
 9. eval readiness — does the instruction have branches a case can cover
@@ -35,9 +39,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 
 from adk_skills.coverage import branch_count, extract_sop_rules  # noqa: E402
 from adk_skills.env import classify_model_id, detect_backend  # noqa: E402
+from adk_skills.evalset import load_evalset  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport  # noqa: E402
-from adk_skills.tools_ast import LLM_AGENT_CALLS, extract_module  # noqa: E402
+from adk_skills.tools_ast import (  # noqa: E402
+    LLM_AGENT_CALLS, cache_suite_findings, extract_module,
+)
+
+
+def _cache_config(facts) -> dict | None:
+    """The exported App's ContextCacheConfig kwargs; `{}` for an unreadable one."""
+    app = next((a for a in facts.apps if a.context_cache_set), None)
+    if app is None:
+        return None
+    return dict(app.context_cache_config or {})
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -104,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
                    source="adk-python: runners.py")
 
     # 9. eval readiness
-    rules = extract_sop_rules(agent.instruction_text if agent else None, facts.bound_tool_names)
+    rules = extract_sop_rules(agent.spec_text if agent else None, facts.bound_tool_names)
     branches = branch_count(rules)
     dynamic = bool(agent and getattr(agent, "instruction_is_dynamic", False))
     llm_root = bool(agent and agent.call in LLM_AGENT_CALLS)
@@ -112,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         report.add("AGT054", "info", "agent",
                    "the instruction is built at runtime (an InstructionProvider); rule "
                    "coverage cannot be read statically", path=agent.file)
-    elif llm_root and agent.has_instruction and not rules:
+    elif llm_root and (agent.has_instruction or agent.has_static_instruction) and not rules:
         report.add("AGT052", "warn", "agent",
                    "the instruction contains no testable rule",
                    path=agent.file,
@@ -124,6 +139,10 @@ def main(argv: list[str] | None = None) -> int:
                    "path to test",
                    path=agent.file,
                    fix="if the agent should ever refuse, say so in the instruction")
+
+    # 6. caching against the suite: a cache only shows up from turn two
+    report.extend(cache_suite_findings(
+        facts, [load_evalset(path).doc for path in layout.evalsets]))
 
     if not layout.evalsets:
         report.add_gap("GAP-EVALSET", "No evalset",
@@ -167,8 +186,12 @@ def main(argv: list[str] | None = None) -> int:
         "tools_defined_here": sorted(set(facts.tools) & facts.bound_tool_names),
         "opaque_tools": dict(sorted(facts.opaque_tools.items())),
         "pydantic_models": sorted(facts.models),
+        "static_instruction_chars": agent.static_instruction_len if agent else 0,
+        "static_instruction_dynamic": bool(agent and agent.static_instruction_dynamic),
+        "cache_prefix_tokens_estimate": agent.cache_prefix_tokens_estimate if agent else 0,
         "app_exported": facts.app is not None,
         "plugins": facts.app.plugins if facts.app else [],
+        "context_cache_config": _cache_config(facts),
         "sop_rules": len(rules),
         "branches": branches,
         "evalsets": len(layout.evalsets),

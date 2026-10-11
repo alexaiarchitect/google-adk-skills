@@ -11,11 +11,12 @@ adk eval AGENT_MODULE_FILE_PATH [EVAL_SET_FILE_PATH_OR_ID ...]
          [--log_level debug|info|warning|error|critical]
 ```
 
-That is the whole list, and it is **identical on 2.9.2 and 2.10.0** — the `--help`
-output of `adk eval`, `adk eval_set`, `adk eval_set generate_eval_cases`,
+That is the whole list, and it is **identical on 2.9.2, 2.10.0 and 2.11.0** — the
+`--help` output of `adk eval`, `adk eval_set`, `adk eval_set create`,
+`adk eval_set add_eval_case`, `adk eval_set generate_eval_cases`,
 `adk conformance record` and `adk conformance test` is byte-for-byte the same
-between the two releases. No eval or conformance flag was added, renamed or
-removed in 2.10.
+across the three releases. No eval or conformance flag was added, renamed or
+removed in 2.10 or 2.11.
 
 | Argument | Notes |
 |---|---|
@@ -34,7 +35,7 @@ removed in 2.10.
   averages, or running the command again, which is what `run_evals.py --runs N`
   does.
 - **No parallelism flag.** `InferenceConfig.parallelism` and
-  `EvaluateConfig.parallelism` exist, but only on the programmatic path. On 2.10 a
+  `EvaluateConfig.parallelism` exist, but only on the programmatic path. On 2.10+ a
   value below 1 raises ``ValueError: `parallelism` must be at least 1, got N.``
   where 2.9.2 built a semaphore of 0 and hung forever.
 
@@ -88,6 +89,13 @@ comes from `tempfile.gettempdir()`, so it is platform dependent — `/tmp` on
 Linux, a private per-user directory on macOS. Do not guess it: ADK echoes both
 the real filename and `To access latest log: tail -F <path>` at startup.
 
+**No `--state_file` on any release.** `adk-python` main has an `adk run
+--state_file` option (seed the session state from a JSON file), but it landed
+after the 2.11.0 tag; `adk run --help` on the 2.11.0 wheel does not list it. Until
+it ships, seed state through an evalset's `session_input` or the dev UI. The only
+`adk run` help change in 2.11.0 is service-URI wording: Agent Platform
+auto-detection and a `sqlite:///` memory-service URI.
+
 ## Two other test commands
 
 | Command | What it is |
@@ -118,5 +126,6 @@ Sources: `adk-python: cli/cli_tools_click.py`, `cli/cli_eval.py`, `cli/cli.py`,
 `evaluation/_eval_set_results_manager_utils.py` (`create_eval_set_result`),
 `cli/utils/evals.py`, `evaluation/local_eval_service.py`
 (`_parallelism_semaphore`, the 2.10 guard); `adk-docs: docs/evaluate/index.md`.
-Every flag list above was diffed between the installed 2.9.2 and 2.10.0 wheels'
-`--help` output.
+Every flag list above was diffed between the installed 2.9.2, 2.10.0 and 2.11.0
+wheels' `--help` output; `--state_file` is `adk-python` commit `c390266`, on main
+after the `v2.11.0` tag.

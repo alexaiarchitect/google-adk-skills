@@ -89,7 +89,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
   `GOOGLE_GENAI_USE_VERTEXAI` says. They are the `vertex` tier because it is a
   separate, separately billed service that ignores `judge_model_options` — not
   because a key is insufficient.
-- **The four efficiency metrics cannot be configured.** On ADK 2.10
+- **The four efficiency metrics cannot be configured.** On ADK 2.10+
   `tool_call_count_v1`, `inference_call_count_v1`, `token_usage_v1` and
   `invocation_duration_v1` are appended to every eval automatically and reported
   as informational values. Naming one in `criteria` is an error at run time, so
@@ -119,9 +119,9 @@ Templates: `assets/templates/configs/` (one per criterion family) and
 |---|---|---|
 | `scripts/metric_info.py [name] [--tier pr\|nightly] [--user-sim] [--json]` | the catalog (17 entries: 13 configurable, 4 informational), or one metric in detail | 0, 2 unknown name |
 | `scripts/gen_config.py --tier pr\|nightly\|custom [--metrics ...] [--rubrics-file F] [--judge-model M] [--num-samples N] [--style snake\|camel] [--out F] [--dry-run]` | writes a config and validates it. No tier emits an efficiency metric and `--metrics` refuses one (exit 2) — there is nothing to add, so there is no flag for it | 0, 1 contradictory, 2 usage |
-| `scripts/validate_config.py <config\|agent-dir> [--agent-dir D] [--no-backend] [--no-probe] [--adk-version V] [--strict]` | checks an existing config, and reports the resolved `adk_version`: `CFG070` (error) for an efficiency metric named in `criteria`, `CFG071` (info) that 2.10 reports the four anyway. `--no-probe` skips resolving the runner, `--adk-version` states it | 0 clean, 1 findings, 2 bad target |
+| `scripts/validate_config.py <config\|agent-dir> [--agent-dir D] [--no-backend] [--no-probe] [--adk-version V] [--strict]` | checks an existing config, and reports the resolved `adk_version`: `CFG070` (error) for an efficiency metric named in `criteria`, `CFG071` (info) that 2.10+ reports the four anyway. `--no-probe` skips resolving the runner, `--adk-version` states it | 0 clean, 1 findings, 2 bad target |
 | `scripts/gen_rubrics.py --kind positive\|restraint\|trajectory [--tool T --condition C] [--spec JSON] [--lint F]` | builds and lints rubrics | 0 clean, 1 findings, 2 usage |
-| `scripts/gen_custom_metric.py --name N --out F [--kind sync\|async] [--threshold F] [--with-metric-info] [--dry-run]` | scaffolds a custom metric that reads `criterion.threshold` and returns per-invocation results, plus its config snippet | 0 written, 1 refused, 2 usage |
+| `scripts/gen_custom_metric.py --name N --out F [--kind sync\|async\|trajectory-precision\|trajectory-recall] [--with-args] [--threshold F] [--with-metric-info] [--dry-run]` | scaffolds a custom metric that reads `criterion.threshold` and returns per-invocation results, plus its `criteria` + `custom_metrics` config snippet (also kept as `CONFIG_SNIPPET`); the trajectory kinds score extra or missing tool calls as a fraction, multiset match, order ignored | 0 written, 1 refused, 2 usage |
 
 ## Completion checklist
 

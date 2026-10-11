@@ -101,24 +101,104 @@ Two details worth getting right:
 
 ## Registration
 
+Two entries, one in each top-level key: `criteria` decides that the metric runs
+and with what threshold, `custom_metrics` says where its function lives.
+
 ```json
 {
   "criteria": {
+    "claim_id_matches_request": 1.0
+  },
+  "custom_metrics": {
     "claim_id_matches_request": {
-      "threshold": 1.0,
-      "custom_function_path": "app.metrics.claim_id_matches_request"
+      "code_config": {"name": "app.metrics.claim_id_matches_request"},
+      "description": "The submitted claim id is the one the user gave."
     }
   }
 }
 ```
 
-The dotted path must import from wherever the evaluation runs. Put the module
-**inside the agent package** (`app/metrics.py` → `app.metrics`); a module at the
-project root only imports when the working directory happens to be right, which
-CI will eventually get wrong. `validate_config.py` resolves the path (CFG055)
-and will say so when it cannot.
+`code_config.name` is split at its last dot and imported, so the module part must
+import from wherever the evaluation runs. Put the module **inside the agent
+package** (`app/metrics.py` → `app.metrics`); a module at the project root only
+imports when the working directory happens to be right, which CI will eventually
+get wrong. `validate_config.py` resolves the path (CFG055) and says so when it
+cannot.
 
-## Optional: a `MetricInfo` provider
+**The old shape fails late.** A `custom_function_path` key inside the `criteria`
+entry is accepted (criteria allow extra keys) and ignored, so the config loads
+and the run then fails with "not found in registry". Same on 2.9.2 and 2.11.0.
+`gen_custom_metric.py` prints the two-entry snippet and also keeps it in the
+generated module as `CONFIG_SNIPPET`.
+
+For more than a one-line description, `metric_info` takes a whole `MetricInfo`.
+Its value range sits **inside** `metric_value_info.interval`:
+
+```json
+"metric_info": {
+  "metric_name": "claim_id_matches_request",
+  "description": "The submitted claim id is the one the user gave.",
+  "metric_value_info": {"interval": {"min_value": 0.0, "max_value": 1.0}}
+}
+```
+
+Without `metric_info` ADK assumes a 0–1 range. `MetricInfo`, `MetricValueInfo`
+and `Interval` all forbid unknown keys, so `min_value` at the top of
+`metric_info` fails validation loudly. A key spelled `metric` instead of
+`metric_info` is not a field of `CustomMetricConfig`, so it is dropped and the
+metric quietly gets default info. Older ADK docstrings showed that wrong shape;
+the field has been `metric_info` on every 2.x release. `validate_config.py`
+catches both: `CFG057` (warn) for an unrecognized key on a custom metric, with
+a pointer to `metric_info.metric_value_info.interval`, and `CFG058` (error) for
+a `metric_info` missing `metric_name` or `metric_value_info`, or an interval
+without numeric bounds.
+
+## Trajectory precision and recall
+
+`tool_trajectory_avg_score` answers one question per invocation with a 1 or a 0,
+and its three match types differ only in what they forgive:
+
+| Built-in | Extra calls | Missing calls | Order |
+|---|---|---|---|
+| `EXACT` | fail | fail | must match |
+| `IN_ORDER` | allowed | fail | must match |
+| `ANY_ORDER` | allowed | fail | ignored |
+
+Two things none of them can say: **"no extra calls, in any order"**, and **"how
+much of the expected work was done"**. Precision and recall say both:
+
+- **precision** = matched calls / actual calls — falls when the agent does
+  something nobody asked for. At threshold 1.0 it is a deterministic restraint
+  check.
+- **recall** = matched calls / expected calls — falls when the agent skips
+  expected work, and gives partial credit for a long trajectory that was mostly
+  right.
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/gen_custom_metric.py --name trajectory_precision \
+    --out app/metrics_precision.py --kind trajectory-precision [--with-args]
+```
+
+`--kind trajectory-precision` and `--kind trajectory-recall` write the metric with
+one `PerInvocationResult` per turn. Calls match as a **multiset** with order
+ignored, by tool name by default and by name and arguments with `--with-args`.
+An invocation with no expected trajectory (a user-simulation turn) is
+`NOT_EVALUATED`, not failed. Driven over the same synthetic invocation on 2.9.2
+and 2.11.0, the two kinds scored 2/3 and 0.5. The generator prints both config
+entries.
+
+When to prefer them:
+
+| Need | Use |
+|---|---|
+| the pipeline order is the rule | `tool_trajectory_avg_score` `EXACT` or `IN_ORDER` |
+| no unrequested side effects, order irrelevant | precision at 1.0 (plus recall at 1.0 for "exactly these, any order") |
+| long or exploratory trajectories, where all-or-nothing hides progress | recall with a threshold below 1.0, nightly |
+
+They are computation-level metrics: free, deterministic, fit for the PR tier,
+and a complement to `tool_trajectory_avg_score`, which stays where order matters.
+
+## Optional: a `MetricInfo` provider function
 
 ```python
 def my_metric_metric_info() -> MetricInfo:
@@ -135,15 +215,11 @@ ADK scores the metric without one. It exists so the metric is legible in the dev
 UI and in metric listings, which starts to matter the moment somebody other than
 the author is choosing criteria.
 
-**`requires_threshold` (2.10+)** is a new `MetricInfo` field, default `True`.
-ADK's four efficiency metrics are the only things that set it `False`: a metric
-that does not require a threshold reports a value and an `INFORMATIONAL` status
-instead of a verdict, and ADK's own wording says surfaces that ask a user to pick
-metrics and set thresholds should skip those. A custom metric reads
-`criterion.threshold` to decide a pass or fail, so leave the default alone;
-setting it `False` on a metric whose evaluator still compares against a threshold
-only misleads whoever reads the listing. Note that `False` does not buy you the
-efficiency metrics' behaviour — theirs is in their evaluators, which *reject* a
+**`requires_threshold` (2.10+)** is a `MetricInfo` field, default `True`; only
+ADK's four efficiency metrics set it `False`, which makes a metric report a value
+with an `INFORMATIONAL` status instead of a verdict. A custom metric decides pass
+or fail from `criterion.threshold`, so leave the default alone. `False` does not
+buy the efficiency metrics' behaviour either: their evaluators reject a
 configured threshold outright.
 
 ## Cost and tier
@@ -159,7 +235,15 @@ Sources: `adk-python/src/google/adk/evaluation/custom_metric_evaluator.py`
 `PerInvocationResult`, `EvalStatus`);
 `adk-python/src/google/adk/evaluation/eval_metrics.py` (`EvalMetric`,
 `BaseCriterion`, `MetricInfo`, `MetricValueInfo`, `Interval`);
+`adk-python/src/google/adk/evaluation/eval_config.py` (`CustomMetricConfig`:
+`code_config`, `metric_info`, `description`, identical on 2.9.2 and 2.11.0) and
+`docs/guides/evaluation/eval_config/index.md` (the `metric_value_info.interval`
+shape, main);
 `adk-docs/docs/evaluate/custom_metrics.md`. Verified against live ADK 2.9.2 and
-2.10.0 installs by driving a generated metric through `_CustomMetricEvaluator`.
+2.10.0 installs by driving a generated metric through `_CustomMetricEvaluator`;
+the `custom_metrics` shape validated on 2.11.0. The precision/recall framing for
+trajectories is from Vlad Kolesnikov, "From 'vibe checks' to continuous
+evaluation: engineering reliable AI agents", Google Cloud blog, 2026-02-28,
+https://cloud.google.com/blog/topics/developers-practitioners/from-vibe-checks-to-continuous-evaluation-engineering-reliable-ai-agents.
 Background reading: the LinkedIn Learning course "Evaluating AI Agents with
 Google ADK", for the criteria methodology these metrics extend.

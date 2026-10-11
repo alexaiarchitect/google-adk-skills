@@ -141,7 +141,7 @@ to the live/bidi path, which changes how inference is performed.
 
 Sources: `adk-python: evaluation/eval_config.py` (the
 `Threshold | BaseCriterion` union, and `get_eval_metrics_from_config`, which on
-2.10 appends the four efficiency metrics with no threshold),
+2.10+ appends the four efficiency metrics with no threshold),
 `evaluation/_efficiency_evaluators.py` (`_reject_threshold`),
 `evaluation/eval_metrics.py`
 (`BaseCriterion` and its subclasses, `extra="allow"`),

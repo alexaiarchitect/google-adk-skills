@@ -45,6 +45,7 @@ choices, so that the first eval case has something exact to assert.
    | workflow graph (`--workflow`, with either layout) | deterministic steps around one LLM node |
    | add a tool to an existing agent (`render_tool.py`) | the agent exists; one more contract is needed |
    | eval scaffolding only (`/adk:eval-run gen_test_eval.py`) | the agent exists; only the gate is missing |
+   | context caching (`--with-cache`, not with `--workflow`) | a long, fixed procedure reused over multi-turn sessions; pointless for one- or two-turn use |
 
 3. **Interview.** Only the questions the request has not already answered:
 
@@ -118,12 +119,13 @@ graph read `nodeInfo.path` in traces; a node may set its output once.
 | App, plugins, callbacks and where guardrails belong | [app-and-plugins.md](references/app-and-plugins.md) |
 | State, memory and what persists | [state-and-memory.md](references/state-and-memory.md) |
 | Workflow graphs: nodes, edges, joins, human input, testing them | [workflow-graphs.md](references/workflow-graphs.md) |
+| Context caching: when it pays, what breaks the prefix, proving the gain | [context-caching.md](references/context-caching.md) |
 
 ## Scripts
 
 | Command | Does | Exit codes |
 |---|---|---|
-| `scripts/scaffold_agent.py --name N --dir D [--layout recipes\|flat] [--workflow] --tools SPEC [--description T] [--sop-file F] [--dry-run] [--force]` | writes the project | 0 written, 1 refused, 2 usage |
+| `scripts/scaffold_agent.py --name N --dir D [--layout recipes\|flat] [--workflow \| --with-cache] --tools SPEC [--description T] [--sop-file F] [--dry-run] [--force]` | writes the project | 0 written, 1 refused, 2 usage |
 | `scripts/render_tool.py [agent-dir] --tool SPEC [--no-bind] [--dry-run] [--json]` | adds one tool and its Pydantic model to an existing agent, refusing existing names | 0 written, 1 refused, 2 usage |
 
 Tool spec: `name:field=type,field=type;name:...` where a type is `str`, `int`,

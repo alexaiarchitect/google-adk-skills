@@ -85,7 +85,7 @@ via `session_input.state`, which lets a case start from a condition instead of
 talking the agent into one.
 
 **`final_session_state` is not the other half.** It is declared on `EvalCase` and
-evaluated by nothing through ADK 2.10, so a case that asserts through it passes
+evaluated by nothing through ADK 2.11, so a case that asserts through it passes
 whatever the agent did. Assert the read instead: expect the later tool call whose
 arguments could only have come from the stored value, or add a rubric that says
 the agent used the remembered constraint. That tests the mechanism *and* is

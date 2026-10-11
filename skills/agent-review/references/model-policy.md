@@ -27,15 +27,20 @@ production, without a diff.
 | **preview** | anything with `preview` or `-exp` | warning: preview ids disappear without notice. Fine for an experiment, wrong for anything committed |
 | **retiring** | `gemini-2.0-flash`, `gemini-2.5-flash` | warning: replace it when you touch the file |
 
-Current dated ids, if you must name one: `gemini-3.5-flash` (ADK's own
-`LlmAgent.DEFAULT_MODEL` on both 2.9.2 and 2.10.0, and what `adk-recipes`
-prescribes) and **`gemini-3.8-flash`**, which 2.10's `adk create` offers as its
-second choice — 2.9.2 offered only `gemini-3.5-flash`. Neither is deprecated and
-neither is preferred here: this plugin's own scaffolding still writes
-`gemini-flash-latest`, because an alias is the thing that does not need
-revisiting. `gemini-3.8-flash` is not mentioned in `adk-recipes: AGENTS.md`; the
-`adk create` menu is the only source for it, which is reason enough not to treat
-an agent that lacks it as out of date.
+Current dated ids, if you must name one. They disagree, which is itself the
+argument for an alias:
+
+| Source | Id |
+|---|---|
+| `adk-recipes: AGENTS.md` (`## Models`, re-read 2026-10-11) | **`gemini-3.7-flash`** — the recommended replacement for the two retiring ids (it said `gemini-3.5-flash` until this sync) |
+| `LlmAgent.DEFAULT_MODEL`, 2.9.2 through 2.11.0 | `gemini-3.5-flash` |
+| `adk create` menu, 2.10.0 and 2.11.0 | `gemini-3.5-flash` (option 1), `gemini-3.8-flash` (option 2); 2.9.2 offered only the first |
+
+None of the three is deprecated and none is preferred here: this plugin's own
+scaffolding still writes `gemini-flash-latest`, because an alias is the thing
+that does not need revisiting. An agent that names `gemini-3.5-flash` is not out
+of date because the recipes moved on; recommend the alias, or the recipes' id if
+the team wants a dated one, and say whose recommendation each is.
 
 ## Where the "retiring" verdict comes from
 
@@ -97,7 +102,7 @@ Sources: `adk-recipes: AGENTS.md` (the deprecation list this policy is built on
 `evaluation/simulation/llm_backed_user_simulator.py`,
 `tools/environment_simulation/environment_simulation_config.py`;
 `adk-docs: docs/agents/models/*`; `adk-python: cli/cli_create.py`
-(`_prompt_for_model`, where `gemini-3.8-flash` appears as option 2 in 2.10.0).
-`adk-recipes: AGENTS.md`'s `## Models` section was re-read after the 2026-09-27
-upstream pull: unchanged, still the two deprecations and `gemini-3.5-flash` as the
-replacement.
+(`_prompt_for_model`, where `gemini-3.8-flash` appears as option 2 in 2.10.0 and
+2.11.0). `adk-recipes: AGENTS.md`'s `## Models` section was re-read after the
+2026-10-11 upstream pull (`d079ffce`): still the two deprecations, with
+`gemini-3.7-flash` now named as the replacement.

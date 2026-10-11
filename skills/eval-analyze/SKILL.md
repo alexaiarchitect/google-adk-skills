@@ -89,13 +89,33 @@ Say which you are looking at.
 
 ## INFORMATIONAL (2.10+)
 
-ADK 2.10 appends four efficiency metrics — `tool_call_count_v1`,
+ADK 2.10 and later append four efficiency metrics — `tool_call_count_v1`,
 `inference_call_count_v1`, `token_usage_v1`, `invocation_duration_v1` — to every
 eval, whatever the config says. Their entries carry `eval_status: 4` and no
 threshold: they report a value, lower is better, and they pass and fail nothing.
 Report them in their own table, never in the pass/fail count, and read a jump as
 a question rather than a regression. Shape and the token breakdown:
 [result-schema.md](references/result-schema.md).
+
+`cached_tokens` (inside `prompt_tokens`) is where context caching shows up: the
+summary's `cached` column and cache-hit ratio. Zero on every case usually means
+caching is off, the suite has no multi-turn case, or the prefix changes per
+request — see
+[`../agent-create/references/context-caching.md`](../agent-create/references/context-caching.md).
+
+## Before and after
+
+When a change is meant to improve something — a prompt edit, caching, a new
+tool — compare two runs rather than eyeballing two summaries:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/compare_runs.py <baseline> <candidate>
+```
+
+Pass rate, per-case verdict flips, mean tokens (prompt / cached / output),
+duration and call counts, with deltas. A cheaper run that flipped a case to
+failed is a regression, and the script exits 1 for it. This is the measuring
+step of the eval-driven loop in `../adk/references/eval-engineering.md`.
 
 ## Reliability
 
@@ -139,8 +159,9 @@ How many runs: 5 separates "usually works" from "often fails" but not 95% from
 
 | Command | Does | Exit codes |
 |---|---|---|
-| `scripts/summarize_results.py <path> [--dir D] [--latest] [--eval-id ID] [--json]` | per-case diagnosis, plus an "Efficiency (informational, lower is better)" table with the token breakdown; JSON carries `case["efficiency"]` and `run["efficiency"]` | 0 passed, 1 failures, 3 only never-scored, 2 nothing to read |
+| `scripts/summarize_results.py <path> [--dir D] [--latest] [--eval-id ID] [--json]` | per-case diagnosis, plus an "Efficiency (informational, lower is better)" table with the token breakdown, a `cached` column, a per-case "Cache-hit ratio" line and a run-level "Context cache served X%" when reported; JSON carries `case["efficiency"]`, `run["efficiency"]`, `cases[].cache` and `run.cache_hit_ratio` | 0 passed, 1 failures, 3 only never-scored, 2 nothing to read |
 | `scripts/pass_at_k.py [--dir D] [--evalset ID] [--last N] [--k 1,3,5]` | reliability across runs | 0 all reliable, 1 not, 2 nothing to read |
+| `scripts/compare_runs.py <baseline> <candidate> [--latest] [--evalset ID] [--json]` | before/after table: pass rate, verdict flips, added/removed cases, per-invocation prompt / cached / uncached-prompt / output tokens, cache-hit ratio, seconds, tool and model calls, with deltas; verdict `REGRESSION` / `IMPROVED` / `NO REGRESSION`; missing figures read `n/a` | 0 no regression, 1 pass rate dropped or a case flipped to failed, 2 nothing to compare (or a directory holding several runs without `--latest`) |
 | `scripts/calibration_sample.py [--dir D] [--n 5] [--seed 0]` | passing cases for human review, sampled on the gate metrics only | 0, 2 nothing to read |
 
 ## Completion checklist

@@ -81,8 +81,23 @@ transcript level, distinct from `adk eval`.
 conditions, and the refusals. Each branch in it is something an eval case should
 cover.
 
+**Discovery / defense mode** — two ways of evaluating: a few inputs read by a
+person to find what the agent cannot yet do, versus a suite with thresholds that
+fails the build when it does worse. See `eval-engineering.md`.
+
+**Static instruction** — `LlmAgent.static_instruction`: text sent verbatim as the
+system instruction, never templated, and the part of the prompt a context cache
+can reuse. The per-turn part stays in `instruction`.
+
+**Context cache** — a stored prompt prefix (`App(context_cache_config=...)`)
+that later model calls read at a discount; it starts on a session's second
+request at the earliest. Seen in results as `cached_tokens`.
+
 ---
 
-Sources: `adk-python: evaluation/*`; `adk-docs: docs/evaluate/*`. The evaluation
+Sources: `adk-python: evaluation/*`, `agents/llm_agent.py` (`static_instruction`),
+`agents/context_cache_config.py`; `adk-docs: docs/evaluate/*`. The evaluation
 practices these terms describe follow the LinkedIn Learning course *Evaluating AI
 Agents with Google ADK* (Jigyasa Grover), recommended as background reading.
+The discovery/defense terms are from the Google Cloud blog post cited in
+`eval-engineering.md`.

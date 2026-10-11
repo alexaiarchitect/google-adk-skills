@@ -29,8 +29,8 @@ import time
 from pathlib import Path
 
 #: The release the plugin targets. `FAKE_ADK_VERSION=2.9.2` makes this stand-in
-#: an older runner, which is how the 2.9-vs-2.10 behaviour is tested.
-VERSION = os.environ.get("FAKE_ADK_VERSION", "2.10.0")
+#: an older runner, which is how the 2.9-vs-2.10+ behaviour is tested.
+VERSION = os.environ.get("FAKE_ADK_VERSION", "2.11.0")
 
 
 def _probe(code: str, args: list[str]) -> int:

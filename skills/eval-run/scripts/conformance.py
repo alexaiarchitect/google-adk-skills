@@ -18,19 +18,29 @@ Three things catch people out, and this wrapper handles all three:
 * **The mode is a positional, not a flag.** `record` takes the paths first and
   then the streaming mode (`none`, `sse` or `bidi`) as a trailing argument.
   Writing it as `--mode` produces a usage error.
-* **A case with no recording is skipped, not failed.** In replay mode ADK 2.10
-  prints `Skipping <category>/<name>: no recordings` and drops the case; if that
+* **A case with no recording is skipped, not failed.** In replay mode ADK
+  (2.9 through 2.11.0) prints `Skipping <category>/<name>: no recordings` and
+  drops the case; if that
   leaves the streaming mode with nothing to run, the summary says "No tests were
   run." and the command still exits 0. A suite that records nothing therefore
   passes. Every case is checked for its recordings file here first (`CNF020`),
   before anything is replayed.
 
-On exit codes, as of 2.10.0: `adk conformance test` raises on failures in the
+On exit codes, as of 2.11.0: `adk conformance test` raises on failures in the
 first streaming mode it runs, which makes it the one command in this plugin whose
 exit code can be trusted. It does *not* yet fail because a later streaming mode
-failed, nor because a mode ran no test at all - that rewrite is on upstream main
-after 2.10.0. Until it ships, the `CNF020` pre-check is what stands between an
-unrecorded suite and a green run.
+failed, nor because a mode ran no test at all. Until that changes, the `CNF020`
+pre-check is what stands between an unrecorded suite and a green run.
+
+File names, read off the released code (2.9.2 and 2.11.0 alike): a case is a
+directory holding `spec.yaml` (a `TestSpec`); `record` writes
+`generated-recordings.yaml` and `generated-session.yaml` beside it (the `-sse`
+variants for `sse`), and `test` replays from those. `adk conformance record
+--help` on those releases still describes `input.yaml` -> `test.yaml`; that text
+is stale (fixed on upstream main) and nothing reads either name, so a case
+written to it is reported here (`CNF015`) rather than silently skipped. Only the
+`none` and `sse` streaming modes can be recorded or replayed: the CLI accepts
+`bidi`, and the recorder then raises "Unsupported streaming mode" (`CNF021`).
 
     conformance.py record <case-dir> [--mode none|sse|bidi] [--host H] [--port N]
                           [--no-port-check] [--dry-run] [--json]
@@ -63,6 +73,12 @@ from adk_skills.report import (  # noqa: E402
 
 RECORDINGS_PLUGIN = "google.adk.cli.plugins.recordings_plugin.RecordingsPlugin"
 SPEC_NAME = "spec.yaml"
+#: The names `adk conformance record --help` gives on 2.9.2-2.11.0. The code
+#: loads neither: `_generated_file_utils.load_test_case` opens `spec.yaml`.
+STALE_SPEC_NAMES = ("input.yaml", "test.yaml")
+#: Streaming modes the recorder and the replayer implement; `bidi` is a CLI
+#: choice that raises "Unsupported streaming mode" inside both.
+SUPPORTED_STREAMING = ("none", "sse")
 
 #: What `ConformanceTestRunner._discover_test_cases` looks for, per streaming
 #: mode. Recordings are made one mode at a time, so each mode has its own file.
@@ -164,8 +180,8 @@ def check_recordings(specs: list[Path], report: GapReport, *, streaming_mode: st
     """Refuse to replay a case that has no recording.
 
     ADK skips such a case with a yellow warning and carries on; if that empties
-    the streaming mode, 2.10 prints "No tests were run." and exits 0, so the
-    suite passes without replaying anything.
+    the streaming mode, it prints "No tests were run." and exits 0 (2.9-2.11.0),
+    so the suite passes without replaying anything.
     """
     mode = streaming_mode or "none"
     for spec in specs:
@@ -178,8 +194,9 @@ def check_recordings(specs: list[Path], report: GapReport, *, streaming_mode: st
             f"no {target.name} for this case, so replay skips it",
             path=str(case_dir), locator=target.name,
             fix=f"record it first: `conformance.py record {case_dir} --mode {mode}` "
-                "(needs a dev server started with the recordings plugin). ADK 2.10 only "
-                "warns and moves on, and a streaming mode left with no cases still exits 0",
+                "(needs a dev server started with the recordings plugin). ADK (2.9-2.11.0) "
+                "only warns and moves on, and a streaming mode left with no cases still "
+                "exits 0",
             source="adk-python: cli/conformance/cli_test.py "
                    "(ConformanceTestRunner._discover_test_cases)",
         )
@@ -189,6 +206,42 @@ def find_specs(target: Path) -> list[Path]:
     if target.is_file() and target.name == SPEC_NAME:
         return [target]
     return sorted(target.rglob(SPEC_NAME))
+
+
+def stale_specs(target: Path) -> list[Path]:
+    """`input.yaml` / `test.yaml` files in directories with no `spec.yaml`:
+    cases written to the stale `--help` text, which ADK never loads."""
+    if target.is_file():
+        return [target] if target.name in STALE_SPEC_NAMES else []
+    found = []
+    for name in STALE_SPEC_NAMES:
+        for path in target.rglob(name):
+            if not (path.parent / SPEC_NAME).is_file():
+                found.append(path)
+    return sorted(found)
+
+
+def no_spec_message(targets: list[Path]) -> str:
+    """Why nothing was found, naming any stale-named case files."""
+    stale = [path for target in targets for path in stale_specs(target)]
+    message = f"error: no {SPEC_NAME} under {', '.join(str(t) for t in targets)}."
+    if stale:
+        message += (
+            f" [CNF015] Found {', '.join(str(p) for p in stale)}: `adk conformance record "
+            "--help` on ADK 2.9-2.11.0 still says input.yaml, but the code loads only "
+            f"{SPEC_NAME} (TestSpec). Rename the file to {SPEC_NAME}."
+        )
+    else:
+        message += (f" A conformance case is a directory holding {SPEC_NAME}; write one "
+                    "from eval-run's template.")
+    return message
+
+
+def unsupported_mode_message(mode: str) -> str:
+    return (f"error: [CNF021] streaming mode {mode!r} cannot be recorded or replayed: the "
+            "CLI accepts it, but ADK's conformance recorder and replayer (2.9-2.11.0) "
+            "implement only none and sse and raise \"Unsupported streaming mode\". "
+            "Use --mode none or sse.")
 
 
 # ---------------------------------------------------------------------------
@@ -218,12 +271,14 @@ def cmd_record(args: argparse.Namespace) -> int:
         print(f"error: {case_dir} does not exist", file=sys.stderr)
         return EXIT_USAGE
 
+    if args.mode not in SUPPORTED_STREAMING:
+        print(unsupported_mode_message(args.mode), file=sys.stderr)
+        return EXIT_USAGE
+
     specs = find_specs(case_dir)
     report = GapReport(subject=str(case_dir), skill="eval-run")
     if not specs:
-        print(f"error: no {SPEC_NAME} under {case_dir}. A conformance case is a "
-              f"directory holding {SPEC_NAME}; write one from eval-run's template.",
-              file=sys.stderr)
+        print(no_spec_message([case_dir]), file=sys.stderr)
         return EXIT_USAGE
     for spec in specs:
         validate_spec(spec, report)
@@ -307,10 +362,13 @@ def cmd_test(args: argparse.Namespace) -> int:
               f"{', '.join(missing)}", file=sys.stderr)
         return EXIT_USAGE
 
+    if args.streaming_mode and args.streaming_mode not in SUPPORTED_STREAMING:
+        print(unsupported_mode_message(args.streaming_mode), file=sys.stderr)
+        return EXIT_USAGE
+
     specs = [spec for d in dirs for spec in find_specs(d)]
     if not specs:
-        print(f"error: no {SPEC_NAME} under {', '.join(str(d) for d in dirs)}",
-              file=sys.stderr)
+        print(no_spec_message(dirs), file=sys.stderr)
         return EXIT_USAGE
 
     report = GapReport(subject=", ".join(str(d) for d in dirs), skill="eval-run")
@@ -359,7 +417,7 @@ def cmd_test(args: argparse.Namespace) -> int:
         "runner": describe_runner(runner),
         "mode": args.mode or "replay",
         "command": outcome.to_dict(),
-        # Unlike `adk eval`, this command's own exit code is meaningful: 2.10
+        # Unlike `adk eval`, this command's own exit code is meaningful: 2.11.0
         # raises on failures in the first streaming mode it runs. It stays silent
         # about a later mode's failures, and about a mode that ran nothing, which
         # is why every case was checked for its recordings above.
@@ -388,7 +446,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         return EXIT_USAGE
     specs = find_specs(target)
     if not specs:
-        print(f"error: no {SPEC_NAME} under {target}", file=sys.stderr)
+        print(no_spec_message([target]), file=sys.stderr)
         return EXIT_USAGE
     report = GapReport(subject=str(target), skill="eval-run")
     report.discovered = {"specs": [str(s) for s in specs]}

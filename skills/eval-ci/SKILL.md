@@ -136,6 +136,7 @@ because someone ran the agent and it looked right.
 | Designing the tiers, and what belongs in each | [tiered-pipeline.md](references/tiered-pipeline.md) |
 | The workflows, annotated, plus auth and secrets | [workflows.md](references/workflows.md) |
 | The maturity ladder and how to climb it | [maturity.md](references/maturity.md) |
+| Evaluating a Cloud Run revision before it takes traffic (pattern only, no template) | [shadow-rollout.md](references/shadow-rollout.md) |
 
 Templates: `assets/templates/workflows/`.
 

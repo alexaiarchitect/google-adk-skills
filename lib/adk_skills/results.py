@@ -53,6 +53,25 @@ TOKEN_USAGE_FIELDS = (
     "total_tokens", "input_tokens", "prompt_tokens", "cached_tokens",
     "tool_use_tokens", "output_tokens", "candidates_tokens", "reasoning_tokens",
 )
+
+
+def cache_hit_ratio(usage: dict[str, Any] | None) -> float | None:
+    """`cached_tokens / prompt_tokens` from a `token_usage_details` breakdown.
+
+    `cached_tokens` is nested inside `prompt_tokens`, so this is the share of
+    the prompt the context cache served. None when either count is unreported
+    (ADK 2.9 has no efficiency metrics at all; a model may not report cached
+    tokens) or the prompt is empty: unknown is not zero.
+    """
+    if not usage:
+        return None
+    cached = usage.get("cached_tokens")
+    prompt = usage.get("prompt_tokens")
+    if not isinstance(cached, (int, float)) or not isinstance(prompt, (int, float)) or prompt <= 0:
+        return None
+    return round(float(cached) / float(prompt), 4)
+
+
 #: `<app_name>_<eval_set_id>_<timestamp>`. Both ids may contain underscores, so
 #: only the trailing timestamp can be split off reliably; the eval set id comes
 #: from the file contents.
@@ -188,6 +207,12 @@ class CaseResult:
         """The informational efficiency metrics, in the order ADK reported them."""
         return [m for m in self.metrics if m.informational]
 
+    def token_usage(self) -> dict[str, float]:
+        """`token_usage_v1`'s per-type breakdown for this case, or `{}` when the
+        run did not report one (ADK 2.9, or a case that never ran)."""
+        metric = self.metric("token_usage_v1")
+        return dict(metric.token_usage) if metric else {}
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "eval_id": self.eval_id,
@@ -256,6 +281,34 @@ class RunResult:
                 out[name]["token_usage_details"] = usage[name]
         return out
 
+    def token_means(self) -> dict[str, Any]:
+        """Mean prompt / cached / output / total tokens per case, and the run's
+        cache-hit ratio (summed cached over summed prompt).
+
+        Each mean covers only the cases that reported that count, and is None
+        when none did: a 2.9 run, or a model that reports no cached tokens,
+        leaves the figure unknown rather than zero.
+        """
+        keys = ("prompt_tokens", "cached_tokens", "output_tokens", "total_tokens")
+        values: dict[str, list[float]] = {key: [] for key in keys}
+        cached_sum = prompt_sum = 0.0
+        both = 0
+        for case in self.cases:
+            usage = case.token_usage()
+            for key in keys:
+                if key in usage:
+                    values[key].append(usage[key])
+            if "cached_tokens" in usage and usage.get("prompt_tokens"):
+                cached_sum += usage["cached_tokens"]
+                prompt_sum += usage["prompt_tokens"]
+                both += 1
+        out: dict[str, Any] = {
+            key: (round(sum(found) / len(found), 4) if found else None)
+            for key, found in values.items()
+        }
+        out["cache_hit_ratio"] = round(cached_sum / prompt_sum, 4) if both and prompt_sum else None
+        return out
+
     def case(self, eval_id: str) -> CaseResult | None:
         for case in self.cases:
             if case.eval_id == eval_id:
@@ -273,6 +326,7 @@ class RunResult:
             "failed": self.failed,
             "not_evaluated": self.not_evaluated,
             "efficiency": self.efficiency(),
+            "cache_hit_ratio": self.token_means()["cache_hit_ratio"],
         }
 
     def to_dict(self) -> dict[str, Any]:

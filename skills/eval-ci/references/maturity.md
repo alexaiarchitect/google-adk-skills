@@ -63,6 +63,17 @@ What to keep doing here: calibrate. Sample passing cases and check you still
 agree they should have passed. Criteria that are too lenient produce a green suite
 and a worsening agent, and nothing in the system notices.
 
+## Discovery and defense
+
+The ladder can also be read as when a project moves from **discovery** mode
+(a few inputs, a person judging) to **defense** mode (a suite, thresholds, a gate
+that fails the build). L0 is discovery mode that never left: however careful the
+reading, nothing learned is replayable. L1 writes the findings down as cases.
+**L2 and above are defense**: the suite protects the floor on every change, and
+L3–L4 make the floor statistical and grounded in production. Discovery never
+stops — at L4 it is where the new cases come from. The frame, and how each
+level of metric fits it: `/adk:adk`'s `eval-engineering.md`.
+
 ## Honest self-assessment
 
 Most projects are between L0 and L1 and believe they are at L2, usually because a
@@ -83,4 +94,7 @@ reports the level with its evidence and the next concrete step.
 
 Sources: this plugin's `assess_maturity.py`. The maturity ladder follows the
 LinkedIn Learning course *Evaluating AI Agents with Google ADK*, recommended as
-background reading.
+background reading. The discovery/defense reading is from Vlad Kolesnikov,
+"From 'vibe checks' to continuous evaluation: engineering reliable AI agents",
+Google Cloud blog, 2026-02-28,
+https://cloud.google.com/blog/topics/developers-practitioners/from-vibe-checks-to-continuous-evaluation-engineering-reliable-ai-agents.

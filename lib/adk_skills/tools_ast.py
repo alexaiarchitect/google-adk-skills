@@ -25,6 +25,7 @@ caller that reports "the agent does not define this tool" reports the same set.
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Iterable
@@ -92,7 +93,50 @@ BLOCKING_CALLS = {
     "socket.create_connection": "socket",
 }
 
+#: `ContextCacheConfig` fields and their pydantic bounds, read off
+#: `agents/context_cache_config.py` (byte-identical in 2.9.2 and 2.11.0;
+#: `extra="forbid"`). `None` means no numeric bound.
+CACHE_CONFIG_BOUNDS: dict[str, tuple[str, int] | tuple[str, int, int] | None] = {
+    "cache_intervals": ("range", 1, 100),
+    "ttl_seconds": ("gt", 0),
+    "min_tokens": ("ge", 0),
+    "create_http_options": None,
+}
+#: An instruction at least this long (about 2,000 tokens at ~4 chars a token,
+#: the Gemini 2.5 cache floor) is worth caching in a multi-turn session.
+LARGE_INSTRUCTION_CHARS = 8000
+#: The smallest cacheable prefix Gemini accepts: 2048 tokens on Gemini 2.5,
+#: 4096 on Gemini 3 (`agents/context_cache_config.py`).
+CACHE_FLOOR_TOKENS = {"Gemini 2.5": 2048, "Gemini 3": 4096}
+#: Rough size of one tool declaration in the request, in tokens.
+TOOL_DECLARATION_TOKENS = 60
+#: Characters per token, for an order-of-magnitude estimate.
+CHARS_PER_TOKEN = 4
+#: Wrappers that hold `static_instruction` text: `types.Content(parts=[...])`,
+#: `types.Part(text=...)`, `types.Part.from_text(text=...)`.
+CONTENT_WRAPPER_CALLS = {"Content", "UserContent", "ModelContent", "Part", "from_text"}
+#: Module roots whose calls make text differ between runs or requests.
+DYNAMIC_CALL_ROOTS = {"datetime", "date", "time", "uuid", "random", "secrets"}
+#: ADK's state placeholder syntax in an instruction: `{var}`, `{var?}`,
+#: `{app:var}`, `{artifact.name}`. Only `instruction` is ever filled.
+PLACEHOLDER_RE = re.compile(r"\{[A-Za-z_][\w.:]*\??\}")
+
+#: Plugins `google.adk.plugins` exports, with the release that added them.
+#: Several live in private modules and are lazily re-exported, so the public
+#: import path is the package, never the module.
+PLUGIN_EXPORTS: dict[str, str] = {
+    "BasePlugin": "2.0",
+    "DebugLoggingPlugin": "2.0",
+    "LoggingPlugin": "2.0",
+    "ReflectAndRetryToolPlugin": "2.0",
+    "ReflectAndRetryModelPlugin": "2.0",
+    "ToolCallIntegrityPlugin": "2.11",
+    "ToolCallIntegrityError": "2.11",
+}
+
 _SRC_LLM_AGENT = "adk-python: agents/llm_agent.py"
+_SRC_CACHE_CONFIG = "adk-python: agents/context_cache_config.py"
+_SRC_CACHE_DOC = "adk-docs: docs/context/caching.md"
 _SRC_BASE_AGENT = "adk-python: agents/base_agent.py"
 _SRC_FUNCTION_TOOL = "adk-python: tools/function_tool.py"
 _SRC_FUNCTION_DOC = "adk-docs: docs/tools-custom/function-tools.md"
@@ -211,6 +255,16 @@ class AgentSpec:
     #: True when `instruction=` is a callable (an `InstructionProvider`) rather
     #: than text: the specification is built at runtime and cannot be read here.
     instruction_is_dynamic: bool = False
+    #: `static_instruction=` is set. ADK sends it verbatim as the system
+    #: instruction (no placeholder filling) and it is the cacheable prefix.
+    has_static_instruction: bool = False
+    static_instruction_len: int = 0
+    static_instruction_text: str | None = None
+    #: Why the static instruction is not byte-identical from run to run
+    #: (f-string, `.format`, `%`, a clock or random call, a `{var}`
+    #: placeholder, an InstructionProvider). Empty when it is a plain literal.
+    static_instruction_dynamic: list[str] = field(default_factory=list)
+    has_global_instruction: bool = False
     tools: list[str] = field(default_factory=list)
     #: Toolsets, `AgentTool`s and built-in tool objects bound to this agent.
     opaque_tools: list[str] = field(default_factory=list)
@@ -230,9 +284,31 @@ class AgentSpec:
     lineno: int = 0
     file: str | None = None
 
+    @property
+    def spec_text(self) -> str | None:
+        """The text the agent's rules are written in: the static instruction
+        (the cached system prefix) followed by the instruction, when readable."""
+        parts = [t for t in (self.static_instruction_text, self.instruction_text) if t]
+        return "\n\n".join(parts) if parts else None
+
+    @property
+    def cache_prefix_chars(self) -> int:
+        """Characters of instruction in the cacheable prefix: the static
+        instruction when there is one, else the instruction."""
+        return self.static_instruction_len if self.has_static_instruction else self.instruction_len
+
+    @property
+    def cache_prefix_tokens_estimate(self) -> int:
+        """Rough tokens in the prefix a context cache would store: instruction
+        characters / 4, plus ~60 tokens per bound tool declaration."""
+        tools = len(self.tools) + len(self.opaque_tools)
+        return self.cache_prefix_chars // CHARS_PER_TOKEN + TOOL_DECLARATION_TOKENS * tools
+
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data.pop("instruction_text", None)
+        data.pop("static_instruction_text", None)
+        data["cache_prefix_tokens_estimate"] = self.cache_prefix_tokens_estimate
         return data
 
 
@@ -243,6 +319,13 @@ class AppSpec:
     plugins: list[str] = field(default_factory=list)
     root_agent: str | None = None
     kwargs: list[str] = field(default_factory=list)
+    #: `context_cache_config=` is set to something other than `None`.
+    context_cache_set: bool = False
+    #: The `ContextCacheConfig(...)` kwargs, literal values where readable and
+    #: the source text otherwise. None when unset or not a readable call.
+    context_cache_config: dict[str, Any] | None = None
+    #: Source text when the config is set but not a readable constructor call.
+    context_cache_expr: str | None = None
     lineno: int = 0
     file: str | None = None
 
@@ -301,6 +384,12 @@ class ModuleFacts:
     #: `MODEL = os.getenv("MODEL_NAME", "gemini-flash-latest")`, mapped to their
     #: fallback literal when there is one. `model=MODEL` is then env-driven.
     env_constants: dict[str, str | None] = field(default_factory=dict)
+    #: Every module-level `NAME = <expr>`, so `static_instruction=STATIC` and
+    #: `context_cache_config=CACHE` can be followed to what they hold.
+    expr_constants: dict[str, ast.expr] = field(default_factory=dict)
+    #: `from google.adk.plugins._private import X` style imports of a plugin
+    #: the package re-exports: (file, line, module, name).
+    private_plugin_imports: list[tuple[str, int, str, str]] = field(default_factory=list)
     #: Module-level `TOOLS = [...]`, so `tools=TOOLS` and `tools=[*TOOLS]`
     #: resolve. Values are the raw element expressions.
     list_constants: dict[str, list[Any]] = field(default_factory=dict)
@@ -865,6 +954,140 @@ def _is_instruction_provider(node: ast.expr, facts: ModuleFacts | None) -> bool:
     return name in facts.callables
 
 
+def _dynamic_call(node: ast.AST) -> str | None:
+    """`datetime.now()`, `time.time()`, `uuid.uuid4()`, `random.choice(...)`:
+    a call whose result differs on every run, by dotted name."""
+    if not isinstance(node, ast.Call):
+        return None
+    dotted = _dotted(node.func)
+    if not dotted:
+        return None
+    parts = dotted.split(".")
+    if parts[0] in DYNAMIC_CALL_ROOTS and len(parts) > 1:
+        return dotted
+    # `from datetime import datetime; datetime.now()` is covered above;
+    # `from time import time; time()` and `from uuid import uuid4; uuid4()`:
+    if len(parts) == 1 and parts[0] in ("uuid4", "uuid1", "now", "today", "utcnow"):
+        return dotted
+    return None
+
+
+def scan_static_instruction(
+    node: ast.AST | None, facts: ModuleFacts | None = None,
+) -> tuple[str, list[str]]:
+    """(readable text, reasons it is not byte-identical) for `static_instruction=`.
+
+    `static_instruction` is the cacheable prefix: ADK sends it verbatim as the
+    system instruction, never fills `{var}` placeholders in it, and the context
+    cache fingerprints it. So anything that varies - an f-string, `.format`,
+    `%`, a clock or random call, a callable - breaks the cache on every request
+    and, for placeholders, reaches the model unfilled.
+
+    Follows the shapes real agents use: a literal, a module constant (`Name`
+    or `module.NAME`), `types.Content(parts=[types.Part(text=...)])`,
+    `types.Part.from_text(text=...)`, lists of parts, concatenation and
+    `textwrap.dedent`.
+    """
+    texts: list[str] = []
+    reasons: list[str] = []
+    expr_constants = facts.expr_constants if facts else {}
+    str_constants = facts.str_constants if facts else {}
+    callables = facts.callables if facts else set()
+
+    def note(reason: str) -> None:
+        if reason not in reasons:
+            reasons.append(reason)
+
+    def scan_calls(n: ast.AST) -> None:
+        for child in ast.walk(n):
+            dotted = _dynamic_call(child)
+            if dotted:
+                note(f"a call to `{dotted}()`")
+
+    def visit(n: ast.AST | None, depth: int, seen: frozenset[str]) -> None:
+        if n is None or depth > 10:
+            return
+        if isinstance(n, ast.Constant):
+            if isinstance(n.value, str):
+                texts.append(n.value)
+                match = PLACEHOLDER_RE.search(n.value)
+                if match:
+                    note(f"a `{match.group(0)}` placeholder (never filled in a static instruction)")
+            return
+        if isinstance(n, ast.JoinedStr):
+            note("an f-string")
+            for part in n.values:
+                if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                    texts.append(part.value)
+            scan_calls(n)
+            return
+        if isinstance(n, ast.Lambda):
+            note("an InstructionProvider (lambda)")
+            return
+        if isinstance(n, (ast.Name, ast.Attribute)):
+            name = _name_of(n)
+            if not name or name in seen:
+                return
+            if name in expr_constants:
+                visit(expr_constants[name], depth + 1, seen | {name})
+            elif name in callables:
+                note(f"an InstructionProvider callable `{name}`")
+            elif name in str_constants:
+                texts.append(str_constants[name])
+            return
+        if isinstance(n, (ast.List, ast.Tuple)):
+            for element in n.elts:
+                visit(element, depth + 1, seen)
+            return
+        if isinstance(n, ast.BinOp):
+            if isinstance(n.op, ast.Mod):
+                note("`%` formatting")
+                visit(n.left, depth + 1, seen)
+                scan_calls(n.right)
+            elif isinstance(n.op, ast.Add):
+                visit(n.left, depth + 1, seen)
+                visit(n.right, depth + 1, seen)
+            else:
+                scan_calls(n)
+            return
+        if isinstance(n, ast.Call):
+            dotted = _dynamic_call(n)
+            if dotted:
+                note(f"a call to `{dotted}()`")
+                return
+            func_name = _name_of(n.func)
+            if isinstance(n.func, ast.Attribute) and n.func.attr == "format":
+                note("`.format()`")
+                visit(n.func.value, depth + 1, seen)
+                scan_calls(n)
+                return
+            if func_name in CONTENT_WRAPPER_CALLS:
+                for keyword in n.keywords:
+                    if keyword.arg in ("parts", "text"):
+                        visit(keyword.value, depth + 1, seen)
+                for arg in n.args:
+                    visit(arg, depth + 1, seen)
+                return
+            if func_name in ("dedent", "strip", "cleandoc"):
+                for arg in n.args:
+                    visit(arg, depth + 1, seen)
+                if isinstance(n.func, ast.Attribute) and func_name == "strip":
+                    visit(n.func.value, depth + 1, seen)
+                return
+            if func_name == "join":
+                for arg in n.args:
+                    visit(arg, depth + 1, seen)
+                return
+            # Anything else (a helper building the text at import time) is
+            # unreadable; if it reads the clock inline, the scan says so.
+            scan_calls(n)
+            return
+        scan_calls(n)
+
+    visit(node, 0, frozenset())
+    return "".join(texts), reasons
+
+
 def _collect_agent(
     var: str | None, call: ast.Call, call_name: str,
     constants: dict[str, str] | None = None,
@@ -894,6 +1117,22 @@ def _collect_agent(
         elif _is_instruction_provider(instruction_node, facts):
             spec.instruction_is_dynamic = True
 
+    static_node = _kwarg(call, "static_instruction")
+    if static_node is not None and not (
+        isinstance(static_node, ast.Constant) and static_node.value is None
+    ):
+        spec.has_static_instruction = True
+        text, reasons = scan_static_instruction(static_node, facts)
+        spec.static_instruction_dynamic = reasons
+        if text:
+            spec.static_instruction_text = text
+            spec.static_instruction_len = len(text)
+
+    global_node = _kwarg(call, "global_instruction")
+    spec.has_global_instruction = global_node is not None and not (
+        isinstance(global_node, ast.Constant) and global_node.value is None
+    )
+
     tools_node = _kwarg(call, "tools")
     if tools_node is not None and facts is not None:
         binding = _binding_names(tools_node, facts)
@@ -914,13 +1153,37 @@ def _collect_agent(
     return spec
 
 
-def _collect_app(var: str, call: ast.Call) -> AppSpec:
+def _collect_app(var: str, call: ast.Call, facts: ModuleFacts | None = None) -> AppSpec:
     spec = AppSpec(var=var, lineno=call.lineno)
     spec.name = _literal(_kwarg(call, "name"))
     spec.plugins = _list_names(_kwarg(call, "plugins"))
     root = _kwarg(call, "root_agent")
     spec.root_agent = _name_of(root) or _unparse(root)
     spec.kwargs = [kw.arg for kw in call.keywords if kw.arg]
+
+    cache = _kwarg(call, "context_cache_config")
+    if cache is not None and not (isinstance(cache, ast.Constant) and cache.value is None):
+        spec.context_cache_set = True
+        resolved: ast.AST = cache
+        seen: set[str] = set()
+        expr_constants = facts.expr_constants if facts else {}
+        while isinstance(resolved, (ast.Name, ast.Attribute)):
+            name = _name_of(resolved)
+            if not name or name in seen or name not in expr_constants:
+                break
+            seen.add(name)
+            resolved = expr_constants[name]
+        if isinstance(resolved, ast.Constant) and resolved.value is None:
+            spec.context_cache_set = False
+        elif isinstance(resolved, ast.Call) and _name_of(resolved.func) == "ContextCacheConfig" \
+                and all(kw.arg for kw in resolved.keywords) and not resolved.args:
+            config: dict[str, Any] = {}
+            for keyword in resolved.keywords:
+                literal = _literal(keyword.value)
+                config[keyword.arg] = literal if literal is not None else _unparse(keyword.value)
+            spec.context_cache_config = config
+        else:
+            spec.context_cache_expr = _unparse(cache)
     return spec
 
 
@@ -957,6 +1220,8 @@ def collect_constants(path: Path | str, facts: ModuleFacts) -> None:
         if not names or node.value is None:
             continue
         value = node.value
+        for name in names:
+            facts.expr_constants[name] = value
 
         if isinstance(value, (ast.List, ast.Tuple)):
             for name in names:
@@ -1022,6 +1287,10 @@ def extract_file(path: Path | str, facts: ModuleFacts | None = None) -> ModuleFa
             for alias in node.names:
                 facts.imports.add(f"{module}.{alias.name}")
                 imports_here.add(f"{module}.{alias.name}")
+                if (module.startswith("google.adk.plugins.") and alias.name in PLUGIN_EXPORTS
+                        and any(part.startswith("_") for part in module.split("."))):
+                    facts.private_plugin_imports.append(
+                        (file_key, node.lineno, module, alias.name))
 
     # Pass 1: Pydantic models, so tool parameters can resolve to them.
     for node in ast.walk(tree):
@@ -1062,7 +1331,7 @@ def extract_file(path: Path | str, facts: ModuleFacts | None = None) -> ModuleFa
                 agent.file = file_key
                 facts.agents.append(agent)
             elif isinstance(value, ast.Call) and call_name == "App" and var:
-                app = _collect_app(var, value)
+                app = _collect_app(var, value, facts)
                 app.file = file_key
                 facts.apps.append(app)
         elif isinstance(node, ast.Return) and isinstance(node.value, ast.Call):
@@ -1078,7 +1347,7 @@ def extract_file(path: Path | str, facts: ModuleFacts | None = None) -> ModuleFa
                 # A factory: `def build() -> App: return App(name=..., ...)`,
                 # then `app = build()`. The App is exported all the same, and
                 # its declared name is what the runner falls back to.
-                app = _collect_app("app", node.value)
+                app = _collect_app("app", node.value, facts)
                 app.file = file_key
                 facts.apps.append(app)
 
@@ -1291,6 +1560,31 @@ def analyze(facts: ModuleFacts) -> list[Finding]:
                 path=agent.file, locator=locator,
                 fix="move it to GlobalInstructionPlugin on the App", source=_SRC_LLM_AGENT)
 
+        if agent.static_instruction_dynamic:
+            add("AGT060", "warn",
+                f"{who}: `static_instruction` is not byte-identical between requests "
+                f"({'; '.join(agent.static_instruction_dynamic)})",
+                path=agent.file, locator=locator,
+                fix="keep `static_instruction` a plain literal (or a module constant holding "
+                    "one): it is the cached prefix, so any change invalidates the cache, and "
+                    "ADK sends it verbatim, so `{var}` placeholders are never filled there. "
+                    "Move the varying part to `instruction=`, which supports placeholders "
+                    "and an InstructionProvider and is sent after the static prefix",
+                source=f"{_SRC_LLM_AGENT} (static_instruction); {_SRC_CACHE_DOC}")
+
+        if (agent.call in LLM_AGENT_CALLS and agent.instruction_len >= LARGE_INSTRUCTION_CHARS
+                and not agent.has_static_instruction
+                and not any(app.context_cache_set for app in facts.apps)):
+            add("AGT061", "info",
+                f"{who}: the instruction is {agent.instruction_len:,} characters "
+                f"(about {agent.instruction_len // 4:,} tokens) and nothing caches it",
+                path=agent.file, locator=locator,
+                fix="move the unchanging part into `static_instruction=` and set "
+                    "`context_cache_config=ContextCacheConfig(...)` on the App; caching starts "
+                    "on a session's second turn and needs a 2,048-token (Gemini 2.5) or "
+                    "4,096-token (Gemini 3) prefix, so a single-turn agent gains nothing",
+                source=f"{_SRC_CACHE_CONFIG}; {_SRC_CACHE_DOC}")
+
         misplaced = sorted(set(agent.kwargs) & MISPLACED_MODEL_KWARGS)
         if misplaced:
             add("AGT016", "error",
@@ -1300,7 +1594,8 @@ def analyze(facts: ModuleFacts) -> list[Finding]:
                 source=_SRC_LLM_AGENT)
 
         if agent.call in LLM_AGENT_CALLS:
-            if not agent.has_instruction and not agent.kwargs_unresolved:
+            if (not agent.has_instruction and not agent.has_static_instruction
+                    and not agent.kwargs_unresolved):
                 add("AGT020", "warn", f"{where} has no `instruction`",
                     path=agent.file, locator=locator,
                     fix="the instruction is the agent's contract; without it behaviour is "
@@ -1379,6 +1674,60 @@ def analyze(facts: ModuleFacts) -> list[Finding]:
                 f"tool {name!r} is bound but not defined in this project (imported)",
                 fix="static checks cannot see its contract; review it where it is defined")
 
+    for app in facts.apps:
+        for problem in cache_config_problems(app.context_cache_config):
+            add("AGT062", "error",
+                f"App {app.name or app.var!r}: ContextCacheConfig {problem}, so building the "
+                "App raises a ValidationError",
+                path=app.file, locator=f"line {app.lineno}",
+                fix="cache_intervals must be 1..100 (default 10), ttl_seconds > 0 (default "
+                    "1800), min_tokens >= 0 (default 0); the only other field is "
+                    "create_http_options",
+                source=_SRC_CACHE_CONFIG)
+
+    for app in facts.apps:
+        if not app.context_cache_set:
+            continue
+        agent = next((a for a in facts.agents if a.var and a.var == app.root_agent), None) \
+            or facts.root_agent()
+        if agent is None or agent.call not in LLM_AGENT_CALLS or agent.kwargs_unresolved:
+            continue
+        if agent.instruction_is_dynamic and not agent.has_static_instruction:
+            continue                       # the prefix is built at runtime: unknowable
+        min_tokens = (app.context_cache_config or {}).get("min_tokens")
+        if not isinstance(min_tokens, int) or isinstance(min_tokens, bool):
+            min_tokens = 0
+        floor = CACHE_FLOOR_TOKENS["Gemini 2.5"]
+        estimate = agent.cache_prefix_tokens_estimate
+        if estimate >= max(min_tokens, floor):
+            continue
+        tools = len(agent.tools) + len(agent.opaque_tools)
+        add("AGT067", "info",
+            f"context caching is enabled on App {app.name or app.var!r} with "
+            f"min_tokens={min_tokens}, but the static prefix is about {estimate:,} tokens "
+            f"({agent.cache_prefix_chars:,} chars of instruction plus {tools} tool "
+            f"declaration{'s' if tools != 1 else ''}): ADK only creates a cache once the "
+            "previous request reached min_tokens, and the model floor is "
+            f"{CACHE_FLOOR_TOKENS['Gemini 2.5']} (Gemini 2.5) or "
+            f"{CACHE_FLOOR_TOKENS['Gemini 3']} (Gemini 3), so early turns never qualify and "
+            "later hits are mostly history, not the prefix",
+            path=app.file, locator=f"line {app.lineno}",
+            fix="grow the static procedure (it is what the cache is for); lower min_tokens "
+                "only if the prefix really is above the model floor; or drop "
+                "context_cache_config and rely on the provider's implicit caching. The "
+                "break-even in the caching guidance is around 32k tokens of static context",
+            source=f"{_SRC_CACHE_CONFIG}; {_SRC_CACHE_DOC}")
+
+    for file_key, lineno, module, name in facts.private_plugin_imports:
+        since = PLUGIN_EXPORTS.get(name, "2.0")
+        add("AGT065", "warn",
+            f"`{name}` is imported from the private module `{module}`",
+            path=file_key, locator=f"line {lineno}",
+            fix=f"import it from the package: `from google.adk.plugins import {name}`; the "
+                "package re-exports it lazily and the private module may move"
+                + (f". It needs ADK {since} or later" if since != "2.0" else ""),
+            source="adk-python: plugins/__init__.py")
+
     for write in facts.state_writes:
         if write.is_hook:
             # A plugin or callback hook is handed the invocation context exactly
@@ -1415,6 +1764,90 @@ def analyze(facts: ModuleFacts) -> list[Finding]:
 
     facts.findings.extend(findings)
     return findings
+
+
+def cache_config_problems(config: dict[str, Any] | None) -> list[str]:
+    """What `ContextCacheConfig(**config)` would reject, one phrase each.
+
+    Only literal values are judged; an expression is left alone.
+    """
+    if not config:
+        return []
+    problems: list[str] = []
+    unknown = sorted(set(config) - set(CACHE_CONFIG_BOUNDS))
+    if unknown:
+        problems.append(f"has no field(s) {', '.join(unknown)} (extra fields are forbidden)")
+    for name, bound in CACHE_CONFIG_BOUNDS.items():
+        value = config.get(name)
+        if bound is None or isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        if bound[0] == "range" and not bound[1] <= value <= bound[2]:
+            problems.append(f"{name}={value} is outside {bound[1]}..{bound[2]}")
+        elif bound[0] == "gt" and not value > bound[1]:
+            problems.append(f"{name}={value} must be greater than {bound[1]}")
+        elif bound[0] == "ge" and not value >= bound[1]:
+            problems.append(f"{name}={value} must be at least {bound[1]}")
+    return problems
+
+
+def _case_requests_more_than_once(case: dict[str, Any]) -> bool:
+    """Can this eval case make a second model request in its session?
+
+    Two invocations do; so does a user-simulation scenario; so does one
+    invocation that expects a tool call, because the tool result goes back to
+    the model in a second request. Only a single turn answered straight away
+    is a session with exactly one request.
+    """
+    if case.get("conversation_scenario"):
+        return True
+    conversation = case.get("conversation")
+    if not isinstance(conversation, list):
+        return False
+    if len(conversation) > 1:
+        return True
+    for invocation in conversation:
+        data = invocation.get("intermediate_data") if isinstance(invocation, dict) else None
+        if isinstance(data, dict) and data.get("tool_uses"):
+            return True
+    return False
+
+
+def cache_suite_findings(
+    facts: ModuleFacts, evalset_docs: Iterable[Any], *, path: str | None = None,
+) -> list[Finding]:
+    """AGT063: context caching is on, and no eval case can show it working.
+
+    ADK creates no cache on a session's first model request: the first request
+    only records a fingerprint, and the cache is built when a later request in
+    the same session repeats the prefix (`flows/llm_flows/context/_cache.py`,
+    `models/gemini_context_cache_manager.py`). A suite whose every case is one
+    turn with no tool call makes one request per session, so `token_usage_v1`
+    can never report `cached_tokens` and the efficiency numbers say nothing
+    about the cache. Needs both the agent facts and the evalsets, so discovery
+    and the linter call it where they have both.
+    """
+    app = next((a for a in facts.apps if a.context_cache_set), None)
+    if app is None:
+        return []
+    cases = [
+        case for doc in evalset_docs if isinstance(doc, dict)
+        for case in (doc.get("eval_cases") or []) if isinstance(case, dict)
+    ]
+    if not cases or any(_case_requests_more_than_once(case) for case in cases):
+        return []
+    return [Finding(
+        id="AGT063", severity="info", area="agent",
+        message=f"context caching is enabled on App {app.name or app.var!r}, but all "
+                f"{len(cases)} eval case(s) are a single turn with no expected tool call, "
+                "so each session makes one model request and the suite cannot show a "
+                "cache hit",
+        path=path or app.file, locator=f"line {app.lineno}",
+        fix="add a multi-turn case (two or more invocations in `conversation`, or a "
+            "`conversation_scenario`): ADK only records a fingerprint on a session's first "
+            "request and builds the cache on a later one, and `token_usage_v1` reports "
+            "`cached_tokens` once it is reused",
+        source=f"{_SRC_CACHE_CONFIG}; adk-python: flows/llm_flows/context/_cache.py",
+    )]
 
 
 def _tool_findings(tool: ToolSpec, models: dict[str, ModelSpec] | None = None) -> list[Finding]:

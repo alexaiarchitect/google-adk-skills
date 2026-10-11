@@ -95,6 +95,25 @@ point computable after the fact, without re-running anything.
 python3 ${CLAUDE_SKILL_DIR}/scripts/analyze_trace.py --result <agent-dir>/.adk/eval_history --eval-id <id>
 ```
 
+## Reasoning trace versus system trace
+
+Two different records of the same run, answering different questions:
+
+| | Reasoning trace | System trace |
+|---|---|---|
+| What it is | the agent's decisions: model turns, function calls with their arguments, function responses, transfers, node paths | the infrastructure's view: OpenTelemetry spans with timings, token counts, finish reasons, the exact request sent to the model |
+| Question it answers | *did it do the right thing, in the right order, with the right values?* | *why was it slow, expensive, truncated, or fed the wrong context?* |
+| Where it lives in ADK | `adk run --jsonl` events; the session (`--save_session`); `actual_invocation` in `.adk/eval_history/*.evalset_result.json` | spans from `adk web`'s Trace tab and the `/debug/trace` routes, an OTLP exporter, or Cloud Trace via `adk web --otel_to_cloud` |
+| What reads it | trajectory metrics, rubric judges, `analyze_trace.py` | you, and whatever latency or cost dashboard the exporter feeds (the eval efficiency metrics read the events' `usage_metadata`, not spans) |
+
+Start with the reasoning trace: most agent failures are decisions, and the
+divergence point is there. Open the system trace when the decisions look right
+and the outcome is still wrong — a `MAX_TOKENS` finish, a request missing the
+instruction you thought it had, a call that took forty seconds — or when the
+question is cost. Prompt tokens served from a context cache show on the
+`generate_content` span as `gen_ai.usage.cache_read.input_tokens`, and on the
+event as `usageMetadata.cachedContentTokenCount`.
+
 ## Which to reach for
 
 | Question | Source |
@@ -112,4 +131,9 @@ Sources: `adk-python: cli/cli.py` (`_print_event`, `--jsonl`), `events/event.py`
 (`node_info`, the camelCase alias generator), `cli/utils/logs.py`
 (`log_to_tmp_folder`), `cli/dev_server.py` (trace routes), `telemetry/`,
 `flows/llm_flows/functions.py`, `evaluation/eval_result.py`;
-`adk-docs: docs/observability/*`.
+`telemetry/_token_usage.py` (`gen_ai.usage.cache_read.input_tokens`, read on
+2.11.0); `adk-docs: docs/observability/*`. The reasoning-trace / system-trace
+distinction is paraphrased from Vlad Kolesnikov, "From 'vibe checks' to
+continuous evaluation: engineering reliable AI agents", Google Cloud blog,
+2026-02-28,
+https://cloud.google.com/blog/topics/developers-practitioners/from-vibe-checks-to-continuous-evaluation-engineering-reliable-ai-agents.

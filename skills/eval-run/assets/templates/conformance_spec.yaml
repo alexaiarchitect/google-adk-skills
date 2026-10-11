@@ -1,5 +1,10 @@
 # tests/conformance/<category>/<case>/spec.yaml
 #
+# The name matters: ADK loads `spec.yaml` and nothing else. The `adk conformance
+# record --help` text on 2.9-2.11.0 still says input.yaml -> test.yaml; neither
+# name is read. Recording writes generated-recordings.yaml and
+# generated-session.yaml (or the -sse pair) next to this file.
+#
 # Recording drives a *running* dev server, so start it first and leave it up:
 #   adk web <agents-dir> -v \
 #       --extra_plugins=google.adk.cli.plugins.recordings_plugin.RecordingsPlugin
