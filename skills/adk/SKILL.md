@@ -60,7 +60,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 
 | The user wants | Skill |
 |---|---|
-| a new agent, or eval scaffolding for one | `/adk:agent-create` |
+| a new agent, or eval scaffolding for one; ADK skills (`SkillToolset`), compaction, context design | `/adk:agent-create` |
 | a review of an existing agent, ADK 2.x compatibility, "why won't adk find it" | `/adk:agent-review` |
 | a fix for looping, stalling, wrong tool, flaky eval | `/adk:agent-debug` |
 | eval cases written, a golden trace captured, a session turned into a test | `/adk:eval-create` |
@@ -69,7 +69,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 | the suite run, repeated for pass@k, or conformance recorded | `/adk:eval-run` |
 | results explained, reliability measured | `/adk:eval-analyze` |
 | simulated users, personas, mocked tool backends | `/adk:eval-simulation` |
-| a CI gate, or a read on evaluation maturity | `/adk:eval-ci` |
+| a CI gate, merge rules (pass threshold, no regressions, budgets), or a read on evaluation maturity | `/adk:eval-ci` |
 
 A request that names none of these is usually "is my agent any good?", which
 starts with `/adk:eval-review` when cases exist and `/adk:eval-create` when they
@@ -89,6 +89,11 @@ cost tier, last result, maturity level. Read down the maturity column and the
 next piece of work names itself. A sub-agent can only be evaluated on its own
 through the pytest path (`/adk:eval-run --agent-name`); `adk eval` has no such
 option. `run_registry.py --init` turns the inventory into a batch manifest.
+An `adk-recipes` Agent-Plugins skill layer (`plugin.json`, `skills/*/EVAL.yaml`)
+is not an agent: discovery reports `ENV014` and a `plugin_layer` fact instead of
+a layout, and the inventory lists the layer after the agents with its cases,
+rubric lines and assertion types. Send it to `/adk:eval-review`
+(`validate_eval_yaml.py`); nothing runs it.
 
 ## What to tell the user when they ask what this can do
 
@@ -120,7 +125,7 @@ Six things, in the order they usually matter:
 | The frame: discovery vs defense, three metric levels, the eval-driven loop | [eval-engineering.md](references/eval-engineering.md) |
 | The report format and finding-id scheme | [gap-report-format.md](references/gap-report-format.md) |
 | Backends, `.env`, Vertex, picking a Python runner | [environment.md](references/environment.md) |
-| The layouts ADK accepts, and where eval files belong | [layouts.md](references/layouts.md) |
+| The layouts ADK accepts, where eval files belong, the `adk-recipes` layers | [layouts.md](references/layouts.md) |
 | ADK 1.x patterns and their 2.x replacements | [adk-1x-to-2x-migration.md](references/adk-1x-to-2x-migration.md) |
 | What a word means here (trajectory, golden trace, quadrant) | [glossary.md](references/glossary.md) |
 
@@ -130,7 +135,7 @@ Six things, in the order they usually matter:
 |---|---|---|
 | `scripts/discover.py <path> [--format json\|md] [--focus ...] [--no-probe]` | full gap report | 0 clean, 1 errors, 2 bad target |
 | `scripts/check_env.py <agent-dir> [--json] [--config path]` | runner, backend, criteria readiness | 0 ready, 1 blocked, 2 bad target |
-| `scripts/inventory.py [repo-root] [--json]` | every agent in a repository with its evaluation standing | 0, 2 bad target |
+| `scripts/inventory.py [repo-root] [--json]` | every agent in a repository with its evaluation standing, plus any Agent-Plugins skill layer (`EVAL.yaml` cases, rubric lines, assertion types) | 0, 2 bad target |
 
 ## Completion checklist
 

@@ -1,6 +1,6 @@
 # Choosing and sizing eval cases
 
-## The five categories
+## The categories
 
 ### Happy path
 
@@ -47,6 +47,23 @@ restated. See [memory-tests.md](memory-tests.md).
 
 One case per fixed bug, named after it. The repro is the case. This is the
 cheapest coverage there is, and the only category that grows on its own.
+
+### Activation (skill-equipped agents)
+
+For an agent with a `SkillToolset`: the right request loads the right skill
+(`load_skill` with `{"skill_name": ...}`), and an unrelated one loads none.
+Prefix `activation_`; `gen_cases.py` accepts `{"skill": "<name>"}` in a turn's
+`tools`, and `assets/templates/evalsets/activation.evalset.json` is the
+starting point. What it tests is the skill's description. See
+`/adk:agent-create` `skills-and-progressive-disclosure.md`.
+
+## Not every check is a case
+
+A behaviour that can legitimately happen in several orders ("checked the cost
+centre at some point before submitting") is brittle as an `EXACT` trajectory
+and natural as a behavioural assertion: a pytest check over one recorded turn,
+run in batches for a pass rate. Grow those from real failures, one failure mode
+at a time: [behavioral-tests.md](behavioral-tests.md).
 
 ## How many
 
@@ -111,6 +128,12 @@ nothing. When two cases always fail together, one is a copy of the other.
 
 ---
 
-Sources: this plugin. The case taxonomy, the branch rule and the suite-shape
+Sources: this plugin; the activation scope from Charlotte Liang, "Eval-driven
+development: how we build better agent skills for Firebase", Firebase blog,
+2026-08-11, https://firebase.blog/posts/2026/08/eval-driven-development-agent-skills;
+behavioural checks from "The anatomy of harness engineering", Google Developers
+Blog, 2026-09-09,
+https://developers.googleblog.com/the-anatomy-of-harness-engineering-how-to-evaluate-iterate-and-guard-ai-coding-agents/.
+The case taxonomy, the branch rule and the suite-shape
 guidance follow the LinkedIn Learning course *Evaluating AI Agents with Google
 ADK* (Jigyasa Grover), recommended as background reading.

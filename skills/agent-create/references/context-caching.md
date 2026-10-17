@@ -5,7 +5,10 @@ sends the same tokens on every model call. Context caching stores that prefix
 once and lets later calls read it at a discount. It pays off in exactly one shape
 of agent — a long, unchanging prefix reused over several turns — and costs a
 little in every other shape. This page is about telling the two apart, and about
-proving the gain with the eval suite rather than assuming it.
+proving the gain with the eval suite rather than assuming it. Caching makes a
+prefix cheaper; shrinking what is in the request at all (skills loaded on
+demand, compaction, artifacts) is the other half:
+[context-engineering.md](context-engineering.md).
 
 ## What ADK gives you
 
@@ -38,7 +41,7 @@ app = App(
 | `create_http_options` | none | — | `HttpOptions` for the cache-create call, e.g. a timeout; on timeout the request proceeds uncached |
 
 The model is `extra="forbid"`: a misspelt field raises at construction. The
-class is identical on 2.9.2 and 2.11.0.
+class is identical on 2.9.2, 2.11.0 and 2.12.0.
 
 **`static_instruction` and `instruction` divide the prompt.** When
 `static_instruction` is set, ADK sends it **verbatim** as the system instruction

@@ -7,7 +7,7 @@
 ```
 
 `adk create` gitignores `.adk/`. With `--eval_storage_uri gs://...` the same
-content goes to Cloud Storage instead. Unchanged on 2.10 and 2.11: the history still lands
+content goes to Cloud Storage instead. Unchanged on 2.10, 2.11 and 2.12: the history still lands
 inside the **agent module** directory, not at the project root, so a recipes
 layout writes to `<project>/app/.adk/eval_history/`.
 
@@ -71,7 +71,7 @@ results has been scored by nothing.
 
 ## A failed case with no metrics at all
 
-Verified against ADK 2.9.2 and re-measured on 2.10.0 and 2.11.0: when inference itself fails — a bad API key, a model
+Verified against ADK 2.9.2 and re-measured on 2.10.0, 2.11.0 and 2.12.0: when inference itself fails — a bad API key, a model
 that is not available, a tool that raised — the case is written with
 `final_eval_status: 2` and an **empty** `overall_eval_metric_results`, and no
 per-invocation entries.
@@ -130,6 +130,30 @@ A rubric metric's `details.rubric_scores` is a list of
 fastest way to tell "the agent did the wrong thing" from "the rubric asks the
 wrong question".
 
+## Coming after 2.12.0 (unreleased main)
+
+Three result-file changes sit on `adk-python` main after the `v2.12.0` tag and
+are in no release yet. A parser should tolerate them now; this plugin's does.
+
+- **`details.duration_details`** on the `invocation_duration_v1` entry (overall
+  and per invocation): `{total_seconds, model_seconds, tool_seconds,
+  framework_seconds}`. The parts partition the turn, so they add back up to the
+  total; overlapping model calls or tool runs count once, and
+  `framework_seconds` is the remainder. A field is `null` when the invocation was
+  read back rather than run (commit `e3797a4`).
+- **Vertex rubric verdicts** folded into `details.rubric_scores`, with an extra
+  entry whose `rubric_id` is `"explanation"` carrying the judge's overall
+  explanation (commit `bc220d2`). Do not count it as a rubric.
+- **Per-metric `eval_status`** honoured by `AgentEvaluator.evaluate` (commit
+  `5bf7f12`): the overall verdict takes its direction from the evaluator's own
+  per-invocation statuses, so a lower-is-better metric (cost, latency) is no
+  longer failed by a hard-coded `score >= threshold`. This touches the pytest
+  path only; the files `adk eval` writes are unchanged by it.
+
+Main also makes bare `adk eval` exit 1 on a failure (`c2ff634`). On every released
+version the exit code of `run_evals.py`, computed from these files, is the
+authoritative verdict.
+
 ## Deprecated fields
 
 `eval_set_file` (use `eval_set_id`) and `eval_metric_results` (use
@@ -146,6 +170,7 @@ Sources: `adk-python: evaluation/eval_result.py`, `evaluation/eval_metrics.py`
 `evaluation/_efficiency_evaluators.py`, `evaluation/eval_rubrics.py`,
 `evaluation/local_eval_set_results_manager.py`,
 `evaluation/local_eval_service.py`, `cli/cli_tools_click.py`. Result files
-re-measured on installed 2.9.2, 2.10.0 and 2.11.0 wheels (on 2.11.0 a
+re-measured on installed 2.9.2, 2.10.0, 2.11.0 and 2.12.0 wheels (on 2.12.0 a
 credential-less run still writes `final_eval_status: 2` with no metrics); the efficiency entry shape was
-read off the evaluators driven over a synthetic invocation.
+read off the evaluators driven over a synthetic invocation. Post-2.12 shapes:
+`evaluation/eval_metrics.py` (`DurationDetails`) on main `a6ed859`.

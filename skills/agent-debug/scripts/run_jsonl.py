@@ -19,7 +19,12 @@ Two further things this does that running the command by hand does not:
   ask for it.
 
     run_jsonl.py <agent-dir> "<prompt>" [--runs N] [--out F] [--timeout S]
-                 [--dry-run] [--json]
+                 [--state-file F] [--dry-run] [--json]
+
+`--state-file F` starts the session from the state in a JSON file, passed
+through as `adk run --state_file F`. That flag exists from ADK 2.12.0, so on an
+older runner (or one whose version cannot be read) the script stops with exit
+code 2 rather than letting `adk run` fail on an unknown option.
 
 Exit codes: 0 a trace was captured, 1 the run produced no events, 2 usage or
 environment (no agent, no runner).
@@ -37,12 +42,14 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 
 from adk_skills.adk_subprocess import describe_runner, run_adk_run_jsonl  # noqa: E402
-from adk_skills.env import detect_backend, resolve_runner  # noqa: E402
+from adk_skills.env import detect_backend, resolve_runner, version_at_least  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE  # noqa: E402
 from adk_skills.templating import WritePlan  # noqa: E402
 
 TRACE_DIR = Path(".adk") / "skills" / "traces"
+#: `adk run --state_file` arrived in 2.12.0 (c390266).
+STATE_FILE_SINCE = "2.12"
 
 
 def json_lines(text: str) -> list[dict[str, Any]]:
@@ -87,6 +94,9 @@ def main(argv: list[str] | None = None) -> int:
                              "is deterministic (costs N invocations)")
     parser.add_argument("--out", help="write the trace here instead of under .adk/skills/traces")
     parser.add_argument("--timeout", type=float, default=600.0)
+    parser.add_argument("--state-file",
+                        help="JSON file with the initial session state (adk run --state_file, "
+                             "ADK 2.12+)")
     parser.add_argument("--dry-run", action="store_true", help="print the command and stop")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -106,10 +116,29 @@ def main(argv: list[str] | None = None) -> int:
     agent_dir = Path(layout.agent_dir)
     analyze = Path(__file__).resolve().parent / "analyze_trace.py"
 
+    extra_args: list[str] = []
+    if args.state_file:
+        state_path = Path(args.state_file)
+        if not state_path.is_file():
+            print(f"error: --state-file {state_path} does not exist", file=sys.stderr)
+            return EXIT_USAGE
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            print(f"error: --state-file is not valid JSON: {exc}", file=sys.stderr)
+            return EXIT_USAGE
+        if not isinstance(state, dict):
+            print("error: --state-file must hold a JSON object (the session state)",
+                  file=sys.stderr)
+            return EXIT_USAGE
+        extra_args = ["--state_file", str(state_path.resolve())]
+
     if args.dry_run:
-        command = f'adk run {agent_dir} --jsonl "{args.prompt}"'
+        state_part = f" --state_file {extra_args[1]}" if extra_args else ""
+        command = f'adk run {agent_dir} --jsonl{state_part} "{args.prompt}"'
         payload = {
             "command": command,
+            "state_file_needs": f"ADK {STATE_FILE_SINCE}+" if extra_args else None,
             "runs": args.runs,
             "cost": f"{args.runs} real invocation(s) against the configured backend",
             "trace_dir": str(agent_dir / TRACE_DIR),
@@ -135,6 +164,12 @@ def main(argv: list[str] | None = None) -> int:
     if not runner.available:
         print(f"error: {runner.note}", file=sys.stderr)
         return EXIT_USAGE
+    if extra_args and not version_at_least(runner.adk_version, STATE_FILE_SINCE):
+        print(f"error: --state-file needs `adk run --state_file`, which ADK {STATE_FILE_SINCE}.0 "
+              f"added; the runner is ADK {runner.adk_version or '(version unknown)'}. Upgrade, "
+              "or seed the state another way (an eval case's session_input.state)",
+              file=sys.stderr)
+        return EXIT_USAGE
 
     if not args.json:
         print(f"Runner:  {describe_runner(runner)}")
@@ -147,7 +182,8 @@ def main(argv: list[str] | None = None) -> int:
 
     for index in range(args.runs):
         outcome = run_adk_run_jsonl(
-            agent_dir, args.prompt, runner=runner, timeout=args.timeout
+            agent_dir, args.prompt, runner=runner, timeout=args.timeout,
+            extra_args=extra_args,
         )
         events = json_lines(outcome.combined)
         stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())

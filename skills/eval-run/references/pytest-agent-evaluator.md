@@ -46,7 +46,7 @@ times with `/adk:eval-run --runs N`, which keeps each run's results separate for
 `num_runs` defaults to 2. **On ADK 2.10 and later both entry points validate their inputs
 before doing any work; on 2.9.2 they did not:**
 
-| Input | 2.10.0, 2.11.0 | 2.9.2 |
+| Input | 2.10.0 through 2.12.0 | 2.9.2 |
 |---|---|---|
 | `num_runs < 1` | `ValueError: \`num_runs\` must be at least 1, got 0.` | accepted, the loop simply ran zero times |
 | `evaluate_eval_set` with an empty eval set | `ValueError: No eval cases were evaluated, so there is nothing to report a pass or a failure for.` | passed silently, reporting nothing |
@@ -79,15 +79,26 @@ generates this.
 
 ## Requirements
 
-- `pip install "google-adk[eval]==2.11.*" pytest pytest-asyncio` — the extra
-  pins `google-cloud-aiplatform[evaluation]>=1.148,<2` on 2.11.0 (2.9.2 has no
-  upper bound); see `/adk:eval-criteria`'s `vertex-requirements.md`
+- `pip install "google-adk[eval]==2.12.*" pytest pytest-asyncio` — the extra
+  pins `google-cloud-aiplatform[evaluation]>=2.2,<3` on 2.12.0 (`>=1.148,<2` on
+  2.11.0, no upper bound on 2.9.2); there is no separate `agentplatform`
+  package to add. See `/adk:eval-criteria`'s `vertex-requirements.md`
 - `asyncio_mode = "auto"` in the pytest config, or `@pytest.mark.asyncio` on each
   test
 - the agent module importable from the working directory — run pytest from the
   project root
 - `.env` loaded: ADK loads it for the agent, but a test process may need
   `dotenv.load_dotenv()` first
+
+## Behavioural tests beside it
+
+`AgentEvaluator` scores whole evalset cases. For one discrete behaviour (called
+the validator, did not call the payment tool, asked before guessing), a plain
+pytest assertion over a recorded turn is faster and less brittle:
+`gen_test_eval.py --behavioral` writes `tests/eval/test_behaviors.py`, and
+`run_pytest_eval.py --behavioral` runs it with `ADK_EVAL_RUNS` repeats and an
+optional `ADK_EVAL_MIN_PASS_RATE` floor. Walkthrough:
+`/adk:eval-create` `behavioral-tests.md`.
 
 ## Reading a failure
 
@@ -109,8 +120,9 @@ there is a one-shot converter, `AgentEvaluator.migrate_eval_data_to_new_schema`.
 
 Sources: `adk-python: evaluation/agent_evaluator.py` (the `num_runs`, empty
 eval-set and no-test-file `ValueError`s, at lines 171, 179 and 363 of the 2.10.0
-wheel, 172, 180 and 364 of the 2.11.0 one, and absent from 2.9.2),
+wheel, 172, 180 and 364 of the 2.11.0 one, 172, 181 and 365 of the 2.12.0 one,
+and absent from 2.9.2),
 `evaluation/eval_config.py`,
 `evaluation/eval_set.py`; `adk-recipes: contrib/python/llm-auditor/eval/`.
-Compared across installed 2.9.2, 2.10.0 and 2.11.0 wheels; the `[eval]` pins
-read from each wheel's `METADATA`.
+Compared across installed 2.9.2, 2.10.0, 2.11.0 and 2.12.0 wheels; the `[eval]`
+pins read from each wheel's `METADATA`.

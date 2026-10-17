@@ -14,11 +14,13 @@ tree it came from.
     Licensed under the Apache License, Version 2.0
     https://github.com/google/adk-python
 
-Snapshot: `068610f2` (2026-10-12), which is the `v2.11.0` release tag
-(`9f7965e7`, 2026-10-02) plus 205 later commits on `main`. Behaviour was also
-measured against the installed `google-adk[eval]` 2.9.2 and 2.11.0 wheels (and,
-at the previous snapshot `cbbdec3f`, 2.10.0); where a change is only on `main`
-and not in a release, the reference page says so.
+Snapshot: `a6ed8590` (2026-10-17) on `main`. The `v2.12.0` release tag is
+`38381f65` (2026-10-13), which sits on a release branch: it is the merge-base
+`e9b74d36` plus three release-only commits, and `main` carries 121 commits after
+that merge-base. Behaviour was also measured against the installed
+`google-adk[eval]` 2.9.2, 2.11.0 and 2.12.0 wheels (and, at earlier snapshots,
+2.10.0); where a change is only on `main` and not in a release, the reference
+page says so. Previous snapshot: `068610f2` (2026-10-12, after `v2.11.0`).
 
 Used as the authoritative source for the evaluation data model, criteria
 catalog, CLI surface and agent-loading rules described in this plugin's
@@ -30,7 +32,8 @@ references. No source files are redistributed.
     Licensed under the Apache License, Version 2.0
     https://github.com/google/adk-docs
 
-Snapshot: `285f6412` (2026-10-12).
+Snapshot: `923938a4` (2026-10-16; previously `285f6412`). Changes since the
+previous snapshot under `docs/evaluate/` are cosmetic.
 
 Used as a source for the condensed reference pages, including
 `docs/context/caching.md` for the context-caching reference.
@@ -41,20 +44,24 @@ Used as a source for the condensed reference pages, including
     Licensed under the Apache License, Version 2.0
     https://github.com/google/adk-recipes
 
-Snapshot: `d079ffce` (2026-10-09). The repository's shipped vertical solutions
-live under `plugins/<vertical>/`; recipes remain under `core/` and `contrib/`.
-Its `AGENTS.md` now names `gemini-3.7-flash` as the replacement model.
+Snapshot: `05811bba` (2026-10-16; previously `d079ffce`). The repository is
+organised in three layers: reference patterns under `core/`, installable
+plugin skills under `plugins/` (with an `EVAL.yaml` per skill), and deployable
+services under `contrib/`. Its `AGENTS.md` still names `gemini-3.7-flash` as the
+replacement model.
 
-Used as a source for the model-deprecation policy this plugin applies, and as
-background for the project conventions its scaffolds follow. The scaffold
+Used as a source for the model-deprecation policy this plugin applies, for the
+`EVAL.yaml` shape `validate_eval_yaml.py` checks, and as background for the
+project conventions its scaffolds follow. The scaffold
 templates under `skills/agent-create/assets/templates/` are **original work**,
 written for this plugin and informed by the recipes' layout — no recipe source
 file is redistributed or derived from.
 
 ## Background reading
 
-Three Google-authored articles informed the context-caching, eval-engineering
-and shadow-rollout guidance. Nothing is reproduced from them: the references
+Eight Google-authored articles informed the context-caching, eval-engineering,
+shadow-rollout, merge-gates, behavioural-tests, skills, context-engineering and
+layouts guidance. Nothing is reproduced from them: the references
 paraphrase their ideas in this plugin's own words, cite them by title and URL in
 their `Sources:` footers, and quote no more than a short phrase.
 
@@ -71,6 +78,27 @@ their `Sources:` footers, and quote no more than a short phrase.
 - Charlotte Liang, "Eval-driven development: how we build better agent skills
   for Firebase", Firebase blog, 2026-08-11 —
   https://firebase.blog/posts/2026/08/eval-driven-development-agent-skills.
+- Selbie, Zamora, Carah and DeMartino, "Evaluating AI agents: moving past the
+  vibe check", Google Developers Blog, 2026-10-15 —
+  https://developers.googleblog.com/evaluating-ai-agents-moving-past-the-vibe-check/
+  (`merge-gates.md`, `maturity.md`, `tiered-pipeline.md`, `eval-engineering.md`,
+  `batch-and-gating.md`).
+- Ippolito and Saadati, "Three layers, one repo: a tour of google/adk-recipes",
+  Google Developers Blog, 2026-10-15 —
+  https://developers.googleblog.com/three-layers-one-repo-a-tour-of-googleadk-recipes/
+  (`layouts.md`, `managing-evalsets.md`).
+- Mullen and Gunderman, "The anatomy of harness engineering: how to evaluate,
+  iterate, and guard AI coding agents", Google Developers Blog, 2026-09-09 —
+  https://developers.googleblog.com/the-anatomy-of-harness-engineering-how-to-evaluate-iterate-and-guard-ai-coding-agents/
+  (`behavioral-tests.md`, `case-taxonomy.md`).
+- Nigam and Saboo, "Developer's guide to building ADK agents with skills",
+  Google Developers Blog, 2026-04-01 —
+  https://developers.googleblog.com/developers-guide-to-building-adk-agents-with-skills/
+  (`skills-and-progressive-disclosure.md`).
+- Hangfei Lin, "Architecting efficient context-aware multi-agent framework for
+  production", Google Developers Blog, 2025-12-04 —
+  https://developers.googleblog.com/architecting-efficient-context-aware-multi-agent-framework-for-production/
+  (`context-engineering.md`, `state-and-memory.md`).
 
 ## Not included
 
@@ -81,4 +109,4 @@ Exercise File License, which does not permit redistribution. No code, data,
 evalset, checklist or prose from that repository is included in this plugin;
 every reference page, template and fixture here is original work. The course is
 credited as background reading only. (Snapshot consulted for the background
-reading credit only: `17924c4`, unchanged at the 2026-10-11 sync.)
+reading credit only: `17924c4`, unchanged at the 2026-10-17 sync.)

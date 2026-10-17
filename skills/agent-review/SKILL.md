@@ -55,7 +55,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 4. **Confirm before editing anything.** If the user wants fixes applied, make the
    smallest change that addresses each finding, and re-run the review.
 
-## The eleven dimensions
+## The thirteen dimensions
 
 | # | Dimension | What goes wrong |
 |---|---|---|
@@ -70,6 +70,8 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 | 9 | eval readiness | an instruction with no branch, so there is nothing to test |
 | 10 | blocking calls | `time.sleep`, `requests`, `subprocess` in a synchronous tool |
 | 11 | context caching | a cached prefix that changes per request, a long instruction nothing caches, an out-of-range `ContextCacheConfig`, caching no eval case can exercise (`AGT060`–`AGT063`), and plugin imports that need 2.11 or a public path (`AGT065`, `AGT066`), and a prefix too small for the cache floor (`AGT067`) |
+| 12 | skills | a `SKILL.md` ADK will reject, instructions too long to disclose progressively, an agent instruction that repeats a skill's body, a description too vague to trigger it, lifecycle settings out of range (`AGT070`–`AGT075`) |
+| 13 | context engineering | an `EventsCompactionConfig` ADK rejects, long conversations with no compaction, a sub-agent scoped wider than its job, a tool returning a large inline blob instead of an artifact (`AGT076`–`AGT079`) |
 
 ## Decision rules
 
@@ -98,6 +100,8 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 | The model policy and why it exists | [model-policy.md](references/model-policy.md) |
 | Decoding a failed load | [load-check.md](references/load-check.md) |
 | Context caching: the decision, the prefix rules, measuring it | [`../agent-create/references/context-caching.md`](../agent-create/references/context-caching.md) |
+| Skills: frontmatter limits, progressive disclosure, lifecycles | [`../agent-create/references/skills-and-progressive-disclosure.md`](../agent-create/references/skills-and-progressive-disclosure.md) |
+| Context engineering: compaction, `include_contents`, artifacts | [`../agent-create/references/context-engineering.md`](../agent-create/references/context-engineering.md) |
 
 The 1.x-to-2.x drift table lives in the router skill:
 `../adk/references/adk-1x-to-2x-migration.md`.
@@ -106,7 +110,7 @@ The 1.x-to-2.x drift table lives in the router skill:
 
 | Command | Does | Exit codes |
 |---|---|---|
-| `scripts/lint_agent.py <agent-dir> [--strict] [--no-backend] [--json]` | the static review | 0 clean, 1 findings, 2 no agent |
+| `scripts/lint_agent.py <agent-dir> [--strict] [--no-backend] [--adk-version V] [--json]` | the static review; `--adk-version` stands in for the resolved runner in version-gated checks (`AGT066`, `AGT074`) | 0 clean, 1 findings, 2 no agent |
 | `scripts/load_agent.py <agent-dir> [--json]` | imports it the way ADK does | 0 loaded, 1 did not load, 2 no runner |
 
 ## Completion checklist

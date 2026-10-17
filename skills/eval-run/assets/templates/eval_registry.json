@@ -7,7 +7,8 @@
       "agent_dir": "app",
       "evalsets": ["tests/eval/evalsets/*.evalset.json"],
       "config": "tests/eval/eval_config.json",
-      "runs": 1
+      "runs": 1,
+      "frozen": true
     },
     {
       "name": "judge_nightly",
@@ -16,7 +17,8 @@
       "evalsets": ["tests/eval/evalsets/*.evalset.json"],
       "config": "tests/eval/eval_config.nightly.json",
       "runs": 5,
-      "pass_at_1_min": 0.95
+      "pass_at_1_min": 0.95,
+      "frozen": false
     }
   ]
 }

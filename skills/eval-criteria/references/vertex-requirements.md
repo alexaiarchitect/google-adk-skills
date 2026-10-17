@@ -114,17 +114,20 @@ These metrics reach the service through `google-cloud-aiplatform[evaluation]`,
 which `google-adk[eval]` pulls in. The pin differs by release, measured from the
 wheels' metadata:
 
-| `google-adk[eval]` | `google-cloud-aiplatform[evaluation]` | resolved in a fresh venv (2026-10-11) |
+| `google-adk[eval]` | `google-cloud-aiplatform[evaluation]` | resolved in a fresh venv |
 |---|---|---|
-| 2.9.2 | `>=1.148`, no upper bound | 2.4.0 |
-| 2.11.0 | `>=1.148,<2` | 1.165.1 |
+| 2.9.2 | `>=1.148`, no upper bound | 2.4.0 (2026-10-11) |
+| 2.11.0 | `>=1.148,<2` | 1.165.1 (2026-10-11) |
+| 2.12.0 | `>=2.2,<3` | 2.5.0 (2026-10-17) |
 
-So a 2.9 environment built today gets the 2.x SDK and a 2.11 environment the
-1.x one; neither installs `google-cloud-agentplatform`. `adk-python` main has
-moved to `aiplatform[evaluation]>=2.2` plus `agentplatform`, but that is after
-the 2.11.0 tag and in no release. If a Vertex-backed metric behaves differently
-between two machines, compare `pip show google-cloud-aiplatform` before anything
-else.
+So a 2.11 environment gets the 1.x SDK, while 2.9 and 2.12 environments get the
+2.x one. 2.12.0 moved to the 2.x SDK on purpose (commit `77d4dcd`, "migrate to
+google-cloud-aiplatform v2.2 (agentplatform)"). There is **no separate
+`google-cloud-agentplatform` distribution** to install: the importable
+`agentplatform` package ships inside `google-cloud-aiplatform` 2.x (`pip show
+google-cloud-agentplatform` finds nothing on a 2.12.0 venv). If a Vertex-backed
+metric behaves differently between two machines, compare `pip show
+google-cloud-aiplatform` before anything else.
 
 ## GCS eval storage
 
@@ -139,6 +142,6 @@ Sources: `adk-python: evaluation/vertex_ai_eval_facade.py` (`__init__` reads
 `evaluation/safety_evaluator.py` (`_VERTEX_SAFETY_SPEC_VERSION = "v1"`, new in
 2.10.0), `evaluation/response_evaluator.py`,
 `cli/utils/evals.py`; the `Requires-Dist ... extra == "eval"` lines of the
-installed 2.9.2 and 2.11.0 wheels' `METADATA` (the `>=2.2` / `agentplatform`
-migration is `adk-python` commit `77d4dcd`, main only); `adk-docs:
+installed 2.9.2, 2.11.0 and 2.12.0 wheels' `METADATA` (the `>=2.2,<3` /
+`agentplatform` migration is `adk-python` commit `77d4dcd`, in `v2.12.0`); `adk-docs:
 docs/evaluate/criteria.md`, `docs/evaluate/index.md`.

@@ -36,7 +36,7 @@ Two hooks make state testable:
   instead of talking the agent into one.
 - `final_session_state` *looks* like it asserts what the state should be at the
   end. It does not: the field is declared on `EvalCase` and no evaluator through
-  ADK 2.11 reads it, so a case that relies on it asserts nothing. Do not use it as a
+  ADK 2.12 reads it, so a case that relies on it asserts nothing. Do not use it as a
   gate.
 
 So pre-loading state turns "does the agent remember?" into a deterministic
@@ -67,11 +67,16 @@ everything else. `load_artifacts` brings them into context.
 Long conversations grow the context until quality degrades. `App` takes an
 `EventsCompactionConfig` (compaction interval, token threshold, retention and
 overlap) and a `ContextCacheConfig`. Both only apply when an `App` is exported —
-another reason to export one.
+another reason to export one. The config's bounds and pairing rules, filtering
+instead of summarising, `include_contents`, and keeping large payloads in
+artifacts rather than history: [context-engineering.md](context-engineering.md).
 
 ---
 
 Sources: `adk-python: apps/_configs.py`, `sessions/`, `memory/`,
 `tools/tool_context.py`, `evaluation/eval_case.py`;
 `adk-docs: docs/sessions/state.md`, `docs/sessions/memory.md`,
-`docs/artifacts/index.md`.
+`docs/artifacts/index.md`. The compiled-view framing behind the context section
+is from Hangfei Lin, "Architecting efficient context-aware multi-agent framework
+for production", Google Developers Blog, 2025-12-04,
+https://developers.googleblog.com/architecting-efficient-context-aware-multi-agent-framework-for-production/.

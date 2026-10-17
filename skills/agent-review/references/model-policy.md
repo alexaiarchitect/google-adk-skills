@@ -33,8 +33,8 @@ argument for an alias:
 | Source | Id |
 |---|---|
 | `adk-recipes: AGENTS.md` (`## Models`, re-read 2026-10-11) | **`gemini-3.7-flash`** — the recommended replacement for the two retiring ids (it said `gemini-3.5-flash` until this sync) |
-| `LlmAgent.DEFAULT_MODEL`, 2.9.2 through 2.11.0 | `gemini-3.5-flash` |
-| `adk create` menu, 2.10.0 and 2.11.0 | `gemini-3.5-flash` (option 1), `gemini-3.8-flash` (option 2); 2.9.2 offered only the first |
+| `LlmAgent.DEFAULT_MODEL`, 2.9.2 through 2.12.0 | `gemini-3.5-flash` |
+| `adk create` menu, 2.10.0 through 2.12.0 | `gemini-3.5-flash` (option 1), `gemini-3.8-flash` (option 2); 2.9.2 offered only the first |
 
 None of the three is deprecated and none is preferred here: this plugin's own
 scaffolding still writes `gemini-flash-latest`, because an alias is the thing
@@ -102,7 +102,7 @@ Sources: `adk-recipes: AGENTS.md` (the deprecation list this policy is built on
 `evaluation/simulation/llm_backed_user_simulator.py`,
 `tools/environment_simulation/environment_simulation_config.py`;
 `adk-docs: docs/agents/models/*`; `adk-python: cli/cli_create.py`
-(`_prompt_for_model`, where `gemini-3.8-flash` appears as option 2 in 2.10.0 and
-2.11.0). `adk-recipes: AGENTS.md`'s `## Models` section was re-read after the
+(`_prompt_for_model`, where `gemini-3.8-flash` appears as option 2 in 2.10.0 through
+2.12.0; `cli_create.py` is unchanged on main `a6ed859`). `adk-recipes: AGENTS.md`'s `## Models` section was re-read after the
 2026-10-11 upstream pull (`d079ffce`): still the two deprecations, with
 `gemini-3.7-flash` now named as the replacement.

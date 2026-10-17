@@ -23,9 +23,23 @@ project) from which `--latest` takes the newest run of each eval set; `--evalset
 keeps one eval set. Cases are matched by `eval_id`.
 
     compare_runs.py <baseline> <candidate> [--latest] [--evalset ID] [--json]
+                    [--min-pass-rate P] [--max-regressions N]
+                    [--max-mean-prompt-tokens T] [--max-mean-seconds S]
+                    [--max-mean-tool-calls C]
 
-Exit codes: 0 no regression, 1 the pass rate dropped or a case flipped to
-failed, 2 nothing to compare.
+**Merge gates.** Two rules make a comparison a CI gate: a global pass threshold
+on the candidate (`--min-pass-rate 0.95`) and no regressions on the cases both
+runs share (`--max-regressions`, default 0: any case that passed in the baseline
+and fails in the candidate fails the gate, and so does a falling pass rate).
+With `--max-regressions N` above 0, up to N flipped cases are tolerated and the
+pass-rate floor is left to `--min-pass-rate`. Cost and speed are gates too: the
+budget flags fail the comparison when the candidate's mean prompt tokens,
+seconds or tool calls per invocation exceed the limit. A figure the run did not
+report ("n/a": ADK 2.9, or a model with no usage data) never fails a budget; it
+is listed as unchecked.
+
+Exit codes: 0 every gate holds, 1 a gate failed (a regression, the pass rate
+below the floor, or a budget exceeded), 2 nothing to compare.
 """
 
 from __future__ import annotations
@@ -201,6 +215,51 @@ def compare(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, An
     }
 
 
+#: Budget flag -> the figure it caps (all per invocation, lower is better).
+BUDGETS = {
+    "max_mean_prompt_tokens": "prompt_tokens",
+    "max_mean_seconds": "duration_s",
+    "max_mean_tool_calls": "tool_calls",
+}
+
+
+def evaluate_gates(
+    candidate: dict[str, Any], result: dict[str, Any], *,
+    min_pass_rate: float | None = None, max_regressions: int = 0,
+    budgets: dict[str, float | None] | None = None,
+) -> list[dict[str, Any]]:
+    """One row per gate: what it checks, the limit, the value, and whether it holds.
+
+    A gate whose figure is unknown ("n/a") holds, with `checked` False, so a
+    2.9 run is never failed for lacking efficiency metrics.
+    """
+    gates: list[dict[str, Any]] = []
+    regressed = len(result["regressed_cases"])
+    holds = regressed <= max_regressions and not (max_regressions == 0 and result["pass_rate_dropped"])
+    gates.append({
+        "gate": "max_regressions", "limit": max_regressions, "value": regressed,
+        "pass_rate_dropped": result["pass_rate_dropped"], "checked": True, "passed": holds,
+    })
+    if min_pass_rate is not None:
+        rate = candidate["figures"].get("pass_rate")
+        gates.append({
+            "gate": "min_pass_rate", "limit": min_pass_rate, "value": rate,
+            "checked": rate is not None,
+            "passed": rate is None or rate >= min_pass_rate,
+        })
+    for flag, figure in BUDGETS.items():
+        limit = (budgets or {}).get(flag)
+        if limit is None:
+            continue
+        value = candidate["figures"].get(figure)
+        gates.append({
+            "gate": flag, "limit": limit, "value": value, "figure": figure,
+            "checked": value is not None,
+            "passed": value is None or value <= limit,
+        })
+    return gates
+
+
 def _pct(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.1%}"
 
@@ -244,6 +303,21 @@ def _fmt(name: str, value: float | None) -> str:
     return f"{value:g}"
 
 
+def _gate_line(gate: dict[str, Any]) -> str:
+    name = gate["gate"]
+    if name == "max_regressions":
+        extra = " (and the pass rate fell)" if gate.get("pass_rate_dropped") and \
+            gate["limit"] == 0 else ""
+        return (f"- {'PASS' if gate['passed'] else 'FAIL'} regressions: {gate['value']} "
+                f"(allowed {gate['limit']}){extra}")
+    if name == "min_pass_rate":
+        return (f"- {'PASS' if gate['passed'] else 'FAIL'} pass rate {_pct(gate['value'])} "
+                f"(floor {gate['limit']:.1%})")
+    value = "n/a, not checked" if not gate["checked"] else f"{gate['value']:g}"
+    return (f"- {'PASS' if gate['passed'] else 'FAIL'} {LABELS[gate['figure']]}: {value} "
+            f"(budget {gate['limit']:g})")
+
+
 def render(baseline: dict[str, Any], candidate: dict[str, Any], result: dict[str, Any]) -> str:
     lines = ["# Run comparison", ""]
     lines.append(f"- baseline: {', '.join(baseline['runs'])} ({baseline['passed']}/"
@@ -253,8 +327,10 @@ def render(baseline: dict[str, Any], candidate: dict[str, Any], result: dict[str
     if baseline["eval_sets"] != candidate["eval_sets"]:
         lines.append(f"- note: the eval sets differ ({', '.join(baseline['eval_sets'])} vs "
                      f"{', '.join(candidate['eval_sets'])}); cases are matched by eval_id")
-    lines += ["", f"**{result['verdict']}**", "",
-              "| figure | baseline | candidate | delta |", "|---|---|---|---|"]
+    lines += ["", f"**{result['verdict']}**", ""]
+    if result.get("gates"):
+        lines += ["## Gates", ""] + [_gate_line(gate) for gate in result["gates"]] + [""]
+    lines += ["| figure | baseline | candidate | delta |", "|---|---|---|---|"]
     for name, row in result["deltas"].items():
         if row["delta"] is None:
             delta = "n/a"
@@ -280,7 +356,7 @@ def render(baseline: dict[str, Any], candidate: dict[str, Any], result: dict[str
             lines.append(f"- `{key}`: new in the candidate")
         for key in result["removed_cases"]:
             lines.append(f"- `{key}`: missing from the candidate")
-    if result["regression"]:
+    if result["regression"] or not result.get("gates_passed", True):
         lines += ["", "## Next", "",
                   "- Read each regressed case with `summarize_results.py --eval-id <id>`; "
                   "fix the first divergence.",
@@ -299,7 +375,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--evalset", help="compare only this eval set id")
     parser.add_argument("--format", choices=("json", "md"), default="md")
     parser.add_argument("--json", action="store_const", const="json", dest="format")
+    parser.add_argument("--min-pass-rate", type=float, metavar="P",
+                        help="fail when the candidate's pass rate is below P (0..1, e.g. 0.95)")
+    parser.add_argument("--max-regressions", type=int, default=0, metavar="N",
+                        help="fail when more than N shared cases flip from passed to failed "
+                             "(default 0: none, and the pass rate may not fall)")
+    parser.add_argument("--max-mean-prompt-tokens", type=float, metavar="T",
+                        help="fail when the candidate averages more than T prompt tokens "
+                             "per invocation (n/a never fails)")
+    parser.add_argument("--max-mean-seconds", type=float, metavar="S",
+                        help="fail when the candidate averages more than S seconds per "
+                             "invocation (n/a never fails)")
+    parser.add_argument("--max-mean-tool-calls", type=float, metavar="C",
+                        help="fail when the candidate averages more than C tool calls per "
+                             "invocation (n/a never fails)")
     args = parser.parse_args(argv)
+    if args.min_pass_rate is not None and not 0.0 <= args.min_pass_rate <= 1.0:
+        print("error: --min-pass-rate is a fraction between 0 and 1", file=sys.stderr)
+        return EXIT_USAGE
+    if args.max_regressions < 0:
+        print("error: --max-regressions cannot be negative", file=sys.stderr)
+        return EXIT_USAGE
 
     try:
         baseline = side_stats(load_side(Path(args.baseline), latest=args.latest,
@@ -314,6 +410,14 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
 
     result = compare(baseline, candidate)
+    result["gates"] = evaluate_gates(
+        candidate, result, min_pass_rate=args.min_pass_rate,
+        max_regressions=args.max_regressions,
+        budgets={"max_mean_prompt_tokens": args.max_mean_prompt_tokens,
+                 "max_mean_seconds": args.max_mean_seconds,
+                 "max_mean_tool_calls": args.max_mean_tool_calls},
+    )
+    result["gates_passed"] = all(gate["passed"] for gate in result["gates"])
     if args.format == "json":
         print(json.dumps({
             "baseline": {k: v for k, v in baseline.items() if k != "statuses"},
@@ -322,7 +426,7 @@ def main(argv: list[str] | None = None) -> int:
         }, indent=2))
     else:
         print(render(baseline, candidate, result))
-    return EXIT_FINDINGS if result["regression"] else EXIT_OK
+    return EXIT_OK if result["gates_passed"] else EXIT_FINDINGS
 
 
 if __name__ == "__main__":

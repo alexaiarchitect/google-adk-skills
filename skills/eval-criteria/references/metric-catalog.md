@@ -1,6 +1,6 @@
 # The ADK evaluation metrics: 17 registered, 13 configurable
 
-ADK 2.10 and 2.11 register 17 metrics, and this plugin's catalog has all 17. Thirteen of
+ADK 2.10 through 2.12 register 17 metrics, and this plugin's catalog has all 17. Thirteen of
 them are the ones you put in `criteria` — the table below. The other four are the
 efficiency metrics: always on, never configured, informational only (last
 section). `metric_info.py` lists them with tier `informational` and a value range
@@ -52,7 +52,7 @@ skipped validation or a reordered pipeline.
 | `IN_ORDER` | every expected call appears in the expected relative order; extra calls in between are allowed |
 | `ANY_ORDER` | every expected call appears, in any order |
 
-`ignore_args` (2.9+, unchanged through 2.11) compares names only. It makes a red suite green without
+`ignore_args` (2.9+, unchanged through 2.12) compares names only. It makes a red suite green without
 making the agent better — the right tool with the wrong id passes — so keep it
 off wherever the result gates a release.
 
@@ -224,4 +224,4 @@ descriptions quoted above, and `requires_threshold`),
 `evaluation/metric_evaluator_registry.py` (`_register_standard_metrics`),
 `evaluation/eval_config.py` (`get_eval_metrics_from_config` appends them);
 measured on installed wheels 2.9.2 and 2.10.0; the 17-metric registry and
-`_reject_threshold` re-read on 2.11.0.
+`_reject_threshold` re-read on 2.11.0 and 2.12.0.

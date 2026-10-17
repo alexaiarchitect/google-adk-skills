@@ -312,6 +312,11 @@ def case_category(eval_id: str) -> str:
     """Classify a case from its id, using the naming convention this plugin
     recommends (``<category>_<behaviour>``)."""
     lowered = (eval_id or "").lower()
+    # Skill activation cases (`activation_<skill>_...`) are their own category;
+    # checked first so a word later in the id ("missing", "context") does not
+    # re-bucket them.
+    if lowered.startswith("activation"):
+        return "activation"
     for category, prefixes in CATEGORY_PREFIXES.items():
         for prefix in prefixes:
             if lowered.startswith(prefix) or f"_{prefix}" in lowered:
@@ -402,6 +407,8 @@ def validate_evalset(
     reference_metrics: bool | None = None,
     tool_resolver: Any = None,
     trajectory_match_type: str | None = None,
+    adk_version: str | None = None,
+    registered_skills: set[str] | None = None,
 ) -> GapReport:
     """Check one evalset against what ADK 2.x will accept and what it needs.
 
@@ -411,6 +418,9 @@ def validate_evalset(
     readable definition, so EVS036 means one thing everywhere.
     `reference_metrics` says whether the configured criteria compare against a
     reference response, which decides if an empty `final_response` matters.
+    `adk_version` is the runner's release: a rubric without `text_property` is
+    only rejected before 2.12. `registered_skills` is the set of skill names
+    the agent's SkillToolsets register (None when unknowable), for EVS074.
     """
     report = report or GapReport(subject=loaded.path, skill="eval-review")
     path = loaded.path
@@ -510,9 +520,53 @@ def validate_evalset(
             expected_app_name=expected_app_name,
             tool_known=_tool_checker(known_tools, tool_resolver),
             reference_metrics=reference_metrics,
+            adk_version=adk_version,
         )
     _check_restraint_under_lenient_match(cases, trajectory_match_type, report, path)
+    if registered_skills is not None:
+        _check_skill_activations(cases, registered_skills, report, path)
     return report
+
+
+def expected_skill_loads(case: dict[str, Any]) -> list[tuple[str, str]]:
+    """(tool name, skill name) for every `load_skill` call a case expects.
+
+    Matches a prefixed toolset too (`claims_load_skill`), and reads the skill
+    from `skill_name` - the one argument `load_skill` declares.
+    """
+    found: list[tuple[str, str]] = []
+    for _, tool in iter_tool_uses(case):
+        name = str(tool.get("name") or "")
+        if name != "load_skill" and not name.endswith("_load_skill"):
+            continue
+        args = tool.get("args") if isinstance(tool.get("args"), dict) else {}
+        skill = args.get("skill_name")
+        if isinstance(skill, str) and skill:
+            found.append((name, skill))
+    return found
+
+
+def _check_skill_activations(
+    cases: list[Any], registered: set[str], report: GapReport, path: str | None,
+) -> None:
+    """EVS074: a case expects the agent to load a skill it does not register."""
+    for index, case in enumerate(cases):
+        if not isinstance(case, dict):
+            continue
+        for tool_name, skill in expected_skill_loads(case):
+            if skill in registered:
+                continue
+            known = ", ".join(sorted(registered)) or "none"
+            report.add(
+                "EVS074", "warn", "evalset",
+                f"expects `{tool_name}(skill_name={skill!r})`, but the agent registers no "
+                f"skill of that name (registered: {known})",
+                path=path, locator=f"eval_cases[{index}] ({case.get('eval_id')})",
+                fix="use the skill's frontmatter `name` exactly (kebab-case); a load of an "
+                    "unknown skill returns an error, so the trajectory can only match by "
+                    "accident",
+                source="adk-python: tools/skill_toolset.py (LoadSkillTool)",
+            )
 
 
 LENIENT_MATCH_TYPES = ("IN_ORDER", "ANY_ORDER")
@@ -564,6 +618,7 @@ def _validate_case(
     expected_app_name: str | None,
     tool_known: Any,
     reference_metrics: bool | None,
+    adk_version: str | None = None,
 ) -> None:
     locator = f"eval_cases[{index}]"
     eval_id = case.get("eval_id")
@@ -590,7 +645,7 @@ def _validate_case(
         elif case_category(eval_id) == "uncategorized":
             report.add("EVS061", "info", "evalset",
                        f"`eval_id` {eval_id!r} has no category prefix "
-                       "(happy/edge/adversarial/memory/regression)",
+                       "(happy/edge/adversarial/memory/regression/activation)",
                        path=path, locator=locator,
                        fix="prefix the id so coverage reporting can bucket it")
 
@@ -663,7 +718,8 @@ def _validate_case(
                        path=path, locator=locator, source=_SRC_EVAL_CASE)
 
     for position, rubric in enumerate(case.get("rubrics") or []):
-        _validate_rubric(rubric, report, path, f"{locator}.rubrics[{position}]", per_case=True)
+        _validate_rubric(rubric, report, path, f"{locator}.rubrics[{position}]", per_case=True,
+                         adk_version=adk_version)
 
 
 def _validate_scenario(scenario: Any, report: GapReport, path: str, locator: str) -> None:
@@ -908,8 +964,33 @@ def _has_non_text_part(content: Any) -> bool:
     return False
 
 
+def missing_text_property_finding(
+    finding_id: str, area: str, *, adk_version: str | None,
+) -> tuple[str, str, str]:
+    """(severity, message, fix) for a rubric with no `text_property`.
+
+    `RubricContent.text_property` is required up to ADK 2.11 and defaults to
+    None from 2.12 (7d8c950): the file validates there, but the judge has no
+    property to answer. So it is an error only on a runner known to be older.
+    """
+    from .env import version_at_least  # local import: keeps this module light
+
+    if adk_version and not version_at_least(adk_version, "2.12"):
+        return ("error",
+                f"rubric needs `rubric_content.text_property`: ADK {adk_version} requires it "
+                "and rejects the file",
+                "add the one yes/no property the judge should answer; ADK 2.12 made the field "
+                "optional, earlier releases do not accept a rubric without it")
+    return ("warn",
+            "rubric has no `rubric_content.text_property`: ADK 2.12 accepts it (default None), "
+            "but the judge has no property to answer, and 2.9-2.11 reject the file",
+            "add the one yes/no property the judge should answer; generated rubrics always "
+            "carry it so the suite stays portable to 2.9")
+
+
 def _validate_rubric(
-    rubric: Any, report: GapReport, path: str, locator: str, *, per_case: bool
+    rubric: Any, report: GapReport, path: str, locator: str, *, per_case: bool,
+    adk_version: str | None = None,
 ) -> None:
     if not isinstance(rubric, dict):
         report.add("EVS080", "error", "evalset", "rubric must be an object",
@@ -919,10 +1000,15 @@ def _validate_rubric(
         report.add("EVS081", "error", "evalset", "rubric is missing `rubric_id`",
                    path=path, locator=locator, source=_SRC_RUBRICS)
     content = rubric.get("rubric_content")
-    if not isinstance(content, dict) or not content.get("text_property"):
+    if not isinstance(content, dict):
         report.add("EVS082", "error", "evalset",
-                   "rubric needs `rubric_content.text_property`",
+                   "rubric needs a `rubric_content` object",
                    path=path, locator=locator, source=_SRC_RUBRICS)
+    elif not content.get("text_property"):
+        severity, message, fix = missing_text_property_finding(
+            "EVS082", "evalset", adk_version=adk_version)
+        report.add("EVS082", severity, "evalset", message, path=path, locator=locator,
+                   fix=fix, source=f"{_SRC_RUBRICS} (RubricContent.text_property)")
     unknown = sorted(set(rubric) - RUBRIC_KEYS)
     if unknown:
         report.add("EVS085", "error", "evalset",

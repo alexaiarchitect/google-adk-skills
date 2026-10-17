@@ -19,6 +19,14 @@ read it too (`gen_test_eval.py` writes one that does).
 
     run_pytest_eval.py <agent-dir-or-project> [-k EXPR] [--num-runs N]
                        [--agent-name NAME] [--] [pytest args]
+    run_pytest_eval.py <agent-dir-or-project> --behavioral [--runs N]
+                       [--min-pass-rate P] [-k EXPR]
+
+`--behavioral` runs `tests/eval/test_behaviors.py` (written by
+`gen_test_eval.py --behavioral`) on its own: each behaviour `--runs` times
+(`ADK_EVAL_RUNS`), gated on `--min-pass-rate` (`ADK_EVAL_MIN_PASS_RATE`,
+default 1.0). Without the flag that file is left out of the AgentEvaluator run,
+so the two gates stay separate.
 
 Exit code is pytest's own, except 2 when the environment cannot run it.
 """
@@ -49,8 +57,23 @@ def main(argv: list[str] | None = None) -> int:
                         help="evaluate this sub-agent instead of the root agent "
                              "(AgentEvaluator only; `adk eval` cannot do this)")
     parser.add_argument("--tests", help="test path (default: the project's eval tests)")
-    parser.add_argument("pytest_args", nargs=argparse.REMAINDER)
-    args = parser.parse_args(argv)
+    parser.add_argument("--behavioral", action="store_true",
+                        help="run tests/eval/test_behaviors.py instead of the AgentEvaluator "
+                             "suite")
+    parser.add_argument("--runs", type=int,
+                        help="--behavioral: run each behaviour N times (sets ADK_EVAL_RUNS)")
+    parser.add_argument("--min-pass-rate", type=float,
+                        help="--behavioral: the per-behaviour pass-rate floor, 0..1 (sets "
+                             "ADK_EVAL_MIN_PASS_RATE; default 1.0)")
+    # Everything this script does not know goes to pytest, before or after `--`;
+    # a positional REMAINDER would swallow flags written after the path.
+    raw = list(sys.argv[1:] if argv is None else argv)
+    passthrough: list[str] = []
+    if "--" in raw:
+        cut = raw.index("--")
+        raw, passthrough = raw[:cut], raw[cut + 1:]
+    args, unknown = parser.parse_known_args(raw)
+    args.pytest_args = unknown + passthrough
 
     target = Path(args.path)
     if not target.exists():
@@ -58,7 +81,28 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
 
     layout = detect_layout(target)
+    if (args.runs is not None or args.min_pass_rate is not None) and not args.behavioral:
+        print("error: --runs and --min-pass-rate apply to --behavioral; for the "
+              "AgentEvaluator suite measure reliability with /adk:eval-run --runs N",
+              file=sys.stderr)
+        return EXIT_USAGE
+    if args.runs is not None and args.runs < 1:
+        print("error: --runs must be at least 1", file=sys.stderr)
+        return EXIT_USAGE
+    if args.min_pass_rate is not None and not 0.0 <= args.min_pass_rate <= 1.0:
+        print("error: --min-pass-rate is a fraction between 0 and 1", file=sys.stderr)
+        return EXIT_USAGE
     tests = args.tests
+    behavior_file = None
+    if args.behavioral and not tests:
+        candidates = [Path(p) for p in layout.pytest_eval_files if Path(p).name == "test_behaviors.py"]
+        candidates.append(Path(layout.project_root or target) / "tests" / "eval" / "test_behaviors.py")
+        behavior_file = next((c for c in candidates if c.is_file()), None)
+        if behavior_file is None:
+            print("error: no tests/eval/test_behaviors.py. Write one with "
+                  "gen_test_eval.py --behavioral.", file=sys.stderr)
+            return EXIT_USAGE
+        tests = str(behavior_file)
     if not tests:
         if layout.pytest_eval_files:
             tests = str(Path(layout.pytest_eval_files[0]).parent)
@@ -76,6 +120,9 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
 
     pytest_args = [tests, "-v"]
+    if not args.behavioral and Path(tests).is_dir() and (Path(tests) / "test_behaviors.py").is_file():
+        # Behavioural checks are their own gate, with their own run count.
+        pytest_args.append(f"--ignore={Path(tests) / 'test_behaviors.py'}")
     if args.expression:
         pytest_args.extend(["-k", args.expression])
     extra = [a for a in args.pytest_args if a != "--"]
@@ -86,6 +133,10 @@ def main(argv: list[str] | None = None) -> int:
         env["ADK_EVAL_NUM_RUNS"] = str(args.num_runs)
     if args.agent_name:
         env["ADK_EVAL_AGENT_NAME"] = args.agent_name
+    if args.runs is not None:
+        env["ADK_EVAL_RUNS"] = str(args.runs)
+    if args.min_pass_rate is not None:
+        env["ADK_EVAL_MIN_PASS_RATE"] = str(args.min_pass_rate)
 
     print(f"Runner: {describe_runner(runner)}")
     print(f"Tests:  {tests}")

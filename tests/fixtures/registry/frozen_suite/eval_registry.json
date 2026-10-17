@@ -1,0 +1,23 @@
+{
+  "schema": "adk-skills.registry/1",
+  "suites": [
+    {
+      "name": "golden",
+      "tier": "pr",
+      "agent_dir": "app",
+      "evalsets": ["tests/eval/evalsets/happy.evalset.json"],
+      "config": "tests/eval/eval_config.json",
+      "runs": 1,
+      "frozen": true
+    },
+    {
+      "name": "edge_working",
+      "tier": "pr",
+      "agent_dir": "app",
+      "evalsets": ["tests/eval/evalsets/edge.evalset.json"],
+      "config": "tests/eval/eval_config.json",
+      "runs": 1,
+      "frozen": false
+    }
+  ]
+}

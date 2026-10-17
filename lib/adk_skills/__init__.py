@@ -9,11 +9,13 @@ need ADK shell out through :mod:`adk_skills.adk_subprocess`.
 __version__ = "0.1.0"
 
 # The ADK release this plugin's rules were checked against.
-ADK_TARGET = "2.11"
+ADK_TARGET = "2.12"
 
 # The oldest release still expected to work. Everything the plugin does runs on
 # 2.9 as well; where behaviour differs (the efficiency metrics, the
-# `AgentEvaluator` zero-case error) the findings say which release they mean.
+# `AgentEvaluator` zero-case error, skill lifecycles from 2.10, an optional
+# rubric `text_property` and `adk run --state_file` from 2.12) the findings say
+# which release they mean.
 ADK_MIN_SUPPORTED = "2.9"
 
 # Model policy (see skills/agent-review/references/model-policy.md).

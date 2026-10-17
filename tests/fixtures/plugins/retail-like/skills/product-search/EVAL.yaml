@@ -1,0 +1,29 @@
+# fixture: the same shapes as an Agent-Plugins EVAL.yaml, in the expense-claim domain
+cases:
+- id: travel_claims_under_500
+  prompt: "Show me travel claims under 500 dollars from last month."
+  metadata:
+    skill_name: "expenses-claim-lookup"
+    products:
+      - "Vector Search"
+  rubric:
+    - "The response MUST list only travel claims."
+    - "The response MUST only include claims under 500 dollars."
+    - "The response SHOULD give each claim's id and amount."
+  assertions:
+    - type: tool_called
+      tool: lookup_claims
+    - type: price_under
+      value: 500
+
+- id: largest_claim
+  prompt: "Which claim this quarter was the largest?"
+  metadata:
+    skill_name: "expenses-claim-lookup"
+    products: []
+  rubric:
+    - "The response MUST name exactly one claim."
+  assertions:
+    - type: mentions_price
+      value: true
+    - type: response_not_empty

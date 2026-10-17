@@ -1,0 +1,37 @@
+{
+  "eval_set_id": "activation",
+  "name": "Skill activation",
+  "description": "One case per registered skill: a request its description should trigger, expecting load_skill with the skill's frontmatter name before the skill's own steps; plus one request no skill should trigger. Activation runs on the description alone, so these cases test the description.",
+  "eval_cases": [
+    {
+      "eval_id": "activation_REPLACE_skill_name_loads",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": "A request the skill's description says it handles."}], "role": "user"},
+          "final_response": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {
+            "intermediate_responses": [],
+            "tool_uses": [
+              {"name": "load_skill", "args": {"skill_name": "REPLACE-skill-name"}},
+              {"name": "first_tool_the_skill_calls", "args": {}}
+            ]
+          }
+        }
+      ],
+      "session_input": {"app_name": "REPLACE_app_name", "user_id": "evaluator", "state": {}}
+    },
+    {
+      "eval_id": "activation_REPLACE_unrelated_request_loads_nothing",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": "A request close to the skill's topic that it must not take on."}], "role": "user"},
+          "final_response": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {"intermediate_responses": [], "tool_uses": []}
+        }
+      ],
+      "session_input": {"app_name": "REPLACE_app_name", "user_id": "evaluator", "state": {}}
+    }
+  ]
+}

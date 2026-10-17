@@ -16,7 +16,12 @@ information:
 * an `eval_id` is never silently replaced by another case (rename, move and
   split all stop when the destination id is taken);
 * a legacy-format file is never rewritten, because the conversion is lossy
-  enough to deserve its own command (`migrate_legacy.py`).
+  enough to deserve its own command (`migrate_legacy.py`);
+* a case in a **frozen** suite (`"frozen": true` in the nearest
+  `eval_registry.json`, or the one `--registry` names) is never renamed,
+  moved, split, removed, deduplicated or re-pointed: the command stops with
+  EVS120 and exit code 2. Swapping or deleting golden cases while tuning is
+  baseline erosion; `--unfreeze` is the explicit way to revise a baseline.
 
 Nothing is written until you have seen the write plan, and `--dry-run` shows it
 without touching anything.
@@ -32,7 +37,7 @@ without touching anything.
 
 Exit codes: 0 done, 1 refused (id clash, duplicates found, validation errors),
 2 usage or environment (no such target, no such case, legacy file, ambiguous
-evalset).
+evalset, a frozen suite without --unfreeze).
 """
 
 from __future__ import annotations
@@ -50,11 +55,12 @@ from adk_skills.evalset import (  # noqa: E402
     sanitize_eval_set_id, stats, text_of, tool_sequence, validate_evalset,
 )
 from adk_skills.layout import detect_layout  # noqa: E402
+from adk_skills.registry import frozen_suites_for  # noqa: E402
 from adk_skills.report import (  # noqa: E402
     EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport,
 )
 from adk_skills.templating import WritePlan, dumps_json  # noqa: E402
-from adk_skills.tools_ast import extract_module  # noqa: E402
+from adk_skills.tools_ast import extract_module, tool_resolver  # noqa: E402
 
 LEGACY_HINT = (
     "legacy list format: converting it is lossy enough to be its own step. "
@@ -117,15 +123,21 @@ def revalidate(path: str, doc: dict[str, Any], layout: Any) -> GapReport:
     """Check the result of an edit the same way eval-review would."""
     report = GapReport(subject=path, skill="eval-create")
     known: set[str] | None = None
+    resolver = None
+    registered = None
     if getattr(layout, "agent_dir", None):
-        names = extract_module(layout.agent_dir).bound_tool_names
-        known = names or None
+        facts = extract_module(layout.agent_dir)
+        known = facts.bound_tool_names or None
+        resolver = tool_resolver(facts)
+        registered = facts.registered_skill_names
     validate_evalset(
         LoadedEvalSet(path, doc, doc, "evalset"),
         report=report,
         expected_app_name=layout.expected_app_name() if layout else None,
         known_tools=known,
+        tool_resolver=resolver,
         reference_metrics=False,
+        registered_skills=registered,
     )
     return report
 
@@ -274,6 +286,50 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# frozen suites
+# ---------------------------------------------------------------------------
+
+def frozen_refusal(args: argparse.Namespace, paths: list[str], what: str) -> int | None:
+    """EVS120: stop before touching an evalset a frozen suite owns.
+
+    Returns the exit code to stop with, or None to carry on (nothing frozen,
+    or `--unfreeze` given, in which case the override is said out loud).
+    """
+    hits: list[tuple[str, list[str], str | None]] = []
+    for path in paths:
+        names, registry = frozen_suites_for(path, getattr(args, "registry", None))
+        if names:
+            hits.append((path, names, registry))
+    if not hits:
+        return None
+    if getattr(args, "unfreeze", False):
+        for path, names, registry in hits:
+            print(f"note: EVS120 overridden by --unfreeze: {Path(path).name} is in frozen "
+                  f"suite(s) {', '.join(names)} ({registry}); this revises the baseline",
+                  file=sys.stderr)
+        return None
+    report = GapReport(subject=str(args.path), skill="eval-create")
+    for path, names, registry in hits:
+        report.add(
+            "EVS120", "error", "evalset",
+            f"{what} would change {Path(path).name}, which belongs to frozen suite(s) "
+            f"{', '.join(names)} in {registry}",
+            path=path,
+            fix="a frozen suite is the golden baseline: add a new case instead of editing "
+                "this one. If the baseline itself must change, re-run with --unfreeze and "
+                "record why in the commit, then re-baseline the comparison",
+            source="skills/eval-run/scripts/run_registry.py (frozen suites)",
+        )
+    if args.json:
+        print(json.dumps({"refused": True, "validation": [report.to_dict()]}, indent=2))
+    else:
+        print(report.to_md(), file=sys.stderr)
+        print("refused: pass --unfreeze to revise a frozen baseline deliberately",
+              file=sys.stderr)
+    return EXIT_USAGE
+
+
+# ---------------------------------------------------------------------------
 # mutating subcommands
 # ---------------------------------------------------------------------------
 
@@ -322,6 +378,9 @@ def cmd_rename(args: argparse.Namespace) -> int:
     if hit is None:
         print(f"error: no case {args.eval_id!r} in {Path(loaded.path).name}", file=sys.stderr)
         return EXIT_USAGE
+    refused = frozen_refusal(args, [loaded.path], f"renaming {args.eval_id}")
+    if refused is not None:
+        return refused
     if args.new_id in existing_ids(doc):
         print(f"error: {args.new_id!r} already names a case in {Path(loaded.path).name}. "
               "An eval id addresses a specification; pick a name that is free.",
@@ -363,6 +422,10 @@ def cmd_move(args: argparse.Namespace) -> int:
         return EXIT_USAGE
 
     destination_path = Path(args.to)
+    refused = frozen_refusal(args, [loaded.path, str(destination_path)],
+                             f"moving {args.eval_id}")
+    if refused is not None:
+        return refused
     if destination_path.exists():
         destination_loaded = load_evalset(destination_path)
         if destination_loaded.fmt == "invalid":
@@ -417,6 +480,9 @@ def cmd_remove(args: argparse.Namespace) -> int:
         print(f"error: no case {args.eval_id!r} in {Path(loaded.path).name}", file=sys.stderr)
         return EXIT_USAGE
 
+    refused = frozen_refusal(args, [loaded.path], f"removing {args.eval_id}")
+    if refused is not None:
+        return refused
     index, case = hit
     doc["eval_cases"].pop(index)
 
@@ -502,6 +568,10 @@ def cmd_dedupe(args: argparse.Namespace) -> int:
                   "and prove once. Re-run with --apply to keep the first of each group.")
         return EXIT_FINDINGS
 
+    touched_files = sorted({entry["evalset"] for group in payload_groups for entry in group["drop"]})
+    refused = frozen_refusal(args, touched_files, "removing duplicate cases")
+    if refused is not None:
+        return refused
     removed: list[dict[str, str]] = []
     for group in payload_groups:
         for entry in group["drop"]:
@@ -540,6 +610,9 @@ def cmd_split(args: argparse.Namespace) -> int:
         print(f"error: no case {args.eval_id!r} in {Path(loaded.path).name}", file=sys.stderr)
         return EXIT_USAGE
 
+    refused = frozen_refusal(args, [loaded.path], f"splitting {args.eval_id}")
+    if refused is not None:
+        return refused
     index, case = hit
     turns = list(iter_invocations(case))
     if len(turns) < 2:
@@ -594,6 +667,18 @@ def cmd_rebase_app_name(args: argparse.Namespace) -> int:
     reports: list[GapReport] = []
     changed: list[dict[str, Any]] = []
     blocked: list[str] = []
+
+    would_change: list[str] = []
+    for candidate in candidates:
+        loaded = load_evalset(candidate)
+        if loaded.fmt == "evalset" and isinstance(loaded.doc, dict) and any(
+            isinstance(case, dict) and (case.get("session_input") or {}).get("app_name") != args.name
+            for case in loaded.doc.get("eval_cases") or []
+        ):
+            would_change.append(candidate)
+    refused = frozen_refusal(args, would_change, f"re-pointing app_name to {args.name!r}")
+    if refused is not None:
+        return refused
 
     for candidate in candidates:
         loaded = load_evalset(candidate)
@@ -652,6 +737,12 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--evalset", help="the evalset to act on, when several exist")
     common.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     common.add_argument("--dry-run", action="store_true", default=argparse.SUPPRESS)
+    common.add_argument("--registry",
+                        help="eval_registry.json that says which suites are frozen "
+                             "(default: the nearest one above the evalset)")
+    common.add_argument("--unfreeze", action="store_true",
+                        help="allow editing a case in a frozen suite (EVS120): a deliberate "
+                             "baseline revision")
 
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
 

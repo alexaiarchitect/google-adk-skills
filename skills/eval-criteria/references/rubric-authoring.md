@@ -96,16 +96,19 @@ as running the agent several times, applied to the evaluator.
 The effective list must be non-empty or evaluation raises, so a criterion with no
 rubrics is only valid when every case supplies its own.
 
-## `text_property` is required on every release
+## `text_property`: required before 2.12, optional from 2.12
 
-Each rubric's sentence lives in `rubric_content.text_property`, and on the
-released wheels (2.9.2 through 2.11.0) the key must be **present**:
-`{"rubric_id": "r1", "rubric_content": {}}` fails validation with
-`textProperty Field required`. An explicit `{"text_property": null}` validates
-on all three, but a rubric with no sentence asks the judge nothing, so write
-the sentence. `adk-python` main has since given the field a `None` default (so
-the dev UI can save a rubric in progress); that change is after the 2.11.0 tag
-and in no release.
+Each rubric's sentence lives in `rubric_content.text_property`. On 2.9.2 through
+2.11.0 the key must be **present**: `{"rubric_id": "r1", "rubric_content": {}}`
+fails validation with `textProperty Field required`, while an explicit
+`{"text_property": null}` validates. 2.12.0 gives the field a `None` default (so
+the dev UI can save a rubric in progress), and the empty `rubric_content` loads.
+
+Either way, a rubric with no sentence asks the judge nothing, so write the
+sentence. This plugin's generators always emit `text_property` so a file stays
+portable to 2.9. The validators (`EVS082` for an evalset, `CFG044` for a
+config) make a missing `text_property` an error only when the runner version is
+known and below 2.12, and a warning otherwise.
 
 ## Checking your work
 
@@ -120,7 +123,7 @@ agent's mind, and tool names the agent does not have.
 
 Sources: `adk-docs: docs/evaluate/criteria.md`;
 `adk-python: evaluation/rubric_based_evaluator.py`, `evaluation/eval_rubrics.py`
-(`RubricContent`, validated on installed 2.9.2 and 2.11.0; the `None` default is
-commit `7d8c950`, main only), `evaluation/llm_as_judge.py`. The rubric-design practices follow the LinkedIn
+(`RubricContent`, validated on installed 2.9.2, 2.11.0 and 2.12.0; the `None`
+default is commit `7d8c950`, in `v2.12.0`), `evaluation/llm_as_judge.py`. The rubric-design practices follow the LinkedIn
 Learning course *Evaluating AI Agents with Google ADK*, recommended as background
 reading.

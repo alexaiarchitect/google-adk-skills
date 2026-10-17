@@ -11,7 +11,9 @@ them by the tools they call and the words they share, and reports:
 * **suite shape** - roughly 70% narrow single-turn, 20% multi-turn, 10%
   adversarial,
 * **tool coverage** - tools no case ever expects, and calls to tools that do not
-  exist.
+  exist;
+* **skill activation** - for an agent with a `SkillToolset`, registered skills
+  no case expects to be loaded with `load_skill` (EVS073).
 
 Matching is a heuristic, so the matrix is evidence for a human decision, never a
 pass or fail.
@@ -31,7 +33,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 
 from adk_skills.coverage import (  # noqa: E402
-    extract_sop_rules, matrix, n_plus_one_gaps, shape, summarize_cases, tool_coverage,
+    extract_sop_rules, matrix, n_plus_one_gaps, shape, skill_coverage, summarize_cases,
+    tool_coverage,
 )
 from adk_skills.evalset import load_evalset  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
@@ -78,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
     gaps = n_plus_one_gaps(rules, cases)
     suite_shape = shape(cases)
     tools = tool_coverage(facts.bound_tool_names, cases, resolver=tool_resolver(facts))
+    skills = skill_coverage(facts.registered_skill_names, docs)
 
     report = GapReport(subject=str(target), skill="eval-review")
     report.discovered = {
@@ -90,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
         "evalsets": [Path(p).name for p in docs],
         "shape": suite_shape["ratios"],
         "tools": tools,
+        "skills": skills,
         "instruction_dynamic": dynamic,
         "root_is_llm_agent": llm_root,
     }
@@ -134,6 +139,17 @@ def main(argv: list[str] | None = None) -> int:
             "GAP-TOOLS", f"{len(tools['never_exercised'])} tool(s) never exercised",
             f"no case expects a call to: {', '.join(tools['never_exercised'])}",
             "add a case per unexercised tool, or remove the tool from the agent",
+        )
+    # With no case at all, GAP-EVALSET already says everything; EVS073 needs a suite.
+    if skills and skills["never_activated"] and cases:
+        report.add(
+            "EVS073", "warn", "coverage",
+            f"{len(skills['never_activated'])} registered skill(s) no case activates: "
+            f"{', '.join(skills['never_activated'])}",
+            fix="add an activation case per skill: a request the skill's description should "
+                "trigger, expecting `load_skill` with {\"skill_name\": \"<name>\"} before the "
+                "skill's own tool calls (gen_cases.py accepts {\"skill\": \"<name>\"} in a turn)",
+            source="adk-python: tools/skill_toolset.py (LoadSkillTool)",
         )
     for unknown in tools["unknown_in_cases"]:
         report.add("EVS036", "error", "coverage",

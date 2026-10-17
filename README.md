@@ -1,7 +1,7 @@
 # `adk` — Claude Code skills for Google ADK agents and evaluations
 
 Eleven skills for building, reviewing and evaluating Google Agent Development Kit
-(Python) agents. Checked against **ADK 2.11**; 2.9 compatible.
+(Python) agents. Checked against **ADK 2.12**; 2.9 compatible.
 
 The premise: an agent's instruction is a promise written in prose, and **eval
 cases are the only form of that promise a machine can check**. Prose drifts
@@ -56,10 +56,13 @@ calls), `judge` (Gemini judge calls, multiplied by the sample count), `vertex`
 
 ## Three things worth knowing before you start
 
-**`adk eval` always exits 0.** It prints a pass/fail summary and returns success
-either way, and counts never-scored cases as failures. Every gate in this plugin
-goes through a wrapper that reads the result files instead. A CI step that calls
-the command directly is green forever.
+**`adk eval` always exits 0** on every release through 2.12.0. It prints a
+pass/fail summary and returns success either way, and counts never-scored cases
+as failures. Every gate in this plugin goes through a wrapper that reads the
+result files instead, so its exit code is the authoritative one; unreleased
+`adk-python` main makes `adk eval` exit 1 on a failure, and the wrapper keeps
+working unchanged when that ships. A CI step that calls the command directly is
+green forever on today's releases.
 
 **The judge model defaults to a deprecated id.** Leave `judge_model_options` out
 of a config and you get `gemini-2.5-flash` sampled five times per invocation.
@@ -69,7 +72,7 @@ Generated configs here always name the model and the sample count.
 fixed expected answer, so trajectory and response matching are unavailable. Keep
 a separate config for simulated suites.
 
-**ADK 2.10 added four metrics you cannot configure** (unchanged in 2.11). `tool_call_count_v1`,
+**ADK 2.10 added four metrics you cannot configure** (unchanged through 2.12). `tool_call_count_v1`,
 `inference_call_count_v1`, `token_usage_v1` and `invocation_duration_v1` are
 appended to every eval and reported as informational values — lower is better, no
 threshold, no pass or fail. Naming one in `criteria` raises at run time, so this
@@ -86,13 +89,13 @@ Anything that actually runs ADK resolves an interpreter in this order:
 1. `$ADK_PYTHON`
 2. a virtualenv at or above the agent
 3. the interpreter owning an `adk` on `PATH`
-4. `uv run --with "google-adk[eval]==2.11.*"`
+4. `uv run --with "google-adk[eval]==2.12.*"`
 
 ```bash
 # either
 brew install uv
 # or
-python3 -m venv .venv && .venv/bin/pip install "google-adk[eval]==2.11.*"
+python3 -m venv .venv && .venv/bin/pip install "google-adk[eval]==2.12.*"
 export ADK_PYTHON=.venv/bin/python
 ```
 
@@ -117,6 +120,21 @@ extra metrics. Check before you run a suite:
 ```bash
 python3 skills/adk/scripts/check_env.py <agent-dir> --config <config>
 ```
+
+## Beyond the evalset
+
+Four pages added in the 2.12 sync, each folding a Google article into the
+plugin's own commands:
+
+| Page | Covers |
+|---|---|
+| `skills/eval-ci/references/merge-gates.md` | Day 0/1/2, the two merge rules (`--min-pass-rate`, `--max-regressions 0`), frozen golden suites, token/latency/tool-call budgets |
+| `skills/eval-create/references/behavioral-tests.md` | pytest assertions on discrete actions, one failure mode at a time, batch pass rates (`gen_test_eval.py --behavioral`) |
+| `skills/agent-create/references/skills-and-progressive-disclosure.md` | ADK `SkillToolset` skills: `SKILL.md` limits, L1/L2/L3, lifecycles, 2.12 script artifacts, activation evals |
+| `skills/agent-create/references/context-engineering.md` | the compiled-view model: compaction, `include_contents`, agents as tools, artifacts |
+
+The `adk-recipes` three-layer layout and its plugin-skill `EVAL.yaml` format are
+in `skills/adk/references/layouts.md` and `skills/eval-create/references/managing-evalsets.md`.
 
 ## Layouts
 
@@ -150,10 +168,13 @@ ADK behaviour is cited from `google/adk-python`, `google/adk-docs` and
 page ends with the files it was distilled from, so any claim about ADK can be
 checked.
 
-The context-caching, eval-engineering and shadow-rollout pages draw on three
-Google-authored articles (on context caching in agent harnesses, on continuous
-evaluation, and on eval-driven development at Firebase), paraphrased and cited by
-title and URL; the list is in `THIRD_PARTY_NOTICES.md`.
+The context-caching, eval-engineering, shadow-rollout, merge-gates,
+behavioural-tests, skills, context-engineering and layouts pages draw on
+Google-authored articles (on context caching in agent harnesses, continuous
+evaluation, eval-driven development at Firebase, moving past the vibe check,
+harness engineering, building ADK agents with skills, context-aware multi-agent
+design, and the `adk-recipes` tour), paraphrased and cited by title and URL; the
+list is in `THIRD_PARTY_NOTICES.md`.
 
 The evaluation practices described here — trajectory over final answer, the case
 taxonomy, the branch-coverage rule, restraint rubrics, pass@k, the failure

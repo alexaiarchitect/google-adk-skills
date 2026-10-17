@@ -81,6 +81,14 @@ Pin `google-adk[eval]`, pin the Python version, and name the model explicitly
 rather than letting an alias drift mid-quarter. An eval suite whose behaviour
 changes because a dependency floated is a suite whose failures nobody believes.
 
+## What a tier gates on
+
+A tier's gate is more than "every case passed". The PR tier usually is exactly
+that; a judge tier often wants a global pass threshold, and every tier that
+compares with the default branch should forbid regressions and can hold token,
+latency and tool-call budgets. The two merge rules, the budget flags and frozen
+baselines: [merge-gates.md](merge-gates.md).
+
 ## Growing it
 
 The tiers stay the same as the suite grows; only the manifest changes. Once there
@@ -93,4 +101,6 @@ people edit.
 Sources: this plugin's `run_evals.py`, `run_registry.py`;
 `adk-python: cli/cli_tools_click.py`, `evaluation/eval_metrics.py`. The
 cost-tiering practice follows the LinkedIn Learning course *Evaluating AI Agents
-with Google ADK*, recommended as background reading.
+with Google ADK*, recommended as background reading. Merge rules: "Evaluating AI
+agents: moving past the vibe check", Google Developers Blog, 2026-10-15,
+https://developers.googleblog.com/evaluating-ai-agents-moving-past-the-vibe-check/.

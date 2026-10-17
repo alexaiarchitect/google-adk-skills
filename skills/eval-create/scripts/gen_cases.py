@@ -16,6 +16,13 @@ Several turns in one case make it multi-turn, which is how context retention is
 tested: state a constraint in turn 1, add unrelated work, then require it in a
 later turn without repeating it.
 
+For an agent with a `SkillToolset`, an **activation** case asserts that the
+request makes the model load the right skill. Write `{"skill": "claim-policy"}`
+as an entry of `tools` (or `"skill": "claim-policy"` on the turn, which puts it
+first); it expands to the call ADK records, `load_skill` with
+`{"skill_name": "claim-policy"}` (prefixed when the toolset sets
+`tool_name_prefix`). Name such cases `activation_<skill>_...`.
+
 Existing `eval_id`s are never modified. A golden trace is a specification, and
 changing one is a decision a person makes with the reason in front of them.
 
@@ -42,7 +49,7 @@ from adk_skills.evalset import (  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport  # noqa: E402
 from adk_skills.templating import WritePlan, dumps_json  # noqa: E402
-from adk_skills.tools_ast import extract_module  # noqa: E402
+from adk_skills.tools_ast import extract_module, tool_resolver  # noqa: E402
 
 
 def default_evalset_path(layout: Any, eval_set_id: str, target: Path) -> Path:
@@ -61,14 +68,22 @@ def default_evalset_path(layout: Any, eval_set_id: str, target: Path) -> Path:
     return Path(layout.project_root or target) / "tests" / "eval" / "evalsets" / f"{name}.evalset.json"
 
 
-def build_case(entry: dict[str, Any], *, app_name: str, user_id: str) -> dict[str, Any]:
+def expand_tool(tool: dict[str, Any], *, load_skill_tool: str = "load_skill") -> dict[str, Any]:
+    """`{"skill": "x"}` is shorthand for the `load_skill` call that activates x."""
+    if "skill" in tool and "name" not in tool:
+        return {"name": load_skill_tool, "args": {"skill_name": str(tool["skill"])}}
+    return {"name": tool["name"], "args": tool.get("args") or {}}
+
+
+def build_case(entry: dict[str, Any], *, app_name: str, user_id: str,
+               load_skill_tool: str = "load_skill") -> dict[str, Any]:
     eval_id = entry["eval_id"]
     conversation = []
     for index, turn in enumerate(entry.get("turns") or [], start=1):
-        tools = [
-            {"name": tool["name"], "args": tool.get("args") or {}}
-            for tool in turn.get("tools") or []
-        ]
+        raw_tools = list(turn.get("tools") or [])
+        if turn.get("skill"):
+            raw_tools.insert(0, {"skill": turn["skill"]})
+        tools = [expand_tool(tool, load_skill_tool=load_skill_tool) for tool in raw_tools]
         conversation.append({
             "invocation_id": turn.get("invocation_id") or f"{eval_id}_turn_{index}",
             "user_content": {"parts": [{"text": turn.get("user", "")}], "role": "user"},
@@ -129,6 +144,12 @@ def main(argv: list[str] | None = None) -> int:
         if not entry.get("turns") and not entry.get("scenario"):
             print(f"error: {entry['eval_id']}: needs `turns` or `scenario`", file=sys.stderr)
             return EXIT_USAGE
+        for turn in entry.get("turns") or []:
+            for tool in (turn.get("tools") or []) if isinstance(turn, dict) else []:
+                if not isinstance(tool, dict) or not (tool.get("name") or tool.get("skill")):
+                    print(f"error: {entry['eval_id']}: every tool needs a `name` "
+                          "(or `skill` for a load_skill activation)", file=sys.stderr)
+                    return EXIT_USAGE
 
     layout = detect_layout(target)
     app_name = args.app_name or layout.expected_app_name() or "app"
@@ -161,10 +182,15 @@ def main(argv: list[str] | None = None) -> int:
               "that one deliberately.", file=sys.stderr)
         return EXIT_FINDINGS
 
-    added = [build_case(entry, app_name=app_name, user_id=args.user_id) for entry in entries]
+    facts = extract_module(layout.agent_dir) if layout.agent_dir else None
+    load_skill_tool = "load_skill"
+    if facts is not None and len(facts.skill_toolsets) == 1 and facts.skill_toolsets[0].tool_name_prefix:
+        load_skill_tool = f"{facts.skill_toolsets[0].tool_name_prefix}_load_skill"
+    added = [build_case(entry, app_name=app_name, user_id=args.user_id,
+                        load_skill_tool=load_skill_tool) for entry in entries]
     document.setdefault("eval_cases", []).extend(added)
 
-    known_tools = extract_module(layout.agent_dir).bound_tool_names if layout.agent_dir else None
+    known_tools = facts.bound_tool_names if facts is not None else None
     reference_metrics = True
     for candidate in layout.configs:
         if Path(candidate).name in ("test_config.json", "eval_config.json"):
@@ -178,6 +204,10 @@ def main(argv: list[str] | None = None) -> int:
         LoadedEvalSet(str(evalset_path), document, document, "evalset"),
         report=report, expected_app_name=app_name,
         known_tools=known_tools or None, reference_metrics=reference_metrics,
+        # The resolver knows toolset tools (`load_skill`) are real; a bare name
+        # set does not, and would report every activation case as EVS036.
+        tool_resolver=tool_resolver(facts) if facts is not None else None,
+        registered_skills=facts.registered_skill_names if facts is not None else None,
     )
 
     plan = WritePlan()

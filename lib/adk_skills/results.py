@@ -28,6 +28,17 @@ Their entries carry no `threshold` and no `criterion`; `token_usage_v1` adds a
 `details.token_usage_details` breakdown. They must be kept out of pass/fail
 counts and out of the NOT_EVALUATED bucket, so this parser tags them and the
 analyzers report them in their own table.
+
+Two shapes from ADK main after 2.12.0 (unreleased at 2.12.0) are read when
+present and never required:
+
+* `invocation_duration_v1` gains `details.duration_details`
+  (`DurationDetails`: `total_seconds`, `model_seconds`, `tool_seconds`,
+  `framework_seconds`, each optional; the three parts add up to the total).
+* Vertex-served rubric metrics surface the service's verdicts as ordinary
+  `rubric_scores`, plus one entry with `rubric_id` "explanation" that carries
+  the service's rationale. That entry is an explanation, not a rubric, so it is
+  kept out of the verdicts and reported as the metric's rationale.
 """
 
 from __future__ import annotations
@@ -53,6 +64,12 @@ TOKEN_USAGE_FIELDS = (
     "total_tokens", "input_tokens", "prompt_tokens", "cached_tokens",
     "tool_use_tokens", "output_tokens", "candidates_tokens", "reasoning_tokens",
 )
+
+#: `DurationDetails` (post-2.12.0 main): where an invocation's seconds went.
+DURATION_FIELDS = ("total_seconds", "model_seconds", "tool_seconds", "framework_seconds")
+
+#: The rubric id Vertex rubric verdicts use for the service's rationale.
+EXPLANATION_RUBRIC_ID = "explanation"
 
 
 def cache_hit_ratio(usage: dict[str, Any] | None) -> float | None:
@@ -112,6 +129,11 @@ class MetricResult:
     rubric_scores: list[dict[str, Any]] = field(default_factory=list)
     #: `token_usage_v1` only: the eight nested per-type counts.
     token_usage: dict[str, float] = field(default_factory=dict)
+    #: `invocation_duration_v1` on ADK main after 2.12.0: model / tool /
+    #: framework seconds. Empty when the run did not report the split.
+    duration: dict[str, float] = field(default_factory=dict)
+    #: A Vertex rubric metric's overall rationale (the "explanation" entry).
+    explanation: str | None = None
 
     @property
     def passed(self) -> bool:
@@ -213,6 +235,12 @@ class CaseResult:
         metric = self.metric("token_usage_v1")
         return dict(metric.token_usage) if metric else {}
 
+    def duration_split(self) -> dict[str, float]:
+        """Model / tool / framework seconds for this case, or `{}` on every
+        released version up to 2.12.0, which reports only the total."""
+        metric = self.metric("invocation_duration_v1")
+        return dict(metric.duration) if metric else {}
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "eval_id": self.eval_id,
@@ -279,7 +307,19 @@ class RunResult:
             }
             if name in usage:
                 out[name]["token_usage_details"] = usage[name]
+        split = self.duration_means()
+        if split and "invocation_duration_v1" in out:
+            out["invocation_duration_v1"]["duration_details"] = split
         return out
+
+    def duration_means(self) -> dict[str, float]:
+        """Mean model / tool / framework seconds across the cases that reported
+        the split; `{}` when none did (unknown, not zero)."""
+        values: dict[str, list[float]] = {}
+        for case in self.cases:
+            for key, value in case.duration_split().items():
+                values.setdefault(key, []).append(value)
+        return {key: round(sum(v) / len(v), 4) for key, v in values.items() if v}
 
     def token_means(self) -> dict[str, Any]:
         """Mean prompt / cached / output / total tokens per case, and the run's
@@ -434,7 +474,15 @@ def _metric_results(entries: Iterable[Any]) -> list[MetricResult]:
         details = _get(entry, "details") or {}
         token_usage: dict[str, float] = {}
         rubric_scores = []
+        duration: dict[str, float] = {}
+        explanation: str | None = None
         if isinstance(details, dict):
+            split = _get(details, "duration_details") or {}
+            if isinstance(split, dict):
+                for key in DURATION_FIELDS:
+                    value = _get(split, key)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        duration[key] = float(value)
             usage = _get(details, "token_usage_details") or {}
             if isinstance(usage, dict):
                 for key in TOKEN_USAGE_FIELDS:
@@ -442,6 +490,9 @@ def _metric_results(entries: Iterable[Any]) -> list[MetricResult]:
                     if isinstance(value, (int, float)) and not isinstance(value, bool):
                         token_usage[key] = float(value)
             for score in _get(details, "rubric_scores", default=[]) or []:
+                if isinstance(score, dict) and _get(score, "rubric_id") == EXPLANATION_RUBRIC_ID:
+                    explanation = score.get("rationale") or explanation
+                    continue
                 if isinstance(score, dict):
                     rubric_scores.append({
                         "rubric_id": _get(score, "rubric_id"),
@@ -455,6 +506,8 @@ def _metric_results(entries: Iterable[Any]) -> list[MetricResult]:
             status=status_name(_get(entry, "eval_status")),
             rubric_scores=rubric_scores,
             token_usage=token_usage,
+            duration=duration,
+            explanation=explanation,
         ))
     return results
 

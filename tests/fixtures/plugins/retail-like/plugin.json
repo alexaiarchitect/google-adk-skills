@@ -1,0 +1,7 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "expenses",
+  "version": "0.1.0",
+  "description": "Fixture plugin: one skill that builds an expense-claim lookup agent.",
+  "license": "Apache-2.0"
+}

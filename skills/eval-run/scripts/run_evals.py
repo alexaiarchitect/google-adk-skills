@@ -22,6 +22,17 @@ three statuses separately:
 
     run_evals.py <agent-dir> [--evalset F ...] [--config F] [--cases a,b]
                  [--runs N] [--detailed] [--storage gs://...] [--json]
+                 [--min-pass-rate P]
+
+`--min-pass-rate P` turns the run into a global-threshold gate: exit 0 when at
+least that fraction of all cases scored (passed / every case, NOT_EVALUATED
+counted as not passed) passed, 1 below it. Without it any failing case fails
+the run. Pair it with `compare_runs.py --max-regressions 0` against the frozen
+baseline for the second merge rule.
+
+On ADK main after 2.12.0 (c2ff634, unreleased) bare `adk eval` also exits
+non-zero when a case fails; every released version up to 2.12.0 exits 0, so
+this wrapper's exit code, read from the result files, stays the one to gate on.
 
 `--runs N` runs the whole set N times and keeps each run's results separate, so
 `/adk:eval-analyze` can compute pass@k. That is deliberately not
@@ -110,12 +121,18 @@ def main(argv: list[str] | None = None) -> int:
                         help="how to treat cases that were never scored (default: fail)")
     parser.add_argument("--timeout", type=float, default=1800.0)
     parser.add_argument("--dry-run", action="store_true", help="print the commands and stop")
+    parser.add_argument("--min-pass-rate", type=float, metavar="P",
+                        help="gate on a global pass threshold (0..1, e.g. 0.95) instead of "
+                             "requiring every case to pass")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
     target = Path(args.path)
     if not target.exists():
         print(f"error: {target} does not exist", file=sys.stderr)
+        return EXIT_USAGE
+    if args.min_pass_rate is not None and not 0.0 <= args.min_pass_rate <= 1.0:
+        print("error: --min-pass-rate is a fraction between 0 and 1", file=sys.stderr)
         return EXIT_USAGE
 
     layout = detect_layout(target)
@@ -183,6 +200,12 @@ def main(argv: list[str] | None = None) -> int:
         if not runner.available:
             print("note: no interpreter with google.adk was found; the command above assumes "
                   "`adk` on PATH", file=sys.stderr)
+        print("note: bare `adk eval` exits 0 on every release up to 2.12.0 whatever the "
+              "result (main after 2.12.0 exits 1 on a failure, unreleased); this wrapper "
+              "reads the result files, so its exit code is the gate", file=sys.stderr)
+        if args.min_pass_rate is not None:
+            print(f"note: gating on a pass rate of at least {args.min_pass_rate:.1%}",
+                  file=sys.stderr)
         return EXIT_OK
 
     backend = detect_backend(layout.agent_dir)
@@ -238,7 +261,14 @@ def main(argv: list[str] | None = None) -> int:
     failing = sorted({case for run in runs for case in run["failing_cases"]})
     skipped = sorted({case for run in runs for case in run["not_evaluated_cases"]})
 
-    if totals["failed"]:
+    scored = totals["passed"] + totals["failed"] + totals["not_evaluated"]
+    pass_rate = round(totals["passed"] / scored, 4) if scored else None
+    if args.min_pass_rate is not None:
+        # The global threshold replaces "every case passes": a NOT_EVALUATED
+        # case counts against the rate, never for it.
+        exit_code = EXIT_OK if pass_rate is not None and pass_rate >= args.min_pass_rate \
+            else EXIT_FINDINGS
+    elif totals["failed"]:
         exit_code = EXIT_FINDINGS
     elif skipped:
         exit_code = EXIT_FINDINGS if args.not_evaluated == "fail" else EXIT_INCONCLUSIVE
@@ -254,6 +284,8 @@ def main(argv: list[str] | None = None) -> int:
         "evalsets": [Path(e).name for e in evalsets],
         "runs": args.runs,
         "totals": totals,
+        "pass_rate": pass_rate,
+        "min_pass_rate": args.min_pass_rate,
         "failing_cases": failing,
         "not_evaluated_cases": skipped,
         "result_files": result_files,
@@ -272,6 +304,10 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print(f"passed {totals['passed']}   failed {totals['failed']}   "
               f"not evaluated {totals['not_evaluated']}")
+        if args.min_pass_rate is not None:
+            rate = "n/a" if pass_rate is None else f"{pass_rate:.1%}"
+            print(f"  pass rate {rate} against a floor of {args.min_pass_rate:.1%}: "
+                  + ("PASS" if exit_code == EXIT_OK else "FAIL"))
         if failing:
             print(f"  failed: {', '.join(failing)}")
         if skipped:

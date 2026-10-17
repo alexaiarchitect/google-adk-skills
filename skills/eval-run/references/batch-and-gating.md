@@ -54,6 +54,22 @@ Code 3 exists because "the judge was unreachable" and "the agent regressed" are
 different problems with different owners. In CI the default is to fail on it: a
 suite that silently stops scoring is worse than one that fails loudly.
 
+`run_evals.py --min-pass-rate 0.95` turns the per-case verdict into a global
+threshold: the run exits 1 when fewer than 95% of the scored cases passed, even if
+you have decided to tolerate an individual failure. The two merge rules (a global
+pass threshold and zero regressions) and the budget flags are in `/adk:eval-ci`
+`merge-gates.md`.
+
+### Coming after 2.12.0 (unreleased main)
+
+Bare `adk eval` returns 0 on a failing case on every release through 2.12.0.
+`adk-python` main after the tag (`c2ff634`) makes it exit 1 when any case failed
+or no summary was produced; main also adds `details.duration_details` (model,
+tool and framework seconds) and Vertex rubric explanations to the result files.
+**The wrapper's exit code is authoritative on every released version**: it is
+computed from the result files, it distinguishes code 2 and code 3, which the
+upstream fix does not, and it does not change when the fix ships.
+
 ## Cost, before you spend it
 
 A judge metric costs one model call **per invocation per sample**:
@@ -90,4 +106,9 @@ nightly suite; the trajectory diverged at call 2" is a bug report.
 ---
 
 Sources: this plugin's `run_registry.py` and `run_evals.py`;
-`adk-python: cli/cli_tools_click.py`, `evaluation/agent_evaluator.py`.
+`adk-python: cli/cli_tools_click.py` (the exit-code fix is commit `c2ff634`, on
+main after `v2.12.0`; bare `adk eval` measured at exit 0 on 2.12.0),
+`evaluation/agent_evaluator.py`; "Evaluating AI agents: moving past the vibe
+check", Google Developers Blog,
+https://developers.googleblog.com/evaluating-ai-agents-moving-past-the-vibe-check/
+(the global-threshold merge rule).

@@ -22,6 +22,11 @@ library rather than imported, so the two stay independent:
     L3  reliability is measured across repeated runs
     L4  production failures feed back into the suite
 
+An Agent-Plugins skill layer (google/adk-recipes `plugins/<name>/plugin.json`
+with `skills/<skill>/EVAL.yaml`) is not an ADK agent, so it gets no row; it is
+listed after the agents with its cases, rubric lines and assertion types.
+Nothing in it is run (validate it with /adk:eval-review validate_eval_yaml.py).
+
     inventory.py [repo-root] [--format json|md] [--json]
 
 Exit codes: 0 always (this is a report, not a gate), 2 if the root is unusable.
@@ -39,6 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 
 from adk_skills.env import detect_backend  # noqa: E402
 from adk_skills.eval_config import load_config  # noqa: E402
+from adk_skills.eval_yaml import plugin_layer  # noqa: E402
 from adk_skills.evalset import load_evalset, migrate_legacy, sanitize_eval_set_id, stats  # noqa: E402
 from adk_skills.layout import detect_layout, find_agent_dirs  # noqa: E402
 from adk_skills.metrics import DETERMINISTIC_METRICS, cost_tier  # noqa: E402
@@ -273,6 +279,7 @@ def main(argv: list[str] | None = None) -> int:
     agent_dirs = find_agent_dirs(root, max_depth=args.max_depth)
     agents = [inspect_agent(directory, root.resolve()) for directory in agent_dirs]
     workflows, gated = eval_workflows(root.resolve())
+    layer = plugin_layer(root)
 
     payload = {
         "root": str(root.resolve()),
@@ -286,6 +293,7 @@ def main(argv: list[str] | None = None) -> int:
             "gated": gated,
             "lowest_level": min((a["maturity"]["level"] for a in agents), default=0),
         },
+        "plugin_layer": layer,
     }
 
     if args.format == "json":
@@ -297,6 +305,7 @@ def main(argv: list[str] | None = None) -> int:
     if not agents:
         print("No loadable ADK agent found (no agent.py, loadable __init__.py or "
               "root_agent.yaml under this path).")
+        print_plugin_layer(layer)
         return EXIT_OK
 
     print(f"{len(agents)} agent(s), {payload['totals']['cases']} eval case(s) in "
@@ -338,7 +347,30 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Agents with no eval cases at all: "
               f"{', '.join(payload['totals']['with_no_cases'])}. "
               "Those are the ones where a regression cannot be detected.")
+    print_plugin_layer(layer)
     return EXIT_OK
+
+
+def print_plugin_layer(layer: dict[str, Any] | None) -> None:
+    """The Agent-Plugins skill layer, when the repository has one."""
+    if not layer:
+        return
+    print()
+    print("## Agent-Plugins skill layer")
+    print()
+    for plugin in layer["plugins"]:
+        print(f"- plugin `{plugin['name']}` {plugin['version'] or ''}: "
+              f"{len(plugin['skills'])} skill(s) ({', '.join(plugin['skills']) or 'none'})")
+    print()
+    print("| EVAL.yaml | Cases | Rubric lines | Assertions | Assertion types |")
+    print("|---|---|---|---|---|")
+    for entry in layer["eval_yamls"]:
+        types = ", ".join(f"{k} {v}" for k, v in entry["assertion_types"].items()) or "none"
+        print(f"| {entry['skill_dir']} | {entry['cases']} | {entry['rubric_lines']} | "
+              f"{entry['assertions']} | {types} |")
+    print()
+    print("No EVAL.yaml declares a threshold, and no ADK command runs one; check them "
+          "statically with /adk:eval-review validate_eval_yaml.py.")
 
 
 if __name__ == "__main__":

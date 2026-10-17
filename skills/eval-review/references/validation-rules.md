@@ -50,7 +50,7 @@ directory instead. Recommended value: the agent directory name.
 | Id | Severity | Trigger |
 |---|---|---|
 | `EVS020` | error | invocation is not an object |
-| `EVS021` | error | unrecognized key on the invocation. `Invocation` is `extra="forbid"` — still true on 2.11 — so the file fails to load. Its legal keys on 2.10 and 2.11 are `invocation_id`, `user_content`, `final_response`, `intermediate_data`, `creation_timestamp`, `duration`, `rubrics`, `app_details`; `InvocationEvent`, by contrast, gained `extra="ignore"` in 2.10, so an unknown key on an **event** is dropped rather than rejected |
+| `EVS021` | error | unrecognized key on the invocation. `Invocation` is `extra="forbid"` — still true on 2.12 — so the file fails to load. Its legal keys on 2.10 through 2.12 are `invocation_id`, `user_content`, `final_response`, `intermediate_data`, `creation_timestamp`, `duration`, `rubrics`, `app_details`; `InvocationEvent`, by contrast, gained `extra="ignore"` in 2.10, so an unknown key on an **event** is dropped rather than rejected |
 | `EVS022`/`EVS023` | error | no `user_content`; `user_content` with no text and no other part |
 | `EVS024` | warn | `user_content.role` is not `user` |
 | `EVS025` | error | no `final_response` text while a **response**-reference metric is active |
@@ -77,7 +77,8 @@ threshold 0 is disabled and does not trigger it either.
 
 | Id | Severity | Trigger |
 |---|---|---|
-| `EVS080`-`EVS082` | error | rubric is not an object, has no `rubric_id`, or no `rubric_content.text_property` |
+| `EVS080`-`EVS081` | error | rubric is not an object, or has no `rubric_id` |
+| `EVS082` | error / warn | no `rubric_content` object (error); `rubric_content` without `text_property` is an **error** only when the runner version is known and below 2.12 (2.9–2.11 reject it), otherwise a **warn**: 2.12 loads it, but a rubric with no sentence asks the judge nothing. `--adk-version V` overrides the detected runner. `CFG044` is the same rule for rubrics in an eval config |
 | `EVS083` | warn | per-case rubric with no `type`, so no criterion reads it |
 | `EVS084` | error | rubric `type` outside `FINAL_RESPONSE_QUALITY`, `TOOL_USE_QUALITY`, `TRAJECTORY_QUALITY` |
 | `EVS090`-`EVS092` | error | `conversation_scenario` malformed, or missing `starting_prompt` / `conversation_plan` |
@@ -97,15 +98,37 @@ eval-review report next to a config or conformance one:
 | `CFG071` | info | ADK 2.10+ also reports those four informational metrics on every run, so a result file carries entries your config never asked for. Reported when the resolved runner is 2.10 or newer, or unknown |
 | `CFG057` | warn | an unrecognized key on a `custom_metrics` entry (e.g. `metric`), which ADK ignores; the range belongs in `metric_info.metric_value_info.interval` |
 | `CFG058` | error | `metric_info` on a custom metric lacks `metric_name` or `metric_value_info`, or its interval lacks numeric `min_value` / `max_value`, so the config fails to load |
-| `CNF015` | error (exit 2) | a conformance case has `input.yaml` or `test.yaml` and no `spec.yaml`. `adk conformance record --help` still names those files on 2.9.2–2.11.0, but the code reads only `spec.yaml` |
+| `CNF015` | error (exit 2) | a conformance case has `input.yaml` or `test.yaml` and no `spec.yaml`. `adk conformance record --help` names those files on 2.9.2–2.11.0 (2.12.0 fixed the help), but the code reads only `spec.yaml` |
 | `CNF020` | error | a conformance case directory has no `generated-recordings.yaml` (or `-sse` variant) for replay mode. ADK skips such a case with a yellow warning and the run can still exit 0 |
 | `CNF021` | error (exit 2) | streaming mode `bidi`: the CLI accepts it, and ADK's recorder and replayer raise "Unsupported streaming mode" |
+| `EVS120` | error (exit 2) | `manage_cases.py remove`, `rename`, `move` (either end), `split`, `rebase-app-name` or `dedupe --apply` would touch a case in a suite marked `"frozen": true` in `eval_registry.json` (the nearest one above the evalset, or `--registry F`). `--unfreeze` overrides it with a note; make that its own reviewed change. Adding a case to a frozen suite is allowed |
+| `ENV014` | info | (discovery) the target is an Agent-Plugins skill layer (`plugin.json`, `skills/*/SKILL.md`, `EVAL.yaml`), not an ADK agent; it replaces `ENV011` there and points at `/adk:eval-review` |
+
+## `EVAL.yaml` (`EVY0xx`)
+
+`validate_eval_yaml.py` checks the recipes' plugin-skill format
+(`/adk:eval-create` `managing-evalsets.md`). It never runs a case.
+
+| Id | Severity | Trigger |
+|---|---|---|
+| `EVY001` | error | the YAML cannot be parsed |
+| `EVY002` | error | no `cases` list, or an empty one |
+| `EVY003` | error | a case without an `id`, or a case that is not a mapping |
+| `EVY004` | error | a case without a `prompt` |
+| `EVY005` | error | a duplicate case `id` |
+| `EVY006` | error / warn | an empty `rubric`: an error when the case has no assertions either, a warning when assertions still check it |
+| `EVY007` | warn | a rubric line without MUST or SHOULD, so it does not say what is required |
+| `EVY008` | error | an unknown assertion type, or `assertions` that is not a list |
+| `EVY009` | error | an assertion missing the field its type needs (`tool_called` without `tool`, `price_under` without `value`, ...) |
+| `EVY010` | info | `tool_called` names a tool the sibling `SKILL.md` never mentions |
 
 ## Coverage (`EVS07x`, `GAP-*`)
 
 | Id | Severity | Trigger |
 |---|---|---|
 | `EVS070` | warn | the instruction yields no testable rules |
+| `EVS073` | warn | (`coverage_matrix.py`, discovery) skills the agent registers that no case loads with `load_skill`. Reported only when the agent registers skills and at least one case exists |
+| `EVS074` | warn | (`validate_evalset.py`) a case expects `load_skill` (or a prefixed `*_load_skill`) with a `skill_name` the agent does not register. Silent when the registered set is unknowable (a registry, GCS, a list built at runtime) or there is no `SkillToolset` |
 | `GAP-BRANCH` | gap | fewer cases than branches + 1 |
 | `GAP-RULE-<n>` | gap | a specific branch with no matching case |
 | `GAP-SHAPE` | gap | no adversarial case, no multi-turn case, or too few narrow ones |

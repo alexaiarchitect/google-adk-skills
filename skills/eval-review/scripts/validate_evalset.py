@@ -11,7 +11,12 @@ Two kinds of problem, and the second is the reason this exists:
   is read by no criterion.
 
     validate_evalset.py <file | directory | agent-dir> [--agent-dir DIR]
-                        [--config FILE] [--format json|md] [--strict]
+                        [--config FILE] [--adk-version V] [--format json|md] [--strict]
+
+`--adk-version` names the release that will run the suite. A rubric without
+`text_property` is then an error below 2.12 (EVS082); without it, or on 2.12+,
+it is a warning. When the agent registers skills through a `SkillToolset`, a
+case expecting `load_skill` for a skill it does not register is EVS074.
 
 Exit codes: 0 clean, 1 findings, 2 bad target.
 """
@@ -66,6 +71,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("path", help="an evalset file, a directory of them, or an agent directory")
     parser.add_argument("--agent-dir", help="agent to cross-check tool names and app_name against")
     parser.add_argument("--config", help="eval config, to know whether a reference response is needed")
+    parser.add_argument("--adk-version",
+                        help="the ADK release that will run the suite (e.g. 2.11.0); decides "
+                             "whether a rubric without text_property is an error")
     parser.add_argument("--format", choices=("json", "md"), default="md")
     parser.add_argument("--json", action="store_const", const="json", dest="format")
     parser.add_argument("--strict", action="store_true", help="treat warnings as failures")
@@ -92,10 +100,12 @@ def main(argv: list[str] | None = None) -> int:
 
     resolver = None
     known_tools = None
+    registered_skills = None
     if agent_dir and Path(agent_dir).exists():
         facts = extract_module(agent_dir)
         resolver = tool_resolver(facts)
         known_tools = facts.bound_tool_names or None
+        registered_skills = facts.registered_skill_names
 
     reference_metrics = True
     match_type = None
@@ -128,6 +138,8 @@ def main(argv: list[str] | None = None) -> int:
         "reference_metrics_configured": reference_metrics,
         "trajectory_match_type": match_type,
         "expected_app_name": layout.expected_app_name(),
+        "registered_skills": sorted(registered_skills) if registered_skills is not None else None,
+        "adk_version": args.adk_version,
     }
 
     totals = {"cases": 0, "files": len(evalsets)}
@@ -140,6 +152,8 @@ def main(argv: list[str] | None = None) -> int:
             tool_resolver=resolver,
             trajectory_match_type=match_type,
             reference_metrics=reference_metrics,
+            adk_version=args.adk_version,
+            registered_skills=registered_skills,
         )
         if isinstance(loaded.doc, dict):
             totals["cases"] += stats(loaded.doc)["cases"]

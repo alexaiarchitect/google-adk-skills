@@ -74,6 +74,14 @@ L3–L4 make the floor statistical and grounded in production. Discovery never
 stops — at L4 it is where the new cases come from. The frame, and how each
 level of metric fits it: `/adk:adk`'s `eval-engineering.md`.
 
+## Day 0, Day 1, Day 2
+
+Google's "moving past the vibe check" post names three stages that map onto the
+ladder: Day 0 (journeys, scenarios, reading traces) is L0 until something is
+written down; Day 1 (automated layers and a frozen golden set) is L1 to L2; Day 2
+(CI merge rules, traces in a warehouse, dashboards) is L2 to L4. The mapping,
+the two merge rules and the four anti-patterns: [merge-gates.md](merge-gates.md).
+
 ## Honest self-assessment
 
 Most projects are between L0 and L1 and believe they are at L2, usually because a
@@ -98,3 +106,6 @@ background reading. The discovery/defense reading is from Vlad Kolesnikov,
 "From 'vibe checks' to continuous evaluation: engineering reliable AI agents",
 Google Cloud blog, 2026-02-28,
 https://cloud.google.com/blog/topics/developers-practitioners/from-vibe-checks-to-continuous-evaluation-engineering-reliable-ai-agents.
+The Day 0/1/2 mapping is from Selbie, Zamora, Carah and DeMartino, "Evaluating AI
+agents: moving past the vibe check", Google Developers Blog, 2026-10-15,
+https://developers.googleblog.com/evaluating-ai-agents-moving-past-the-vibe-check/.

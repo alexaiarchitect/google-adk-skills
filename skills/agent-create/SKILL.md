@@ -106,6 +106,10 @@ graph read `nodeInfo.path` in traces; a node may set its output once.
   which are deprecated, unless an `LlmAgent` has to transfer into the block.
 - **Never overwrite by default.** Existing files, functions and eval ids are left
   alone unless the user asks for `--force`.
+- **Long procedures go in skills, not the instruction.** A procedure needed for
+  one kind of request belongs in a `SkillToolset` skill the agent loads on
+  demand; a large tool result belongs in an artifact, and a long conversation
+  wants event compaction. The instruction stays short and always relevant.
 - **The generated TODOs are not decoration.** A tool docstring that still says
   "TODO" is a tool the model has to guess about; say so before the user runs
   anything.
@@ -120,6 +124,8 @@ graph read `nodeInfo.path` in traces; a node may set its output once.
 | State, memory and what persists | [state-and-memory.md](references/state-and-memory.md) |
 | Workflow graphs: nodes, edges, joins, human input, testing them | [workflow-graphs.md](references/workflow-graphs.md) |
 | Context caching: when it pays, what breaks the prefix, proving the gain | [context-caching.md](references/context-caching.md) |
+| ADK skills: `SKILL.md`, `SkillToolset`, discovery and lifecycles, activation evals | [skills-and-progressive-disclosure.md](references/skills-and-progressive-disclosure.md) |
+| What the model sees: compaction, `include_contents`, agents as tools, artifacts | [context-engineering.md](references/context-engineering.md) |
 
 ## Scripts
 

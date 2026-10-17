@@ -63,6 +63,32 @@ When each is worth acting on, and how to prove a caching change paid:
 No `AGT064`: `global_instruction` is `AGT002`. `AGT020` does not fire when only
 `static_instruction` is set.
 
+## Skills (`AGT070`–`AGT075`)
+
+What a skill is, the limits ADK enforces and the activation evals:
+`../../agent-create/references/skills-and-progressive-disclosure.md`.
+
+| Id | Severity | Trigger | Why |
+|---|---|---|---|
+| `AGT070` | **error** | invalid skill frontmatter: no `SKILL.md` or the skill directory is missing; `name` missing, not lowercase kebab-case, over 64 characters, or different from the directory name; `description` empty or over 1024 characters; `compatibility` over 500; `metadata` values of the wrong type | ADK raises at import (`ValidationError` or `ValueError`), so the agent never loads |
+| `AGT071` | warn | a skill body over 500 lines or about 5k tokens (characters / 4) | it is loaded whole on `load_skill`; move detail into `references/` |
+| `AGT072` | info | the agent instruction repeats at least 40% of a skill's distinct non-blank lines (12+ characters) verbatim | the procedure is paid for on every request, which defeats progressive disclosure; keep it in the skill only |
+| `AGT073` | info | a skill description shorter than 40 characters | the description is all the model sees before loading, so it drives activation; say what the skill does and when |
+| `AGT074` | info | `lifecycle_config` uses `BOUNDED` / `EPHEMERAL` or `skill_overrides` while the agent's `.env` lacks `ADK_ENABLE_SKILL_LIFECYCLE`; a known runner below 2.10 adds that `SkillLifecycleConfig` exists only from 2.10 | the modes and the cap work without the flag; it adds `unload_skill` and pruning of released skills' instructions (experimental) |
+| `AGT075` | **error** | `SkillLifecycleConfig(max_active_skills < 1)`, literal or through a constant | ADK raises `ValueError` at construction |
+
+## Context engineering (`AGT076`–`AGT079`)
+
+Compaction, `include_contents`, agents as tools and artifacts:
+`../../agent-create/references/context-engineering.md`.
+
+| Id | Severity | Trigger | Why |
+|---|---|---|---|
+| `AGT076` | **error** | `EventsCompactionConfig` with a broken bound (`compaction_interval` > 0, `overlap_size` ≥ 0, `token_threshold` > 0, `event_retention_size` ≥ 0), an unknown field, a trigger pair half set, or no trigger pair at all | building the App raises `ValidationError`; validators identical on 2.9.2–2.12; import from `google.adk.apps.app` |
+| `AGT077` | info | no `App` sets `events_compaction_config` while some eval case has 6+ invocations or a `conversation_scenario` (discovery and lint) | long sessions resend the whole history; consider compaction, and keep the long case as its test |
+| `AGT078` | info | a sub-agent of an `LlmAgent` parent (a transfer target) keeps `include_contents='default'`. Children of `SequentialAgent` / `ParallelAgent` / `LoopAgent` are skipped; an `AgentTool` runs in a fresh session and is out of scope | each of its requests carries the whole conversation; set `'none'` if it only needs the handed-over turn, or call it as an `AgentTool` |
+| `AGT079` | warn | a bound tool returns a string over 2,000 characters (a literal, `"..." * N`, a dict value, or a module constant) | it lands in the history and is resent on every later call; save it as an artifact and return a reference |
+
 ## Evaluation readiness
 
 | Id | Severity | Trigger |
@@ -80,6 +106,7 @@ No `AGT064`: `global_instruction` is `AGT002`. `AGT020` does not fire when only
 | `ENV004` | **error** | a backend selected but missing project or location |
 | `ENV006` | info | the model comes from the environment and `MODEL_NAME` is unset, so the code default applies |
 | `ENV013` | warn | `App.name` differs from the agent directory |
+| `ENV014` | info | (discovery) the target is an `adk-recipes` Agent-Plugins skill layer (`plugin.json`, `skills/*/SKILL.md`, `EVAL.yaml`), not an agent; check its `EVAL.yaml` with `/adk:eval-review` `validate_eval_yaml.py` |
 
 ## Reading the severities
 

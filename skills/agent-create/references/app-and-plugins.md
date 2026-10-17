@@ -112,6 +112,18 @@ a match. `block_on_screening_failure` defaults to `True`, so a screening call th
 errors blocks rather than passes the text through. `ModelArmorPlugin`'s arguments
 are keyword-only.
 
+**2.12 screens tool output too** (commit `fdda17c`). Set
+`tool_output_template_name` on `ModelArmorConfig` and the plugin's
+`after_tool_callback` screens each tool result's text (bytes and media parts are
+skipped; long results are screened in overlapping 64k-character chunks) and
+replaces a flagged result with `{"error": tool_output_blocked_message}`. That is
+the guard for indirect prompt injection arriving through a search or fetch tool.
+On 2.9–2.11 the field does not exist (and the config needs a prompt or response
+template); 2.12 also accepts a config with only the tool-output template. An eval
+for it is a trap-mock case: a tool fixture whose result carries the injected
+text, and a rubric that the agent did not act on it (`/adk:eval-create`
+`trap-mocks.md`).
+
 **It needs an extra.** On a plain `google-adk[eval]` install the import raises
 `ImportError: Model Armor support requires google-cloud-modelarmor. Install it
 with: pip install 'google-adk[gcp]'.` The plugin has shipped since 2.9.2 — what
@@ -162,6 +174,25 @@ quietly:
 
 Plus: everything in `event.output` must be JSON-serializable.
 
+**Confirmation on a function node (2.12).** `@node(require_confirmation=True)`
+(or a predicate `callable(...) -> bool`), `node(...)`, `build_node(...)` and
+`FunctionNode(require_confirmation=...)` pause the node for a yes/no before the
+function runs, the same contract `FunctionTool(require_confirmation=...)` has:
+approval runs it once; rejection skips it and emits `{"error": "This tool call
+is rejected."}`. `@node` defaults `rerun_on_resume=True` when confirmation is
+set; `FunctionNode` raises `WorkflowConfigurationError` if you pass
+`rerun_on_resume=False` with it. On 2.9–2.11 the keyword does not exist. Eval
+both branches: one case approves, one rejects and expects no side effect.
+
+## Skills and context
+
+`SkillToolset` (progressive disclosure, lifecycles, and 2.12's
+`save_output_artifacts=True`, which saves files a skill script writes as
+artifacts) is in [skills-and-progressive-disclosure.md](skills-and-progressive-disclosure.md).
+Event compaction (`App(events_compaction_config=...)`), `include_contents`, and
+keeping large payloads out of history are in
+[context-engineering.md](context-engineering.md).
+
 ---
 
 Sources: `adk-python: apps/app.py`, `agents/llm_agent.py`, `plugins/__init__.py`
@@ -173,6 +204,10 @@ confirmed absent from 2.9.2,
 `integrations/model_armor/` (`_plugin.py`, `_config.py`, `__init__.py`'s
 `__all__` and its import error), `agents/context.py`
 (the output setter), `workflow/_workflow.py` (terminal-output finalization),
-`workflow/_errors.py`; `adk-docs: docs/apps/index.md`, `docs/callbacks/*`,
+`workflow/_errors.py`, `workflow/_function_node.py` and `workflow/_node.py`
+(`require_confirmation`, commit `988fd1a`, in `v2.12.0`),
+`integrations/model_armor/_config.py` (`tool_output_template_name`, commit
+`fdda17c`, in `v2.12.0`; both read on the installed 2.12.0 wheel and absent from
+2.11.0); `adk-docs: docs/apps/index.md`, `docs/callbacks/*`,
 `docs/plugins/index.md`, `docs/2.0/index.md`, `docs/graphs/index.md`,
 `docs/safety/index.md`.

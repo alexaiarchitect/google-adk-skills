@@ -34,7 +34,9 @@ expense_claims:
 and returns success. A CI step calling it directly passes forever. It also counts
 `NOT_EVALUATED` in the failed column, so its own summary cannot distinguish a
 regression from an unreachable judge. Everything here runs through a wrapper that
-reads the result files and reports the three statuses separately.
+reads the result files and reports the three statuses separately. (Unreleased
+`adk-python` main after 2.12.0 makes `adk eval` exit 1 on a failure; the
+wrapper's exit code stays the authoritative one on every release.)
 
 `${CLAUDE_SKILL_DIR}` is this skill's directory.
 
@@ -117,7 +119,7 @@ Never `adk eval` alone in CI. A project with no pytest gate gets one from
 - **Run the cheap tier first.** There is no point paying a judge to score an
   agent that called the wrong tool.
 - **Resolve the runner honestly.** `$ADK_PYTHON`, a project venv, an `adk` on
-  PATH, then `uv run --with "google-adk[eval]==2.11.*"`. If none works, say so and
+  PATH, then `uv run --with "google-adk[eval]==2.12.*"`. If none works, say so and
   give the install command.
 - **Recording conformance needs a running dev server** on 127.0.0.1:8000 started
   with the recordings plugin; the script checks the port and prints the command.
@@ -131,17 +133,19 @@ Never `adk eval` alone in CI. A project with no pytest gate gets one from
 | Batch manifests, tiers and gating | [batch-and-gating.md](references/batch-and-gating.md) |
 | Conformance recording and replay | [conformance.md](references/conformance.md) |
 | GCS eval storage and live mode | [gcs-and-live.md](references/gcs-and-live.md) |
+| Behavioural pytest assertions and batch pass rates | [behavioral-tests.md](../eval-create/references/behavioral-tests.md) |
+| A global pass threshold and the other merge rules | [merge-gates.md](../eval-ci/references/merge-gates.md) |
 
-Templates: `assets/templates/{eval_registry.json,test_eval.py.tmpl,conformance_spec.yaml}`.
+Templates: `assets/templates/{eval_registry.json,test_eval.py.tmpl,test_behaviors.py.tmpl,conformance_spec.yaml}`.
 
 ## Scripts
 
 | Command | Does | Exit codes |
 |---|---|---|
-| `scripts/run_evals.py <agent-dir> [--evalset F] [--config F] [--cases a,b] [--runs N] [--detailed] [--storage gs://] [--not-evaluated fail\|warn] [--dry-run]` | runs and gates | 0 clean, 1 failures, 2 env, 3 only never-scored |
-| `scripts/run_registry.py --registry F [--tier pr\|nightly] [--suite NAME]` / `--init [--root D] [--out F]` | batch of suites; `--init` builds the manifest by discovery | 0 clean, 1 failures, 2 env |
-| `scripts/run_pytest_eval.py <path> [-k EXPR] [--num-runs N] [--agent-name N]` | the pytest gate | pytest's code, 2 for env |
-| `scripts/gen_test_eval.py [path] [--out F] [--agent-name N] [--dry-run]` | writes a pytest gate for an existing project | 0, 1 refused, 2 usage |
+| `scripts/run_evals.py <agent-dir> [--evalset F] [--config F] [--cases a,b] [--runs N] [--detailed] [--storage gs://] [--not-evaluated fail\|warn] [--min-pass-rate P] [--dry-run]` | runs and gates; `--min-pass-rate` also fails a run whose pass rate is below `P` | 0 clean, 1 failures, 2 env, 3 only never-scored |
+| `scripts/run_registry.py --registry F [--tier pr\|nightly] [--suite NAME]` / `--init [--root D] [--out F]` | batch of suites; `--init` builds the manifest by discovery and writes `"frozen": false` on each suite (the template marks `trajectory_pr` frozen, `judge_nightly` not); a frozen suite's cases are protected by `manage_cases.py` (`EVS120`) | 0 clean, 1 failures, 2 env |
+| `scripts/run_pytest_eval.py <path> [-k EXPR] [--num-runs N] [--agent-name N] [--behavioral [--runs N] [--min-pass-rate P]]` | the pytest gate; without `--behavioral` it ignores `test_behaviors.py`; with it, it runs only that file, each behaviour `--runs` times (sets `ADK_EVAL_RUNS`), gated per behaviour on `--min-pass-rate` (sets `ADK_EVAL_MIN_PASS_RATE`, default 1.0); failing runs show as xfail and `test_pass_rates` is the gate | pytest's code, 2 for env |
+| `scripts/gen_test_eval.py [path] [--out F] [--agent-name N] [--behavioral] [--dry-run]` | writes a pytest gate for an existing project; `--behavioral` writes `tests/eval/test_behaviors.py` instead (`run_turn`, `Turn`, three behaviours taken from the happy, edge and no-call cases) | 0, 1 refused, 2 usage |
 | `scripts/conformance.py record <case-dir> [--mode none\|sse]` / `test [dirs] [--generate-report] [--skip-recordings-check]` | record and replay through the runner; `test --mode replay` refuses (`CNF020`) a case with no `generated-recordings.yaml`, because ADK skips those with a warning and can still exit 0; refuses a case with `input.yaml` / `test.yaml` and no `spec.yaml` (`CNF015`; the record `--help` names those but only `spec.yaml` is read) and the `bidi` mode ADK cannot record (`CNF021`) | 0, 1 failed, 2 env |
 
 ## Completion checklist

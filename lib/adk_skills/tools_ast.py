@@ -33,6 +33,10 @@ from typing import Any, Iterable
 from . import DEPRECATED_MODELS
 from .env import classify_model_id
 from .report import Finding
+from .skills import (
+    MAX_INSTRUCTION_LINES, MAX_INSTRUCTION_TOKENS, MIN_DESCRIPTION_CHARS, UNREADABLE,
+    SkillInfo, inline_skill, load_skill_dir, load_skills_dir, repeated_share,
+)
 
 #: Constructors that build an LLM agent.
 LLM_AGENT_CALLS = {"Agent", "LlmAgent"}
@@ -134,6 +138,50 @@ PLUGIN_EXPORTS: dict[str, str] = {
     "ToolCallIntegrityError": "2.11",
 }
 
+#: `SkillToolset` and what it is built from (`tools/skill_toolset.py`,
+#: `skills/models.py`, `skills/_utils.py`; 2.9.2 and 2.12.0 alike for the
+#: shapes read here, with the lifecycle and discovery enums from 2.10).
+SKILL_TOOLSET_CALLS = {"SkillToolset"}
+SKILL_CALLS = {"Skill"}
+SKILL_DIR_LOADERS = {"load_skill_from_dir": "one", "load_skills_from_dir": "many"}
+#: Loaders whose skills exist only at runtime.
+SKILL_REMOTE_LOADERS = {
+    "load_skill_from_gcs_dir": "gcs", "load_skills_from_gcs_dir": "gcs",
+    "list_skills_in_gcs_dir": "gcs",
+}
+#: The tools a SkillToolset generates. `list_skills` is dropped under
+#: `SkillDiscoveryMode.EAGER`; `unload_skill` exists only with
+#: `ADK_ENABLE_SKILL_LIFECYCLE`; `search_skills` only with a `registry`.
+SKILL_TOOL_NAMES = (
+    "list_skills", "load_skill", "load_skill_resource", "run_skill_script",
+    "unload_skill", "search_skills",
+)
+SKILL_LIFECYCLE_MODES = ("PERSISTENT", "BOUNDED", "EPHEMERAL")
+#: The release that added `SkillLifecycleConfig` / `SkillLifecycleMode` /
+#: `SkillDiscoveryMode` (first tag v2.10.0).
+SKILL_LIFECYCLE_SINCE = "2.10"
+
+#: `EventsCompactionConfig` fields and bounds (`apps/_configs.py`, identical in
+#: 2.9.2, 2.11.0 and 2.12.0; `extra="forbid"`, every field defaults to None, and
+#: a model validator wants each trigger pair set together and at least one).
+COMPACTION_CONFIG_BOUNDS: dict[str, tuple[str, int] | None] = {
+    "summarizer": None,
+    "compaction_interval": ("gt", 0),
+    "overlap_size": ("ge", 0),
+    "token_threshold": ("gt", 0),
+    "event_retention_size": ("ge", 0),
+}
+COMPACTION_PAIRS = (("compaction_interval", "overlap_size"),
+                    ("token_threshold", "event_retention_size"))
+#: A conversation this long is where uncompacted history starts to dominate the
+#: request; a user-simulation scenario can run longer still.
+LONG_CONVERSATION_INVOCATIONS = 6
+#: A tool result this large in chat history is re-sent on every later request.
+LARGE_TOOL_RETURN_CHARS = 2000
+
+_SRC_SKILL_TOOLSET = "adk-python: tools/skill_toolset.py"
+_SRC_SKILL_MODELS = "adk-python: skills/models.py"
+_SRC_COMPACTION = "adk-python: apps/_configs.py (EventsCompactionConfig)"
 _SRC_LLM_AGENT = "adk-python: agents/llm_agent.py"
 _SRC_CACHE_CONFIG = "adk-python: agents/context_cache_config.py"
 _SRC_CACHE_DOC = "adk-docs: docs/context/caching.md"
@@ -219,6 +267,12 @@ class ToolSpec:
     has_var_args: bool = False
     has_var_kwargs: bool = False
     decorators: list[str] = field(default_factory=list)
+    #: The longest string literal this tool returns (directly, or as a value of
+    #: a returned dict), in characters.
+    large_return_chars: int = 0
+    #: Names returned bare (`return POLICY_TEXT`), resolved against module
+    #: string constants once every file is read.
+    returned_names: list[str] = field(default_factory=list)
 
     @property
     def schema_params(self) -> list[ParamSpec]:
@@ -238,6 +292,7 @@ class ToolSpec:
             "resolved": self.resolved,
             "has_var_args": self.has_var_args,
             "has_var_kwargs": self.has_var_kwargs,
+            "large_return_chars": self.large_return_chars,
         }
 
 
@@ -281,6 +336,9 @@ class AgentSpec:
     callbacks: list[str] = field(default_factory=list)
     kwargs: list[str] = field(default_factory=list)
     gcc_forbidden: list[str] = field(default_factory=list)
+    #: `include_contents=` as written: "default", "none", the source text of
+    #: an expression, or None when unset (ADK's default is "default").
+    include_contents: str | None = None
     lineno: int = 0
     file: str | None = None
 
@@ -326,11 +384,70 @@ class AppSpec:
     context_cache_config: dict[str, Any] | None = None
     #: Source text when the config is set but not a readable constructor call.
     context_cache_expr: str | None = None
+    #: `events_compaction_config=` is set to something other than `None`.
+    events_compaction_set: bool = False
+    #: The `EventsCompactionConfig(...)` kwargs, as for the cache config.
+    events_compaction_config: dict[str, Any] | None = None
+    events_compaction_expr: str | None = None
     lineno: int = 0
     file: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass
+class SkillToolsetSpec:
+    """One `SkillToolset(...)` and the skills it registers."""
+
+    var: str | None
+    file: str | None = None
+    lineno: int = 0
+    skills: list[SkillInfo] = field(default_factory=list)
+    #: True when the registered set cannot be read: a registry, GCS, or an
+    #: expression built at runtime. EVS074 / EVS073 then stay silent.
+    skills_unresolved: bool = False
+    unresolved_reason: str | None = None
+    registry: bool = False
+    #: "LAZY", "EAGER", the source text of an expression, or None (LAZY).
+    discovery_mode: str | None = None
+    #: `SkillLifecycleConfig(...)` kwargs: literals, mode names ("BOUNDED"),
+    #: `{skill: mode}` for `skill_overrides`, source text otherwise.
+    lifecycle_config: dict[str, Any] | None = None
+    lifecycle_expr: str | None = None
+    tool_name_prefix: str | None = None
+    kwargs: list[str] = field(default_factory=list)
+
+    @property
+    def label(self) -> str:
+        """The name this toolset carries in an agent's `opaque_tools`."""
+        return self.var or "SkillToolset"
+
+    @property
+    def tool_names(self) -> list[str]:
+        """The tools this toolset can put in a trajectory, prefixed as ADK does."""
+        names = [n for n in SKILL_TOOL_NAMES
+                 if not (n == "list_skills" and self.discovery_mode == "EAGER")
+                 and not (n == "search_skills" and not self.registry)]
+        if self.tool_name_prefix:
+            names = [f"{self.tool_name_prefix}_{n}" for n in names]
+        return names
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "var": self.var,
+            "file": self.file,
+            "lineno": self.lineno,
+            "skills": [skill.to_dict() for skill in self.skills],
+            "skills_unresolved": self.skills_unresolved,
+            "unresolved_reason": self.unresolved_reason,
+            "registry": self.registry,
+            "discovery_mode": self.discovery_mode,
+            "lifecycle_config": self.lifecycle_config,
+            "lifecycle_expr": self.lifecycle_expr,
+            "tool_name_prefix": self.tool_name_prefix,
+            "tools": self.tool_names,
+        }
 
 
 @dataclass
@@ -417,6 +534,27 @@ class ModuleFacts:
     #: an object's attribute rather than to an `Agent(...)`/`App(...)` call, e.g.
     #: ``{"root_agent": "coordinator_wrapper._agent"}``.
     unresolved_exports: dict[str, str] = field(default_factory=dict)
+    skill_toolsets: list[SkillToolsetSpec] = field(default_factory=list)
+    #: `NAME.append(x)` / `NAME.extend(xs)` anywhere in a file, so a skills
+    #: list filled in a loop (`skills.append(load_skill_from_gcs_dir(...))`)
+    #: is seen to be filled.
+    list_mutations: dict[str, list[ast.expr]] = field(default_factory=dict)
+
+    @property
+    def skills(self) -> list[SkillInfo]:
+        return [skill for toolset in self.skill_toolsets for skill in toolset.skills]
+
+    @property
+    def registered_skill_names(self) -> set[str] | None:
+        """Every skill name the agent's toolsets register, or None when there is
+        no SkillToolset at all (then `load_skill` is not a tool, which EVS036
+        reports) or the set is unknowable (a registry, GCS, or a list built at
+        run time)."""
+        if not self.skill_toolsets:
+            return None
+        if any(toolset.skills_unresolved for toolset in self.skill_toolsets):
+            return None
+        return {skill.name for skill in self.skills if skill.name}
 
     @property
     def app(self) -> AppSpec | None:
@@ -526,6 +664,8 @@ class ModuleFacts:
             "tool_collisions": self.tool_collisions,
             "state_writes": [w.to_dict() for w in self.state_writes],
             "syntax_errors": self.syntax_errors,
+            "skill_toolsets": [t.to_dict() for t in self.skill_toolsets],
+            "skills": [skill.to_dict() for skill in self.skills],
         }
 
 
@@ -888,6 +1028,24 @@ def _collect_tool(node: ast.FunctionDef | ast.AsyncFunctionDef, models: dict[str
             exc = _name_of(child.exc) if child.exc is not None else "re-raise"
             spec.raises.append(exc or "raise")
         elif isinstance(child, ast.Return):
+            returned = [child.value] if child.value is not None else []
+            if isinstance(child.value, ast.Dict):
+                returned.extend(v for v in child.value.values if v is not None)
+            for value in returned:
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    spec.large_return_chars = max(spec.large_return_chars, len(value.value))
+                elif isinstance(value, ast.JoinedStr):
+                    size = sum(len(p.value) for p in value.values
+                               if isinstance(p, ast.Constant) and isinstance(p.value, str))
+                    spec.large_return_chars = max(spec.large_return_chars, size)
+                elif isinstance(value, ast.BinOp) and isinstance(value.op, ast.Mult):
+                    text, count = _literal(value.left), _literal(value.right)
+                    if isinstance(count, str):
+                        text, count = count, text
+                    if isinstance(text, str) and isinstance(count, int) and not isinstance(count, bool):
+                        spec.large_return_chars = max(spec.large_return_chars, len(text) * count)
+                elif isinstance(value, ast.Name) and value.id not in spec.returned_names:
+                    spec.returned_names.append(value.id)
             if isinstance(child.value, ast.Dict):
                 spec.returns_dict = True
                 for key in child.value.keys:
@@ -1150,6 +1308,13 @@ def _collect_agent(
     gcc = _kwarg(call, "generate_content_config")
     if isinstance(gcc, ast.Call):
         spec.gcc_forbidden = [kw.arg for kw in gcc.keywords if kw.arg in FORBIDDEN_GCC_FIELDS]
+
+    contents = _kwarg(call, "include_contents")
+    if contents is not None:
+        literal = _literal(contents)
+        if literal is None and facts is not None and isinstance(contents, ast.Name):
+            literal = _literal(facts.expr_constants.get(contents.id))
+        spec.include_contents = literal if isinstance(literal, str) else _unparse(contents)
     return spec
 
 
@@ -1184,7 +1349,322 @@ def _collect_app(var: str, call: ast.Call, facts: ModuleFacts | None = None) -> 
             spec.context_cache_config = config
         else:
             spec.context_cache_expr = _unparse(cache)
+
+    compaction = _kwarg(call, "events_compaction_config")
+    if compaction is not None and not (isinstance(compaction, ast.Constant) and compaction.value is None):
+        spec.events_compaction_set = True
+        resolved = _follow_constant(compaction, facts)
+        if isinstance(resolved, ast.Constant) and resolved.value is None:
+            spec.events_compaction_set = False
+        elif isinstance(resolved, ast.Call) and _name_of(resolved.func) == "EventsCompactionConfig" \
+                and all(kw.arg for kw in resolved.keywords) and not resolved.args:
+            config = {}
+            for keyword in resolved.keywords:
+                value = _follow_constant(keyword.value, facts)
+                literal = _literal(value)
+                config[keyword.arg] = literal if literal is not None else _unparse(keyword.value)
+            spec.events_compaction_config = config
+        else:
+            spec.events_compaction_expr = _unparse(compaction)
     return spec
+
+
+def _follow_constant(node: ast.AST | None, facts: ModuleFacts | None, _seen: frozenset[str] = frozenset()) -> ast.AST | None:
+    """Follow `NAME` (or `module.NAME`) to the module-level expression it holds."""
+    expr_constants = facts.expr_constants if facts else {}
+    while isinstance(node, (ast.Name, ast.Attribute)):
+        name = _name_of(node)
+        if not name or name in _seen or name not in expr_constants:
+            break
+        _seen = _seen | {name}
+        node = expr_constants[name]
+    return node
+
+
+# ---------------------------------------------------------------------------
+# skills
+# ---------------------------------------------------------------------------
+
+def _resolve_path(node: ast.AST | None, file: str | None, facts: ModuleFacts | None,
+                  _depth: int = 0) -> tuple[Path | None, bool]:
+    """(path, anchored) for a path expression, when it can be read.
+
+    `anchored` is True when the path is built from `__file__`, so it does not
+    depend on the directory the agent is started from. Follows the shapes real
+    agents use: `pathlib.Path(__file__).parent / "skills" / "x"`,
+    `os.path.join(os.path.dirname(__file__), "skills")`, `.resolve()`,
+    `.joinpath(...)`, a module constant holding any of those, and a plain
+    string (relative to the working directory at run time).
+    """
+    if node is None or _depth > 12:
+        return None, False
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return Path(node.value), Path(node.value).is_absolute()
+    if isinstance(node, ast.Name):
+        if node.id == "__file__" and file:
+            return Path(file).resolve(), True
+        if facts is not None and node.id in facts.expr_constants:
+            return _resolve_path(facts.expr_constants[node.id], file, facts, _depth + 1)
+        return None, False
+    if isinstance(node, ast.Attribute):
+        if node.attr == "parent":
+            base, anchored = _resolve_path(node.value, file, facts, _depth + 1)
+            return (base.parent if base is not None else None), anchored
+        if facts is not None and node.attr in facts.expr_constants:
+            return _resolve_path(facts.expr_constants[node.attr], file, facts, _depth + 1)
+        return None, False
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        left, anchored = _resolve_path(node.left, file, facts, _depth + 1)
+        right, _ = _resolve_path(node.right, file, facts, _depth + 1)
+        if left is None or right is None:
+            return None, False
+        return left / right, anchored
+    if isinstance(node, ast.Call):
+        func = node.func
+        name = _name_of(func)
+        dotted = _dotted(func)
+        if name in ("Path", "PurePath", "PosixPath", "str", "fspath", "abspath", "realpath",
+                    "normpath", "expanduser") and node.args:
+            if len(node.args) > 1 and name in ("Path", "PurePath", "PosixPath"):
+                parts = [_resolve_path(a, file, facts, _depth + 1) for a in node.args]
+                if any(p is None for p, _ in parts):
+                    return None, False
+                joined = parts[0][0]
+                for part, _ in parts[1:]:
+                    joined = joined / part
+                return joined, parts[0][1]
+            return _resolve_path(node.args[0], file, facts, _depth + 1)
+        if name == "dirname" and node.args:
+            base, anchored = _resolve_path(node.args[0], file, facts, _depth + 1)
+            return (base.parent if base is not None else None), anchored
+        if (name == "join" and dotted.endswith("path.join")) or name == "joinpath":
+            args = list(node.args)
+            if name == "joinpath" and isinstance(func, ast.Attribute):
+                args = [func.value, *args]
+            parts = [_resolve_path(a, file, facts, _depth + 1) for a in args]
+            if not parts or any(p is None for p, _ in parts):
+                return None, False
+            joined = parts[0][0]
+            for part, _ in parts[1:]:
+                joined = joined / part
+            return joined, parts[0][1]
+        if name in ("resolve", "absolute") and isinstance(func, ast.Attribute):
+            return _resolve_path(func.value, file, facts, _depth + 1)
+    return None, False
+
+
+def _locate(path: Path, anchored: bool, file: str | None) -> Path | None:
+    """An absolute location for a path read from source, or None when it
+    depends on the working directory and no plausible one exists."""
+    if anchored or path.is_absolute():
+        return path
+    if not file:
+        return None
+    here = Path(file).resolve().parent
+    for base in (here, here.parent, here.parent.parent):
+        candidate = base / path
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _frontmatter_value(node: ast.AST, facts: ModuleFacts) -> Any:
+    text = _string_value(node, facts.str_constants)
+    if text is not None:
+        return text
+    literal = _literal(_follow_constant(node, facts))
+    if literal is not None or (isinstance(node, ast.Constant) and node.value is None):
+        return literal
+    if isinstance(node, ast.Dict):
+        out: dict[Any, Any] = {}
+        for key, value in zip(node.keys, node.values):
+            k = _literal(key)
+            if isinstance(k, str):
+                v = _literal(value)
+                out[k] = v if v is not None else UNREADABLE
+        return out
+    return UNREADABLE
+
+
+def _resource_counts(node: ast.AST | None, facts: ModuleFacts) -> dict[str, int]:
+    node = _follow_constant(node, facts)
+    counts = {"references": 0, "assets": 0, "scripts": 0}
+    if isinstance(node, ast.Call):
+        for keyword in node.keywords:
+            if keyword.arg in counts:
+                value = _follow_constant(keyword.value, facts)
+                if isinstance(value, ast.Dict):
+                    counts[keyword.arg] = len(value.keys)
+    return counts
+
+
+def _inline_skill(call: ast.Call, file: str | None, facts: ModuleFacts) -> SkillInfo:
+    fm_node = _follow_constant(_kwarg(call, "frontmatter") or (call.args[0] if call.args else None), facts)
+    frontmatter: dict[str, Any] = {}
+    if isinstance(fm_node, ast.Call) and all(kw.arg for kw in fm_node.keywords):
+        for keyword in fm_node.keywords:
+            frontmatter[keyword.arg] = _frontmatter_value(keyword.value, facts)
+    elif isinstance(fm_node, ast.Dict):
+        value = _frontmatter_value(fm_node, facts)
+        frontmatter = value if isinstance(value, dict) else {}
+    else:
+        frontmatter = {"name": UNREADABLE, "description": UNREADABLE}
+    if isinstance(fm_node, ast.Call) and fm_node.args:
+        frontmatter.setdefault("name", UNREADABLE)
+    instructions_node = _kwarg(call, "instructions")
+    if instructions_node is None and len(call.args) > 1:
+        instructions_node = call.args[1]
+    instructions = _string_value(instructions_node, facts.str_constants) if instructions_node is not None else None
+    unreadable = instructions_node is not None and instructions is None
+    return inline_skill(
+        frontmatter, instructions, _resource_counts(_kwarg(call, "resources"), facts),
+        file=file, lineno=call.lineno, unreadable=unreadable,
+    )
+
+
+def _resolve_skills(node: ast.AST | None, file: str | None, facts: ModuleFacts,
+                    _seen: frozenset[str] = frozenset(), _depth: int = 0,
+                    ) -> tuple[list[SkillInfo], str | None]:
+    """(skills, why the set is not fully known) for a `skills=` expression."""
+    if node is None or (isinstance(node, ast.Constant) and node.value is None):
+        return [], None
+    if _depth > 8:
+        return [], "the skills expression nests too deeply to read"
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        found: list[SkillInfo] = []
+        reasons: list[str] = []
+        for element in node.elts:
+            skills, reason = _resolve_skills(element, file, facts, _seen, _depth + 1)
+            found.extend(skills)
+            if reason:
+                reasons.append(reason)
+        return found, "; ".join(dict.fromkeys(reasons)) or None
+    if isinstance(node, ast.Starred):
+        return _resolve_skills(node.value, file, facts, _seen, _depth + 1)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, lr = _resolve_skills(node.left, file, facts, _seen, _depth + 1)
+        right, rr = _resolve_skills(node.right, file, facts, _seen, _depth + 1)
+        return left + right, "; ".join(r for r in (lr, rr) if r) or None
+    if isinstance(node, (ast.Name, ast.Attribute)):
+        name = _name_of(node)
+        if not name or name in _seen or name not in facts.expr_constants:
+            return [], f"`{_unparse(node)}` is not a module-level value this review can read"
+        skills, reason = _resolve_skills(facts.expr_constants[name], file, facts,
+                                         _seen | {name}, _depth + 1)
+        reasons = [reason] if reason else []
+        for added in facts.list_mutations.get(name, []):
+            more, more_reason = _resolve_skills(added, file, facts, _seen | {name}, _depth + 1)
+            skills = skills + more
+            if more_reason:
+                reasons.append(more_reason)
+        return skills, "; ".join(dict.fromkeys(reasons)) or None
+    if isinstance(node, ast.Call):
+        call_name = _name_of(node.func)
+        if call_name in SKILL_CALLS:
+            return [_inline_skill(node, file, facts)], None
+        if call_name in SKILL_DIR_LOADERS:
+            target = _kwarg(node, "skill_dir") or _kwarg(node, "skills_dir") or \
+                (node.args[0] if node.args else None)
+            path, anchored = _resolve_path(target, file, facts)
+            located = _locate(path, anchored, file) if path is not None else None
+            if located is None:
+                return [], f"`{call_name}({_unparse(target)})` takes a path this review cannot resolve"
+            if SKILL_DIR_LOADERS[call_name] == "one":
+                return [load_skill_dir(located, file=file, lineno=node.lineno)], None
+            return load_skills_dir(located, file=file, lineno=node.lineno), None
+        if call_name in SKILL_REMOTE_LOADERS or (call_name and "gcs" in call_name.lower()):
+            return [SkillInfo(name=None, source="gcs", file=file, lineno=node.lineno,
+                              unreadable=True)], "skills are loaded from GCS at run time"
+        if call_name in ("list", "sorted", "tuple") and node.args:
+            return _resolve_skills(node.args[0], file, facts, _seen, _depth + 1)
+    return [], f"`{_unparse(node)}` is built at run time"
+
+
+def _lifecycle_value(node: ast.AST, facts: ModuleFacts) -> Any:
+    node = _follow_constant(node, facts)
+    if isinstance(node, ast.Attribute) and node.attr in SKILL_LIFECYCLE_MODES:
+        return node.attr
+    if isinstance(node, ast.Dict):
+        out: dict[str, Any] = {}
+        for key, value in zip(node.keys, node.values):
+            k = _literal(key)
+            if isinstance(k, str):
+                out[k] = _lifecycle_value(value, facts)
+        return out
+    literal = _literal(node)
+    if literal is not None or (isinstance(node, ast.Constant) and node.value is None):
+        return literal
+    return _unparse(node)
+
+
+def _collect_skill_toolset(var: str | None, call: ast.Call, file: str | None,
+                           facts: ModuleFacts) -> SkillToolsetSpec:
+    spec = SkillToolsetSpec(var=var, file=file, lineno=call.lineno,
+                            kwargs=[kw.arg for kw in call.keywords if kw.arg])
+    skills_node = _kwarg(call, "skills") or (call.args[0] if call.args else None)
+    spec.skills, reason = _resolve_skills(skills_node, file, facts)
+    registry = _kwarg(call, "registry")
+    spec.registry = registry is not None and not (isinstance(registry, ast.Constant) and registry.value is None)
+    reasons = [reason] if reason else []
+    if spec.registry:
+        spec.skills.append(SkillInfo(name=None, source="registry", file=file,
+                                     lineno=call.lineno, unreadable=True))
+        reasons.append("a skill registry adds skills at run time (`search_skills`)")
+    if any(kw.arg is None for kw in call.keywords):
+        reasons.append("`**kwargs` decides the rest at run time")
+    if reasons:
+        spec.skills_unresolved = True
+        spec.unresolved_reason = "; ".join(dict.fromkeys(reasons))
+
+    mode = _kwarg(call, "discovery_mode")
+    if mode is not None:
+        resolved = _follow_constant(mode, facts)
+        if isinstance(resolved, ast.Attribute) and resolved.attr in ("LAZY", "EAGER"):
+            spec.discovery_mode = resolved.attr
+        elif isinstance(_literal(resolved), str) and _literal(resolved).upper() in ("LAZY", "EAGER"):
+            spec.discovery_mode = _literal(resolved).upper()
+        else:
+            spec.discovery_mode = _unparse(mode)
+
+    lifecycle = _kwarg(call, "lifecycle_config")
+    if lifecycle is not None and not (isinstance(lifecycle, ast.Constant) and lifecycle.value is None):
+        resolved = _follow_constant(lifecycle, facts)
+        if isinstance(resolved, ast.Call) and _name_of(resolved.func) == "SkillLifecycleConfig" \
+                and all(kw.arg for kw in resolved.keywords) and not resolved.args:
+            spec.lifecycle_config = {
+                kw.arg: _lifecycle_value(kw.value, facts) for kw in resolved.keywords
+            }
+        else:
+            spec.lifecycle_expr = _unparse(lifecycle)
+
+    prefix = _literal(_follow_constant(_kwarg(call, "tool_name_prefix"), facts))
+    spec.tool_name_prefix = prefix if isinstance(prefix, str) and prefix else None
+    return spec
+
+
+def _register_skill_tools(facts: ModuleFacts) -> None:
+    """A SkillToolset's generated tools are real trajectory names: opaque, not
+    unknown, so EVS036 and tool coverage treat `load_skill` like any toolset
+    tool."""
+    for toolset in facts.skill_toolsets:
+        for name in toolset.tool_names:
+            facts.opaque_tools.setdefault(name, "skill_toolset")
+
+
+def _collect_list_mutations(tree: ast.Module, facts: ModuleFacts) -> None:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr not in ("append", "extend", "insert") or not node.args:
+            continue
+        owner = node.func.value
+        if not isinstance(owner, ast.Name):
+            continue
+        added = node.args[-1]
+        if node.func.attr == "extend":
+            facts.list_mutations.setdefault(owner.id, []).append(added)
+        else:
+            facts.list_mutations.setdefault(owner.id, []).append(ast.List(elts=[added], ctx=ast.Load()))
 
 
 # ---------------------------------------------------------------------------
@@ -1312,6 +1792,21 @@ def extract_file(path: Path | str, facts: ModuleFacts | None = None) -> ModuleFa
             tool.file = file_key
             tool.decorators = [d for d in (_name_of(dec) for dec in node.decorator_list) if d]
             facts.tool_candidates.setdefault(node.name, []).append(tool)
+
+    _collect_list_mutations(tree, facts)
+
+    # Skill toolsets: every `SkillToolset(...)`, assigned or inline in `tools=`.
+    assigned: dict[int, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    assigned[id(node.value)] = target.id
+                    break
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and _name_of(node.func) in SKILL_TOOLSET_CALLS:
+            facts.skill_toolsets.append(
+                _collect_skill_toolset(assigned.get(id(node)), node, file_key, facts))
 
     # Pass 3: agents, apps and state writes.
     for node in ast.walk(tree):
@@ -1497,6 +1992,12 @@ def extract_project(paths: Iterable[Path | str]) -> ModuleFacts:
         extract_file(path, facts)
     _resolve_tool_candidates(facts)
     _resolve_agent_tool_names(facts)
+    _register_skill_tools(facts)
+    for tool in facts.tools.values():
+        for name in tool.returned_names:
+            text = facts.str_constants.get(name)
+            if text:
+                tool.large_return_chars = max(tool.large_return_chars, len(text))
     analyze(facts)
     return facts
 
@@ -1718,6 +2219,20 @@ def analyze(facts: ModuleFacts) -> list[Finding]:
                 "break-even in the caching guidance is around 32k tokens of static context",
             source=f"{_SRC_CACHE_CONFIG}; {_SRC_CACHE_DOC}")
 
+    for app in facts.apps:
+        for problem in compaction_config_problems(app.events_compaction_config):
+            add("AGT076", "error",
+                f"App {app.name or app.var!r}: EventsCompactionConfig {problem}, so building "
+                "the App raises a ValidationError",
+                path=app.file, locator=f"line {app.lineno}",
+                fix="set the sliding window as a pair (compaction_interval > 0 with "
+                    "overlap_size >= 0), the token trigger as a pair (token_threshold > 0 with "
+                    "event_retention_size >= 0), or both; the only other field is summarizer",
+                source=_SRC_COMPACTION)
+
+    findings.extend(_skill_findings(facts))
+    findings.extend(_sub_agent_scope_findings(facts))
+
     for file_key, lineno, module, name in facts.private_plugin_imports:
         since = PLUGIN_EXPORTS.get(name, "2.0")
         add("AGT065", "warn",
@@ -1788,6 +2303,250 @@ def cache_config_problems(config: dict[str, Any] | None) -> list[str]:
         elif bound[0] == "ge" and not value >= bound[1]:
             problems.append(f"{name}={value} must be at least {bound[1]}")
     return problems
+
+
+def compaction_config_problems(config: dict[str, Any] | None) -> list[str]:
+    """What `EventsCompactionConfig(**config)` would reject, one phrase each.
+
+    Only literal values are judged for bounds; the pairing rule (each trigger
+    pair set together, at least one trigger) is judged on which keys are given
+    a non-None value, since an expression is still a value.
+    """
+    if config is None:
+        return []
+    problems: list[str] = []
+    unknown = sorted(set(config) - set(COMPACTION_CONFIG_BOUNDS))
+    if unknown:
+        problems.append(f"has no field(s) {', '.join(unknown)} (extra fields are forbidden)")
+    for name, bound in COMPACTION_CONFIG_BOUNDS.items():
+        value = config.get(name)
+        if bound is None or isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        if bound[0] == "gt" and not value > bound[1]:
+            problems.append(f"{name}={value} must be greater than {bound[1]}")
+        elif bound[0] == "ge" and not value >= bound[1]:
+            problems.append(f"{name}={value} must be at least {bound[1]}")
+    given = {k for k, v in config.items() if v is not None}
+    for first, second in COMPACTION_PAIRS:
+        if (first in given) != (second in given):
+            problems.append(f"sets {first if first in given else second} without "
+                            f"{second if first in given else first} (they must be set together)")
+    if not any(first in given or second in given for first, second in COMPACTION_PAIRS):
+        problems.append("configures no trigger (neither compaction_interval/overlap_size nor "
+                        "token_threshold/event_retention_size)")
+    return problems
+
+
+def _agents_for_toolset(facts: ModuleFacts, toolset: SkillToolsetSpec) -> list[AgentSpec]:
+    bound = [a for a in facts.agents if a.call in LLM_AGENT_CALLS and toolset.label in a.opaque_tools]
+    return bound or [a for a in facts.agents if a.call in LLM_AGENT_CALLS]
+
+
+def _skill_findings(facts: ModuleFacts) -> list[Finding]:
+    """AGT070-AGT073 and AGT075: the skills a SkillToolset registers."""
+    found: list[Finding] = []
+
+    def add(fid: str, severity: str, message: str, *, path: str | None, locator: str | None,
+            fix: str, source: str) -> None:
+        found.append(Finding(id=fid, severity=severity, area="skill", message=message,
+                             path=path, locator=locator, fix=fix, source=source))
+
+    for toolset in facts.skill_toolsets:
+        locator = f"line {toolset.lineno}"
+        for skill in toolset.skills:
+            if skill.source in ("registry", "gcs"):
+                continue
+            label = skill.name or (Path(skill.path).name if skill.path else "inline skill")
+            where = skill.path if skill.source == "dir" and skill.path else skill.file
+            where_locator = None if skill.source == "dir" else f"line {skill.lineno}"
+            if skill.problems:
+                add("AGT070", "error",
+                    f"skill {label!r} ({skill.source}): {'; '.join(skill.problems)}, so loading "
+                    "it raises and the agent never starts",
+                    path=where, locator=where_locator,
+                    fix="frontmatter needs `name` (lowercase kebab-case, at most 64 "
+                        "characters, equal to the skill's directory name) and `description` "
+                        "(non-empty, at most 1,024 characters). snake_case names are accepted "
+                        "only with the experimental SNAKE_CASE_SKILL_NAME feature enabled",
+                    source=f"{_SRC_SKILL_MODELS} (Frontmatter); adk-python: skills/_utils.py")
+            lines = skill.instruction_lines
+            tokens = skill.instruction_tokens_estimate
+            if lines > MAX_INSTRUCTION_LINES or tokens > MAX_INSTRUCTION_TOKENS:
+                add("AGT071", "warn",
+                    f"skill {label!r}: the instructions are {lines:,} lines (about {tokens:,} "
+                    f"tokens), past the ~{MAX_INSTRUCTION_LINES} lines / ~{MAX_INSTRUCTION_TOKENS:,} "
+                    "tokens a skill body should stay under",
+                    path=where, locator=where_locator,
+                    fix="keep SKILL.md to the procedure and move detail into references/ files; "
+                        "the body is sent whole on every `load_skill`, while a reference is "
+                        "fetched only when the model asks for it with `load_skill_resource`",
+                    source=f"{_SRC_SKILL_TOOLSET}; agentskills.io specification")
+            if skill.description and not skill.problems and skill.description_chars < MIN_DESCRIPTION_CHARS:
+                add("AGT073", "info",
+                    f"skill {label!r}: the description is {skill.description_chars} characters, "
+                    "which rarely says both what the skill does and when to use it",
+                    path=where, locator=where_locator,
+                    fix="the description is the only part of a skill the model sees before "
+                        "activating it; name the task, the trigger phrases and what it is not "
+                        "for, so activation cases can pass",
+                    source=f"{_SRC_SKILL_MODELS} (L1 metadata)")
+            if skill.instructions:
+                for agent in _agents_for_toolset(facts, toolset):
+                    share, repeated, total = repeated_share(skill.instructions, agent.spec_text)
+                    if repeated and share >= 0.4:
+                        add("AGT072", "info",
+                            f"the instruction of agent {agent.name or agent.var!r} already carries "
+                            f"{repeated} of skill {label!r}'s {total} distinct line(s) "
+                            f"({share:.0%}) verbatim",
+                            path=agent.file, locator=f"line {agent.lineno}",
+                            fix="pick one home for the procedure: in the skill it loads only "
+                                "when needed (progressive disclosure), in the instruction it is "
+                                "paid for on every request. Leave the instruction a pointer to "
+                                "the skill",
+                            source=_SRC_SKILL_TOOLSET)
+        config = toolset.lifecycle_config or {}
+        cap = config.get("max_active_skills")
+        if isinstance(cap, int) and not isinstance(cap, bool) and cap < 1:
+            add("AGT075", "error",
+                f"SkillLifecycleConfig(max_active_skills={cap}) raises ValueError "
+                "(`max_active_skills` must be at least 1)",
+                path=toolset.file, locator=locator,
+                fix="use 1 or more (default 5); the cap counts only BOUNDED skills, so to stop "
+                    "skills piling up use BOUNDED with a small cap, or EPHEMERAL",
+                source=f"{_SRC_SKILL_TOOLSET} (SkillLifecycleConfig.__post_init__)")
+    return found
+
+
+def skill_lifecycle_findings(
+    facts: ModuleFacts, *, env_enabled: bool | None, adk_version: str | None = None,
+    path: str | None = None,
+) -> list[Finding]:
+    """AGT074: a lifecycle config that leans on the experimental flag.
+
+    `SkillLifecycleConfig` itself works without `ADK_ENABLE_SKILL_LIFECYCLE`:
+    modes, the BOUNDED cap and the overrides all apply. The flag adds the
+    `unload_skill` tool, its paragraph in the system instruction and the pruning
+    of released skills' instructions from the request. `env_enabled` is what
+    the agent's `.env` says (None when no .env was read).
+    """
+    from .env import version_at_least  # local import: env imports nothing from here
+
+    found: list[Finding] = []
+    for toolset in facts.skill_toolsets:
+        config = toolset.lifecycle_config
+        if config is None or config.get("enabled") is False:
+            continue
+        modes = {config.get("default_mode")}
+        overrides = config.get("skill_overrides")
+        if isinstance(overrides, dict):
+            modes |= set(overrides.values())
+        uses_release = bool(modes & {"BOUNDED", "EPHEMERAL"}) or bool(overrides)
+        if not uses_release or env_enabled:
+            continue
+        version_note = ""
+        if adk_version and not version_at_least(adk_version, SKILL_LIFECYCLE_SINCE):
+            version_note = (f" The runner is ADK {adk_version}: SkillLifecycleConfig and "
+                            f"SkillLifecycleMode only exist from {SKILL_LIFECYCLE_SINCE}, so "
+                            "the import fails there.")
+        found.append(Finding(
+            id="AGT074", severity="info", area="skill",
+            message=f"SkillToolset {toolset.label!r} releases skills "
+                    f"({', '.join(sorted(m for m in modes if m)) or 'skill_overrides'}) but "
+                    "ADK_ENABLE_SKILL_LIFECYCLE is not set in the agent's .env, so there is no "
+                    "`unload_skill` tool and released skills' instructions are not pruned from "
+                    "the request." + version_note,
+            path=path or toolset.file, locator=f"line {toolset.lineno}",
+            fix="the modes, the max_active_skills cap and skill_overrides work without the "
+                "flag; set ADK_ENABLE_SKILL_LIFECYCLE=1 if the model should be able to unload "
+                "a skill itself and released instructions should leave the prompt. It is "
+                "experimental (ADK 2.10+)",
+            source=f"{_SRC_SKILL_TOOLSET}; adk-python: features/_feature_registry.py "
+                   "(SKILL_LIFECYCLE)",
+        ))
+    return found
+
+
+def _sub_agent_scope_findings(facts: ModuleFacts) -> list[Finding]:
+    """AGT078: a transfer target that reads the whole shared history.
+
+    Measured on 2.12.0 (`tools/agent_tool.py`): an `AgentTool` runs its agent in
+    a fresh in-memory session holding only the request (state is copied), so it
+    is already scoped. A sub-agent reached by transfer runs in the caller's
+    session, and with `include_contents='default'` its requests carry the
+    conversation so far; 'none' sends only its instruction and the turn's input.
+    """
+    found: list[Finding] = []
+    by_var = {a.var: a for a in facts.agents if a.var}
+    reported: set[str] = set()
+    for parent in facts.agents:
+        # Only an LlmAgent transfers: a Sequential/Parallel/Loop agent runs its
+        # children itself, and an AgentTool already gets a fresh session.
+        if parent.call not in LLM_AGENT_CALLS:
+            continue
+        for child_var in parent.sub_agents:
+            child = by_var.get(child_var)
+            if child is None or child.call not in LLM_AGENT_CALLS or child.kwargs_unresolved:
+                continue
+            if child.include_contents not in (None, "default") or child_var in reported:
+                continue
+            reported.add(child_var)
+            found.append(Finding(
+                id="AGT078", severity="info", area="agent",
+                message=f"sub-agent {child.name or child_var!r} (a transfer target of "
+                        f"{parent.name or parent.var!r}) keeps include_contents='default', so "
+                        "each of its requests carries the whole conversation history",
+                path=child.file, locator=f"line {child.lineno}",
+                fix="if it only needs the handed-over request and state, set "
+                    "include_contents='none' (it then sees its instruction and the current "
+                    "turn); or call it as an AgentTool, which runs it in a fresh session with "
+                    "only the request. Keep 'default' where it genuinely needs the history",
+                source=f"{_SRC_LLM_AGENT} (include_contents); adk-python: tools/agent_tool.py",
+            ))
+    return found
+
+
+def _invocation_count(case: dict[str, Any]) -> int:
+    conversation = case.get("conversation")
+    return len(conversation) if isinstance(conversation, list) else 0
+
+
+def compaction_suite_findings(
+    facts: ModuleFacts, evalset_docs: Iterable[Any], *, path: str | None = None,
+) -> list[Finding]:
+    """AGT077: long conversations in the suite and no events compaction.
+
+    Needs the evalsets, so discovery and the linter call it where they have both.
+    """
+    if not facts.agents or any(app.events_compaction_set for app in facts.apps):
+        return []
+    long_cases: list[str] = []
+    for doc in evalset_docs:
+        if not isinstance(doc, dict):
+            continue
+        for case in doc.get("eval_cases") or []:
+            if not isinstance(case, dict):
+                continue
+            if case.get("conversation_scenario") or \
+                    _invocation_count(case) >= LONG_CONVERSATION_INVOCATIONS:
+                long_cases.append(str(case.get("eval_id") or "?"))
+    if not long_cases:
+        return []
+    app = facts.app
+    shown = ", ".join(long_cases[:4]) + (" ..." if len(long_cases) > 4 else "")
+    return [Finding(
+        id="AGT077", severity="info", area="agent",
+        message=f"{len(long_cases)} eval case(s) run long conversations ({shown}: "
+                f"{LONG_CONVERSATION_INVOCATIONS}+ invocations or a user-simulation scenario) "
+                "and no App sets events_compaction_config, so every request re-sends the "
+                "full history",
+        path=path or (app.file if app else None),
+        locator=f"line {app.lineno}" if app else None,
+        fix="set `App(events_compaction_config=EventsCompactionConfig(compaction_interval=N, "
+            "overlap_size=M))` (a sliding-window summary every N invocations), or the token "
+            "trigger pair; then compare prompt tokens per invocation before and after with "
+            "compare_runs.py",
+        source=f"{_SRC_COMPACTION}; adk-docs: docs/context/compaction.md",
+    )]
 
 
 def _case_requests_more_than_once(case: dict[str, Any]) -> bool:
@@ -1901,6 +2660,15 @@ def _tool_findings(tool: ToolSpec, models: dict[str, ModelSpec] | None = None) -
             "a status field makes success and failure explicit for the model and for rubric "
             "and groundedness metrics",
             _SRC_FUNCTION_DOC)
+
+    if tool.large_return_chars > LARGE_TOOL_RETURN_CHARS:
+        add("AGT079", "warn",
+            f"returns a {tool.large_return_chars:,}-character string literal, which lands in "
+            "the chat history and is re-sent with every later request",
+            "return a short summary plus a reference instead: save the bulk as an artifact "
+            "(`tool_context.save_artifact(...)`) and let the agent fetch it with "
+            "`load_artifacts` when it needs it, or keep reference text in a skill resource",
+            "adk-docs: docs/artifacts/index.md; adk-python: tools/load_artifacts_tool.py")
 
     if tool.blocking_calls and not tool.is_async:
         add("AGT047", "warn",

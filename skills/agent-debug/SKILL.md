@@ -157,7 +157,7 @@ all, so read the script's output rather than matching by eye.
 | Command | Does | Exit codes |
 |---|---|---|
 | `scripts/analyze_trace.py (--trace F \| --result F [--eval-id ID]) [--agent-dir D] [--json]` | names shapes, layers and divergences | 0 nothing found, 1 findings, 2 nothing to read |
-| `scripts/run_jsonl.py <agent-dir> "<prompt>" [--runs N] [--out F] [--dry-run] [--json]` | reproduces one interaction with `adk run --jsonl` and keeps the trace under `.adk/skills/traces/`; spends model calls, so confirm first | 0 captured, 1 no events, 2 env |
+| `scripts/run_jsonl.py <agent-dir> "<prompt>" [--runs N] [--out F] [--state-file F] [--dry-run] [--json]` | reproduces one interaction with `adk run --jsonl` and keeps the trace under `.adk/skills/traces/`; `--state-file` seeds the session state (ADK 2.12+, exit 2 on older); spends model calls, so confirm first | 0 captured, 1 no events, 2 env |
 
 ## Completion checklist
 

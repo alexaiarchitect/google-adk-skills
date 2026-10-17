@@ -149,8 +149,8 @@ def test_the_efficiency_note_follows_the_runner_the_config_will_use(run_script, 
         else:
             os.environ["ADK_PYTHON"] = previous
 
-    assert "CFG071" in on_target.stdout, "the probed 2.11 runner reports them"
-    assert "2.11.0" in on_target.stdout
+    assert "CFG071" in on_target.stdout, "the probed 2.12 runner reports them"
+    assert "2.12.0" in on_target.stdout
     assert "CFG071" not in older.stdout, "a 2.9 runner reports nothing extra"
     assert "2.9.2" in older.stdout
 

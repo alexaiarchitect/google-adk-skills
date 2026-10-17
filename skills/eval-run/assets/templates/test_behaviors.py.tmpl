@@ -1,0 +1,248 @@
+"""Behavioural checks: does the agent take the observable step it should?
+
+An evalset case compares a whole trajectory against a golden one. A behavioural
+check asserts one discrete, observable action instead - the expected tool was
+called, a forbidden tool was not, the agent asked rather than guessed - so it
+stays meaningful while the rest of the trajectory is still moving, and it runs
+in seconds. The loop it supports: pick one failure you have actually seen, write
+a check for exactly that, run it in a batch and read the pass rate over time
+rather than trusting one run.
+
+* ``run_turn(prompt, state=None)`` sends one message through a real ``Runner``
+  with an ``InMemorySessionService`` and returns a ``Turn``: the tool calls (name
+  and arguments, in order), the final text and the event count.
+* Each behaviour runs ``ADK_EVAL_RUNS`` times (default 1). A failing run is
+  reported as xfail with its reason, and ``test_pass_rates`` fails when a
+  behaviour's pass rate is below ``ADK_EVAL_MIN_PASS_RATE`` (default 1.0, i.e.
+  every run must pass). Model output varies, so judge a check by its rate over
+  a batch, e.g. ``ADK_EVAL_RUNS=10 ADK_EVAL_MIN_PASS_RATE=0.9``.
+* With no GenAI backend configured (``GOOGLE_API_KEY``, or
+  ``GOOGLE_GENAI_USE_VERTEXAI`` with ``GOOGLE_CLOUD_PROJECT``, in the
+  environment or the agent's ``.env``) the whole module is skipped.
+
+These are real model calls: every run of every behaviour is one invocation.
+The prompts and tool names below were filled in from the agent's tools and its
+evalsets; a prompt still starting with ``TODO`` is skipped until you write it.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import importlib
+import os
+import pathlib
+import sys
+import uuid
+from dataclasses import dataclass, field
+from typing import Any, Callable
+
+import pytest
+
+EVAL_DIR = pathlib.Path(__file__).parent
+PROJECT_ROOT = (EVAL_DIR / "{{PROJECT_ROOT_REL}}").resolve()
+AGENT_DIR = (EVAL_DIR / "{{AGENT_DIR_REL}}").resolve()
+AGENT_MODULE = "{{MODULE_PATH}}"
+APP_NAME = "{{APP_NAME}}"
+#: The tools this agent can call, as the static review read them.
+AGENT_TOOLS: list[str] = {{TOOLS_LITERAL}}
+
+RUNS = max(1, int(os.getenv("ADK_EVAL_RUNS", "1")))
+MIN_PASS_RATE = float(os.getenv("ADK_EVAL_MIN_PASS_RATE", "1.0"))
+
+
+def _load_env_files() -> None:
+    """Load the `.env` ADK would load, nearest the agent first, without
+    overriding what the environment already says (no python-dotenv needed)."""
+    for candidate in (AGENT_DIR / ".env", PROJECT_ROOT / ".env"):
+        if not candidate.is_file():
+            continue
+        for raw in candidate.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.removeprefix("export ").split("=", 1)
+            value = value.strip().strip("\"'")
+            os.environ.setdefault(key.strip(), value)
+        return
+
+
+def _backend_configured() -> bool:
+    use_vertex = os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in ("1", "true", "yes")
+    if use_vertex:
+        return bool(os.getenv("GOOGLE_CLOUD_PROJECT"))
+    return bool(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
+
+
+_load_env_files()
+if not _backend_configured():
+    pytest.skip(
+        "no GenAI backend configured (GOOGLE_API_KEY, or GOOGLE_GENAI_USE_VERTEXAI with "
+        "GOOGLE_CLOUD_PROJECT): behavioural checks call the real model",
+        allow_module_level=True,
+    )
+
+from google.adk.runners import Runner  # noqa: E402
+from google.adk.sessions import InMemorySessionService  # noqa: E402
+from google.genai import types  # noqa: E402
+
+# `adk` puts the agents directory on `sys.path` before importing the agent;
+# pytest does not, so do it here and the checks run from any directory.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+
+@dataclass
+class Turn:
+    """What one message made the agent do."""
+
+    prompt: str
+    tool_calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    text: str = ""
+    events: int = 0
+    errors: list[str] = field(default_factory=list)
+
+    @property
+    def tool_names(self) -> list[str]:
+        return [name for name, _ in self.tool_calls]
+
+    def called(self, tool: str) -> bool:
+        return tool in self.tool_names
+
+    def args_of(self, tool: str) -> list[dict[str, Any]]:
+        return [args for name, args in self.tool_calls if name == tool]
+
+    @property
+    def asked_a_question(self) -> bool:
+        return "?" in self.text
+
+    def describe(self) -> str:
+        calls = ", ".join(self.tool_names) or "no tool calls"
+        tail = self.text.strip().replace("\n", " ")[:160]
+        errors = f"; errors: {'; '.join(self.errors)}" if self.errors else ""
+        return f"[{calls}] -> {tail!r}{errors}"
+
+
+def _load_runner() -> Runner:
+    module = importlib.import_module(AGENT_MODULE)
+    app = getattr(module, "app", None)
+    agent = getattr(module, "root_agent", None)
+    if app is None and agent is None:
+        inner = importlib.import_module(f"{AGENT_MODULE}.agent")
+        app = getattr(inner, "app", None)
+        agent = getattr(inner, "root_agent", None)
+    from google.adk.apps import App
+
+    if isinstance(app, App):
+        return Runner(app=app, session_service=InMemorySessionService())
+    if agent is None:
+        raise RuntimeError(f"{AGENT_MODULE} exports neither `app` nor `root_agent`")
+    return Runner(app_name=APP_NAME, agent=agent, session_service=InMemorySessionService())
+
+
+async def _run_turn(prompt: str, state: dict[str, Any] | None) -> Turn:
+    runner = _load_runner()
+    user_id = "behavioral_tester"
+    session = await runner.session_service.create_session(
+        app_name=runner.app_name, user_id=user_id, state=dict(state or {}),
+        session_id=f"behavior-{uuid.uuid4().hex[:12]}",
+    )
+    turn = Turn(prompt=prompt)
+    message = types.Content(role="user", parts=[types.Part(text=prompt)])
+    async for event in runner.run_async(
+        user_id=user_id, session_id=session.id, new_message=message,
+    ):
+        turn.events += 1
+        for call in event.get_function_calls() or []:
+            turn.tool_calls.append((call.name, dict(call.args or {})))
+        if getattr(event, "error_code", None):
+            turn.errors.append(f"{event.error_code}: {getattr(event, 'error_message', '')}")
+        if event.is_final_response() and event.content and event.content.parts:
+            text = "".join(part.text or "" for part in event.content.parts
+                           if not getattr(part, "thought", False))
+            if text:
+                turn.text = text
+    return turn
+
+
+def run_turn(prompt: str, state: dict[str, Any] | None = None) -> Turn:
+    """One message, one fresh session, everything observable about the reply."""
+    return asyncio.run(_run_turn(prompt, state))
+
+
+# -- the behaviours --------------------------------------------------------
+# Each check asserts one observable action. Edit the prompts to the failure
+# you have actually seen; add a check per new failure, never a vaguer one.
+
+EXPECTED_PROMPT = {{EXPECTED_PROMPT}}
+EXPECTED_TOOL = {{EXPECTED_TOOL}}
+
+FORBIDDEN_PROMPT = {{FORBIDDEN_PROMPT}}
+FORBIDDEN_TOOL = {{FORBIDDEN_TOOL}}
+
+MISSING_FIELD_PROMPT = {{MISSING_FIELD_PROMPT}}
+MISSING_FIELD_TOOL = {{MISSING_FIELD_TOOL}}
+
+
+def check_calls_expected_tool(turn: Turn) -> None:
+    """The request needs `EXPECTED_TOOL`; the agent must call it."""
+    assert turn.called(EXPECTED_TOOL), f"expected a call to {EXPECTED_TOOL}: {turn.describe()}"
+
+
+def check_never_calls_forbidden_tool(turn: Turn) -> None:
+    """The request must not lead to `FORBIDDEN_TOOL`, whatever else happens."""
+    assert not turn.called(FORBIDDEN_TOOL), \
+        f"{FORBIDDEN_TOOL} must not be called here: {turn.describe()}"
+
+
+def check_asks_instead_of_guessing(turn: Turn) -> None:
+    """A required detail is missing: ask for it rather than act on a guess."""
+    assert not turn.called(MISSING_FIELD_TOOL), \
+        f"acted with a detail missing ({MISSING_FIELD_TOOL}): {turn.describe()}"
+    assert turn.asked_a_question, f"did not ask for the missing detail: {turn.describe()}"
+
+
+@dataclass(frozen=True)
+class Behavior:
+    id: str
+    prompt: str
+    check: Callable[[Turn], None]
+    state: dict[str, Any] | None = None
+
+
+BEHAVIORS = [
+    Behavior("calls_expected_tool", EXPECTED_PROMPT, check_calls_expected_tool),
+    Behavior("never_calls_forbidden_tool", FORBIDDEN_PROMPT, check_never_calls_forbidden_tool),
+    Behavior("asks_instead_of_guessing", MISSING_FIELD_PROMPT, check_asks_instead_of_guessing),
+]
+
+_OUTCOMES: dict[str, list[bool]] = {}
+
+
+@pytest.mark.parametrize("run", range(1, RUNS + 1), ids=lambda r: f"run{r}")
+@pytest.mark.parametrize("behavior", BEHAVIORS, ids=lambda b: b.id)
+def test_behavior(behavior: Behavior, run: int) -> None:
+    if behavior.prompt.startswith("TODO"):
+        pytest.skip(f"{behavior.id}: write the prompt first ({behavior.prompt})")
+    turn = run_turn(behavior.prompt, behavior.state)
+    try:
+        behavior.check(turn)
+    except AssertionError as exc:
+        _OUTCOMES.setdefault(behavior.id, []).append(False)
+        # One run is one sample: record it and let the batch gate decide.
+        pytest.xfail(f"run {run}: {exc}")
+    _OUTCOMES.setdefault(behavior.id, []).append(True)
+
+
+def test_pass_rates() -> None:
+    """The gate: each behaviour's pass rate over the batch meets the floor."""
+    if not _OUTCOMES:
+        pytest.skip("no behaviour ran")
+    below = {
+        name: sum(results) / len(results)
+        for name, results in _OUTCOMES.items()
+        if sum(results) / len(results) < MIN_PASS_RATE
+    }
+    assert not below, (
+        f"pass rate below {MIN_PASS_RATE:.0%} over {RUNS} run(s): "
+        + ", ".join(f"{name} {rate:.0%}" for name, rate in sorted(below.items()))
+    )

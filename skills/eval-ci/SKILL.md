@@ -19,7 +19,8 @@ allowed-tools: Read, Grep, Glob, Write, Edit, AskUserQuestion, Skill, Bash(pytho
 
 # Gate changes on ADK evals
 
-One fact shapes every workflow here: **`adk eval` always exits 0.** A CI step that
+One fact shapes every workflow here: **`adk eval` always exits 0** (every release
+through 2.12.0; the fix is on unreleased main). A CI step that
 calls it directly is green whether the cases passed or not, and that is the most
 common way an eval suite ends up proving nothing.
 
@@ -128,6 +129,11 @@ because someone ran the agent and it looked right.
   a push and too valuable to skip entirely.
 - **Pin the ADK version.** An eval suite that changes behaviour because a
   dependency floated is a suite nobody trusts.
+- **Merge on two rules, not one.** A global pass threshold
+  (`run_evals.py --min-pass-rate 0.95`) and zero regressions against the default
+  branch (`compare_runs.py --min-pass-rate 0.95 --max-regressions 0`), plus
+  token, latency and tool-call budgets where cost matters. Freeze the golden
+  suite (`"frozen": true`) so tuning cannot delete its way to green.
 
 ## References
 
@@ -136,6 +142,7 @@ because someone ran the agent and it looked right.
 | Designing the tiers, and what belongs in each | [tiered-pipeline.md](references/tiered-pipeline.md) |
 | The workflows, annotated, plus auth and secrets | [workflows.md](references/workflows.md) |
 | The maturity ladder and how to climb it | [maturity.md](references/maturity.md) |
+| Merge rules, frozen baselines, cost budgets, Day 0/1/2 | [merge-gates.md](references/merge-gates.md) |
 | Evaluating a Cloud Run revision before it takes traffic (pattern only, no template) | [shadow-rollout.md](references/shadow-rollout.md) |
 
 Templates: `assets/templates/workflows/`.

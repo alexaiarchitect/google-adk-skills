@@ -17,9 +17,10 @@ from typing import Any, Iterable, Sequence
 
 from . import ADK_TARGET
 from .env import (
-    BACKEND_REQUIREMENT, BackendInfo, RunnerSpec, detect_backend, resolve_runner,
+    BACKEND_REQUIREMENT, BackendInfo, RunnerSpec, detect_backend, dotenv_flag, resolve_runner,
     version_at_least, version_is_supported,
 )
+from .eval_yaml import plugin_layer
 from .eval_config import LoadedConfig, load_config, validate_config
 from .evalset import LoadedEvalSet, load_evalset, stats, validate_evalset
 from .layout import LayoutInfo, detect_layout
@@ -27,8 +28,8 @@ from .metrics import DEFAULT_CRITERIA, cost_tier
 from .report import GapReport, Option
 from .results import find_result_files, latest_per_evalset, parse_result
 from .tools_ast import (
-    LLM_AGENT_CALLS, PLUGIN_EXPORTS, ModuleFacts, cache_suite_findings, extract_module,
-    tool_resolver,
+    LLM_AGENT_CALLS, PLUGIN_EXPORTS, ModuleFacts, cache_suite_findings,
+    compaction_suite_findings, extract_module, skill_lifecycle_findings, tool_resolver,
 )
 
 ALL_FOCUS = ("layout", "env", "agent", "evalsets", "configs", "results", "coverage", "ci")
@@ -68,6 +69,9 @@ class Discovery:
         self.configs: dict[str, LoadedConfig] = {}
         self.result_files: list[str] = []
         self.latest_results: dict[str, str] = {}
+        #: The Agent-Plugins skill layer (plugin.json + skills/*/EVAL.yaml),
+        #: when the target is one or holds one.
+        self.plugin_layer: dict[str, Any] | None = None
 
         if "env" in self.focus:
             self.backend = detect_backend(self.layout.agent_dir or self.target)
@@ -78,6 +82,11 @@ class Discovery:
             )
         if "agent" in self.focus and self.layout.agent_dir:
             self.facts = extract_module(self.layout.agent_dir)
+        if "layout" in self.focus and self.target.is_dir() and (
+            not self.layout.is_agent or (self.target / "plugins").is_dir()
+            or (self.target / "plugin.json").is_file()
+        ):
+            self.plugin_layer = plugin_layer(self.target)
         if "evalsets" in self.focus:
             for path in self.layout.evalsets:
                 self.evalsets[path] = load_evalset(path)
@@ -104,6 +113,19 @@ class Discovery:
             return None
         app = next((a for a in self.facts.apps if a.context_cache_set), None)
         return None if app is None else dict(app.context_cache_config or {})
+
+    @property
+    def adk_version(self) -> str | None:
+        return self.runner.adk_version if self.runner else None
+
+    @property
+    def events_compaction_config(self) -> dict[str, Any] | None:
+        """The App's `EventsCompactionConfig` kwargs: None when unset, `{}` when
+        set but not readable from the source."""
+        if not self.facts:
+            return None
+        app = next((a for a in self.facts.apps if a.events_compaction_set), None)
+        return None if app is None else dict(app.events_compaction_config or {})
 
     @property
     def resolver(self):
@@ -166,7 +188,8 @@ class Discovery:
         if "coverage" not in self.focus or not self.facts:
             return None
         from .coverage import (
-            extract_sop_rules, matrix, n_plus_one_gaps, shape, summarize_cases, tool_coverage,
+            extract_sop_rules, matrix, n_plus_one_gaps, shape, skill_coverage, summarize_cases,
+            tool_coverage,
         )
 
         agent = self.facts.root_agent()
@@ -188,6 +211,7 @@ class Discovery:
             "shape": shape(cases),
             "n_plus_one": n_plus_one_gaps(rules, cases),
             "tools": tool_coverage(self.tool_names, cases, resolver=self.resolver),
+            "skills": skill_coverage(self.facts.registered_skill_names, docs),
         }
 
     # -- report ----------------------------------------------------------
@@ -220,6 +244,27 @@ class Discovery:
                 data["layout"]["agents_found"] = [
                     _rel(p, root) for p in self.layout.sibling_agents
                 ]
+            if self.plugin_layer:
+                layer = self.plugin_layer
+                data["plugin_layer"] = {
+                    "plugins": [
+                        {"name": p["name"], "version": p["version"], "skills": p["skills"],
+                         "path": _rel(p["path"], self.target)}
+                        for p in layer["plugins"]
+                    ],
+                    "eval_yamls": [
+                        {"skill": e["skill_dir"], "path": _rel(e["path"], self.target),
+                         "cases": e["cases"], "rubric_lines": e["rubric_lines"],
+                         "assertions": e["assertions"], "assertion_types": e["assertion_types"],
+                         "threshold": e["threshold"], "readable": e["readable"]}
+                        for e in layer["eval_yamls"]
+                    ],
+                    "cases": layer["cases"],
+                    "rubric_lines": layer["rubric_lines"],
+                    "assertions": layer["assertions"],
+                    "threshold_declared": layer["threshold_declared"],
+                    "note": layer["note"],
+                }
 
         if "env" in self.focus and self.backend and self.runner:
             data["environment"] = {
@@ -265,6 +310,22 @@ class Discovery:
                 "app_exported": self.facts.app is not None,
                 "plugins": self.facts.app.plugins if self.facts.app else [],
                 "pydantic_models": sorted(self.facts.models),
+                "events_compaction_config": self.events_compaction_config,
+                "include_contents": agent.include_contents if agent else None,
+                "skills": [
+                    {key: value for key, value in skill.to_dict().items()
+                     if key in ("name", "source", "description_chars", "instruction_lines",
+                                "instruction_chars", "resources", "extra_metadata_keys",
+                                "problems")}
+                    for skill in self.facts.skills
+                ],
+                "skill_toolsets": [
+                    {"var": t.label, "discovery_mode": t.discovery_mode or "LAZY",
+                     "lifecycle_config": t.lifecycle_config, "registry": t.registry,
+                     "skills_unresolved": t.skills_unresolved,
+                     "unresolved_reason": t.unresolved_reason, "tools": t.tool_names}
+                    for t in self.facts.skill_toolsets
+                ],
             }
 
         if "evalsets" in self.focus:
@@ -331,6 +392,8 @@ class Discovery:
                     "shape": coverage["shape"]["ratios"],
                     "uncovered_branches": len(coverage["matrix"]["uncovered_branch_indexes"]),
                     "tools_never_exercised": coverage["tools"]["never_exercised"],
+                    "skills_never_activated":
+                        coverage["skills"]["never_activated"] if coverage["skills"] else None,
                 }
         return data
 
@@ -352,6 +415,15 @@ class Discovery:
                            f"{len(self.layout.sibling_agents)} agents found under this path",
                            path=str(self.target),
                            fix="point the skill at one agent directory")
+            elif not self.layout.is_agent and self.plugin_layer:
+                report.add("ENV014", "info", "layout",
+                           "this is an Agent-Plugins skill layer (plugin.json, "
+                           "skills/*/SKILL.md and EVAL.yaml), not an ADK agent",
+                           path=str(self.target),
+                           fix="check its EVAL.yaml files with /adk:eval-review "
+                               "validate_eval_yaml.py; point the agent skills at the agent "
+                               "a plugin skill helps you build",
+                           source="adk-recipes: plugins/ (Agent Plugins v1.0.0)")
             elif not self.layout.is_agent:
                 report.add("ENV011", "error", "layout",
                            "no ADK agent here: expected agent.py, a loadable __init__.py, "
@@ -416,8 +488,13 @@ class Discovery:
                 report.add("AGT000", "error", "agent", f"could not parse: {error}")
             self._add_plugin_version_findings(report)
             if "evalsets" in self.focus:
-                report.extend(cache_suite_findings(
-                    self.facts, [loaded.doc for loaded in self.evalsets.values()]))
+                docs = [loaded.doc for loaded in self.evalsets.values()]
+                report.extend(cache_suite_findings(self.facts, docs))
+                report.extend(compaction_suite_findings(self.facts, docs))
+            report.extend(skill_lifecycle_findings(
+                self.facts, env_enabled=dotenv_flag(self.layout.agent_dir,
+                                                    "ADK_ENABLE_SKILL_LIFECYCLE"),
+                adk_version=self.adk_version))
 
     def _add_plugin_version_findings(self, report: GapReport) -> None:
         """AGT066: a plugin the project imports is newer than the runner."""
@@ -453,6 +530,8 @@ class Discovery:
                 trajectory_match_type=(
                     self.primary_config.trajectory_match_type() if self.primary_config else None
                 ),
+                adk_version=self.adk_version,
+                registered_skills=self.facts.registered_skill_names if self.facts else None,
             )
 
     def _add_config_findings(self, report: GapReport) -> None:
@@ -505,6 +584,17 @@ class Discovery:
                 report.add_gap("GAP-SHAPE", "Suite shape", note,
                                "rebalance with /adk:eval-create (roughly 70% narrow, "
                                "20% multi-turn, 10% adversarial)")
+            skills = coverage["skills"]
+            if skills and skills["never_activated"] and self.case_count() > 0:
+                report.add(
+                    "EVS073", "warn", "coverage",
+                    f"{len(skills['never_activated'])} registered skill(s) no case activates: "
+                    f"{', '.join(skills['never_activated'])}",
+                    fix="add an activation case per skill expecting `load_skill` with "
+                        "{\"skill_name\": \"<name>\"} (gen_cases.py: {\"skill\": \"<name>\"} "
+                        "in a turn)",
+                    source="adk-python: tools/skill_toolset.py (LoadSkillTool)",
+                )
             never = coverage["tools"]["never_exercised"]
             if never:
                 report.add_gap(
@@ -559,6 +649,11 @@ def suggest_next_skills(discovery: Discovery) -> list[Option]:
         key += 1
 
     if not discovery.layout.is_agent:
+        if discovery.plugin_layer:
+            add("/adk:eval-review", "check the plugin's EVAL.yaml files "
+                "(validate_eval_yaml.py; static, runs nothing)", recommended=True)
+            add("/adk:agent-create", "scaffold the ADK agent a plugin skill describes")
+            return options
         add("/adk:agent-create", "scaffold an eval-ready agent here", recommended=True)
         return options
 

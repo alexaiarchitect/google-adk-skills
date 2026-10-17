@@ -1,0 +1,58 @@
+{
+  "eval_set_id": "activation",
+  "name": "Skill activation",
+  "description": "A claim request must make the agent load the claim-policy skill before checking funds.",
+  "eval_cases": [
+    {
+      "eval_id": "activation_claim_policy_loads_first",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": "Claim CLM-000412: 900 dollars of travel on the engineering cost centre."}], "role": "user"},
+          "final_response": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {
+            "intermediate_responses": [],
+            "tool_uses": [
+              {"name": "load_skill", "args": {"skill_name": "claim-policy"}},
+              {"name": "load_skill_resource", "args": {"skill_name": "claim-policy", "file_path": "references/limits.md"}},
+              {"name": "check_cost_centre_funds", "args": {"cost_centre": "engineering", "amount_usd": 900.0}}
+            ]
+          }
+        }
+      ],
+      "session_input": {"app_name": "skilled_agent", "user_id": "evaluator", "state": {}}
+    },
+    {
+      "eval_id": "happy_receipt_checked_then_submitted",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": "Submit CLM-000413, 60 dollars of meals on sales; the receipt from Corner Deli says 60 dollars."}], "role": "user"},
+          "final_response": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {
+            "intermediate_responses": [],
+            "tool_uses": [
+              {"name": "load_skill", "args": {"skill_name": "claim-policy"}},
+              {"name": "load_skill", "args": {"skill_name": "receipt-check"}},
+              {"name": "check_cost_centre_funds", "args": {"cost_centre": "sales", "amount_usd": 60.0}},
+              {"name": "submit_claim", "args": {"claim_id": "CLM-000413", "cost_centre": "sales", "amount_usd": 60.0}}
+            ]
+          }
+        }
+      ],
+      "session_input": {"app_name": "skilled_agent", "user_id": "evaluator", "state": {}}
+    },
+    {
+      "eval_id": "edge_missing_cost_centre_asks",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": "Please submit claim CLM-000414 for 40 dollars of meals."}], "role": "user"},
+          "final_response": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {"intermediate_responses": [], "tool_uses": []}
+        }
+      ],
+      "session_input": {"app_name": "skilled_agent", "user_id": "evaluator", "state": {}}
+    }
+  ]
+}

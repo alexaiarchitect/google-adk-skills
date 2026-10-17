@@ -21,6 +21,14 @@ Ten dimensions:
 8. environment — backend configured, model id available
 9. eval readiness — does the instruction have branches a case can cover
 10. blocking calls — synchronous work that freezes the event loop
+11. skills — what a `SkillToolset` registers (inline `models.Skill`,
+    `load_skill_from_dir`, `load_skills_from_dir`): frontmatter ADK rejects
+    (AGT070), an oversized body (AGT071), an instruction that repeats a skill
+    (AGT072), a description too short to activate on (AGT073), lifecycle modes
+    without ADK_ENABLE_SKILL_LIFECYCLE (AGT074), max_active_skills < 1 (AGT075)
+12. context — an EventsCompactionConfig ADK rejects (AGT076), long eval
+    conversations with no compaction (AGT077), a transfer target that reads the
+    whole history (AGT078), a tool returning a large inline blob (AGT079)
 
 Report only. It never edits.
 
@@ -38,12 +46,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 
 from adk_skills.coverage import branch_count, extract_sop_rules  # noqa: E402
-from adk_skills.env import classify_model_id, detect_backend  # noqa: E402
+from adk_skills.env import classify_model_id, detect_backend, dotenv_flag  # noqa: E402
 from adk_skills.evalset import load_evalset  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport  # noqa: E402
 from adk_skills.tools_ast import (  # noqa: E402
-    LLM_AGENT_CALLS, cache_suite_findings, extract_module,
+    LLM_AGENT_CALLS, cache_suite_findings, compaction_suite_findings, extract_module,
+    skill_lifecycle_findings,
 )
 
 
@@ -55,6 +64,14 @@ def _cache_config(facts) -> dict | None:
     return dict(app.context_cache_config or {})
 
 
+def _compaction_config(facts) -> dict | None:
+    """The exported App's EventsCompactionConfig kwargs; `{}` for an unreadable one."""
+    app = next((a for a in facts.apps if a.events_compaction_set), None)
+    if app is None:
+        return None
+    return dict(app.events_compaction_config or {})
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("path", nargs="?", default=".", help="agent directory or project root")
@@ -62,6 +79,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_const", const="json", dest="format")
     parser.add_argument("--strict", action="store_true", help="treat warnings as failures")
     parser.add_argument("--no-backend", action="store_true", help="skip the .env checks")
+    parser.add_argument("--adk-version",
+                        help="the ADK release the agent runs on, when known (e.g. 2.9.2); "
+                             "AGT074 then says when SkillLifecycleConfig does not exist yet")
     args = parser.parse_args(argv)
 
     target = Path(args.path)
@@ -141,8 +161,14 @@ def main(argv: list[str] | None = None) -> int:
                    fix="if the agent should ever refuse, say so in the instruction")
 
     # 6. caching against the suite: a cache only shows up from turn two
-    report.extend(cache_suite_findings(
-        facts, [load_evalset(path).doc for path in layout.evalsets]))
+    docs = [load_evalset(path).doc for path in layout.evalsets]
+    report.extend(cache_suite_findings(facts, docs))
+    # 12. context: long conversations want compaction
+    report.extend(compaction_suite_findings(facts, docs))
+    # 11. skills: lifecycle modes lean on an experimental flag for unload_skill
+    report.extend(skill_lifecycle_findings(
+        facts, env_enabled=dotenv_flag(layout.agent_dir, "ADK_ENABLE_SKILL_LIFECYCLE"),
+        adk_version=args.adk_version))
 
     if not layout.evalsets:
         report.add_gap("GAP-EVALSET", "No evalset",
@@ -192,6 +218,15 @@ def main(argv: list[str] | None = None) -> int:
         "app_exported": facts.app is not None,
         "plugins": facts.app.plugins if facts.app else [],
         "context_cache_config": _cache_config(facts),
+        "events_compaction_config": _compaction_config(facts),
+        "skills": [skill.to_dict() for skill in facts.skills],
+        "skill_toolsets": [
+            {"var": t.label, "discovery_mode": t.discovery_mode or "LAZY",
+             "lifecycle_config": t.lifecycle_config, "registry": t.registry,
+             "skills_unresolved": t.skills_unresolved,
+             "unresolved_reason": t.unresolved_reason, "tools": t.tool_names}
+            for t in facts.skill_toolsets
+        ],
         "sop_rules": len(rules),
         "branches": branches,
         "evalsets": len(layout.evalsets),

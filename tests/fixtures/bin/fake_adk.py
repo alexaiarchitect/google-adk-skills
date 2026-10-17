@@ -18,6 +18,11 @@ Behaviour is driven by environment variables:
     FAKE_ADK_EFFICIENCY                                          add ADK 2.10's four
                                                                  informational efficiency
                                                                  metrics to every case
+    FAKE_ADK_PYTEST_RETURNCODE                                   `-m pytest` exit code
+
+`-m pytest ...` echoes its arguments and the ADK_EVAL_* variables as one JSON
+line, so the pytest wrapper's command line is observable. `run --state_file F`
+is refused below 2.12, as the real CLI does (an unknown option, exit 2).
 """
 
 from __future__ import annotations
@@ -30,7 +35,7 @@ from pathlib import Path
 
 #: The release the plugin targets. `FAKE_ADK_VERSION=2.9.2` makes this stand-in
 #: an older runner, which is how the 2.9-vs-2.10+ behaviour is tested.
-VERSION = os.environ.get("FAKE_ADK_VERSION", "2.11.0")
+VERSION = os.environ.get("FAKE_ADK_VERSION", "2.12.0")
 
 
 def _probe(code: str, args: list[str]) -> int:
@@ -167,10 +172,17 @@ def _run(args: list[str]) -> int:
         print("no events")
         return 0
     tool = os.environ.get("FAKE_ADK_RUN_TOOL", "lookup_policy")
+    state: dict = {}
+    if "--state_file" in args:
+        if tuple(int(p) for p in VERSION.split(".")[:2]) < (2, 12):
+            print("Error: No such option: --state_file", file=sys.stderr)
+            return 2
+        state = json.loads(Path(args[args.index("--state_file") + 1]).read_text())
     print(json.dumps({
         "author": "user",
         "invocationId": "inv_1",
         "content": {"role": "user", "parts": [{"text": prompt}]},
+        **({"actions": {"stateDelta": state}} if state else {}),
     }))
     print(json.dumps({
         "author": "claims_agent",
@@ -249,6 +261,10 @@ def _eval_set(args: list[str]) -> int:
 def main(argv: list[str]) -> int:
     if len(argv) >= 2 and argv[0] == "-c":
         return _probe(argv[1], argv[2:])
+    if len(argv) >= 2 and argv[0] == "-m" and argv[1] == "pytest":
+        print(json.dumps({"pytest_args": argv[2:], "env": {
+            k: v for k, v in os.environ.items() if k.startswith("ADK_EVAL_")}}))
+        return int(os.environ.get("FAKE_ADK_PYTEST_RETURNCODE", "0"))
     if len(argv) >= 2 and argv[0] == "-m" and argv[1] == "google.adk.cli":
         rest = argv[2:]
         if rest and rest[0] == "eval":

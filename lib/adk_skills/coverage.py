@@ -375,3 +375,32 @@ def tool_coverage(
         "opaque_in_cases": opaque,
         "call_counts": used,
     }
+
+
+def skill_coverage(
+    registered: Iterable[str] | None, evalsets: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Which registered skills some case activates with `load_skill`.
+
+    A skill is activated by its description alone: the model reads the L1
+    metadata and decides to call `load_skill(skill_name=...)`. A skill no case
+    ever expects to be loaded is a description nobody has tested. None when the
+    agent registers no skills or the set is unknowable (registry, GCS).
+    """
+    if registered is None:
+        return None
+    from .evalset import expected_skill_loads, iter_cases
+
+    names = set(registered)
+    loads: dict[str, int] = {}
+    for doc in evalsets.values():
+        for case in iter_cases(doc):
+            for _, skill in expected_skill_loads(case):
+                loads[skill] = loads.get(skill, 0) + 1
+    return {
+        "skills": sorted(names),
+        "activated": sorted(names & set(loads)),
+        "never_activated": sorted(names - set(loads)),
+        "unknown_in_cases": sorted(set(loads) - names),
+        "load_counts": loads,
+    }

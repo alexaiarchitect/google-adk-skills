@@ -20,6 +20,12 @@ code. The manifest says what to run:
 Paths are relative to the manifest. `--tier pr` runs only the cheap
 deterministic suites, which is what a per-change gate should do.
 
+A suite with `"frozen": true` is a golden baseline: `manage_cases.py` refuses
+to rename, move, split, remove, dedupe or re-point its cases (EVS120) unless
+given `--unfreeze`. Freezing changes nothing about how a suite runs; it stops
+the cases being tuned until they pass. `--init` writes `"frozen": false` on
+every suite, so freezing one is a deliberate edit.
+
     run_registry.py --registry eval_registry.json [--tier pr|nightly] [--json]
 
 Writing that manifest by hand for a repository with several agents is tedious
@@ -48,21 +54,9 @@ from adk_skills.env import resolve_runner  # noqa: E402
 from adk_skills.eval_config import load_config  # noqa: E402
 from adk_skills.layout import detect_layout, find_agent_dirs  # noqa: E402
 from adk_skills.metrics import cost_tier  # noqa: E402
+from adk_skills.registry import SCHEMA, resolve_paths  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE  # noqa: E402
 from adk_skills.templating import WritePlan, dumps_json  # noqa: E402
-
-SCHEMA = "adk-skills.registry/1"
-
-
-def resolve_paths(base: Path, patterns: list[str]) -> list[str]:
-    found: list[str] = []
-    for pattern in patterns:
-        if any(ch in pattern for ch in "*?["):
-            found.extend(str(p) for p in sorted(base.glob(pattern)))
-        else:
-            found.append(str((base / pattern).resolve()))
-    return found
-
 
 def build_manifest(root: Path, out: Path) -> tuple[dict, list[str]]:
     """A registry describing every agent found under `root`.
@@ -107,6 +101,9 @@ def build_manifest(root: Path, out: Path) -> tuple[dict, list[str]]:
             **({"config": relative_to(config, base)} if config else {}),
             "runs": 1 if tier == "pr" else 5,
             "cost_tier": tier_cost,
+            # Set it to true once the cases are the golden baseline; then
+            # manage_cases.py refuses to edit them without --unfreeze.
+            "frozen": False,
         })
         if not config:
             notes.append(f"{name}: no eval config, so ADK's defaults apply "
@@ -147,6 +144,9 @@ def init(args: argparse.Namespace) -> int:
         for suite in manifest["suites"]:
             print(f"{suite['name']:<24}{suite['tier']:<10}{suite['cost_tier']:<8}"
                   f"{suite['runs']:>5}  {len(suite['evalsets'])}")
+        print()
+        print('every suite is written with "frozen": false; set it to true on the golden '
+              "suite so manage_cases.py refuses to edit its cases (EVS120)")
         print()
         print(plan.to_md())
         for note in notes:

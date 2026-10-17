@@ -11,12 +11,13 @@ adk eval AGENT_MODULE_FILE_PATH [EVAL_SET_FILE_PATH_OR_ID ...]
          [--log_level debug|info|warning|error|critical]
 ```
 
-That is the whole list, and it is **identical on 2.9.2, 2.10.0 and 2.11.0** — the
-`--help` output of `adk eval`, `adk eval_set`, `adk eval_set create`,
-`adk eval_set add_eval_case`, `adk eval_set generate_eval_cases`,
-`adk conformance record` and `adk conformance test` is byte-for-byte the same
-across the three releases. No eval or conformance flag was added, renamed or
-removed in 2.10 or 2.11.
+That is the whole list, and the **options are identical on 2.9.2, 2.10.0, 2.11.0
+and 2.12.0**: no eval or conformance flag was added, renamed or removed in 2.10,
+2.11 or 2.12. The only `--help` changes in 2.12.0 are docstring fixes (commit
+`d56a994`): `adk eval` now says `AGENT_MODULE_FILE_PATH` is the agent *folder*,
+and `adk conformance record` finally names `spec.yaml` instead of `input.yaml` /
+`test.yaml` and documents its streaming-mode argument. `adk eval_set` and its
+sub-commands are byte-for-byte unchanged.
 
 | Argument | Notes |
 |---|---|
@@ -29,8 +30,9 @@ removed in 2.10 or 2.11.
 
 ### What it does not have
 
-- **No exit code.** It prints the summary and returns 0 whether cases passed or
-  failed. This is the single most important fact about the command.
+- **No exit code on any release.** It prints the summary and returns 0 whether
+  cases passed or failed — measured again on 2.12.0. This is the single most
+  important fact about the command; see "Coming after 2.12.0" below.
 - **No `--num_runs`.** Repetition is either `AgentEvaluator(num_runs=...)`, which
   averages, or running the command again, which is what `run_evals.py --runs N`
   does.
@@ -89,12 +91,30 @@ comes from `tempfile.gettempdir()`, so it is platform dependent — `/tmp` on
 Linux, a private per-user directory on macOS. Do not guess it: ADK echoes both
 the real filename and `To access latest log: tail -F <path>` at startup.
 
-**No `--state_file` on any release.** `adk-python` main has an `adk run
---state_file` option (seed the session state from a JSON file), but it landed
-after the 2.11.0 tag; `adk run --help` on the 2.11.0 wheel does not list it. Until
-it ships, seed state through an evalset's `session_input` or the dev UI. The only
-`adk run` help change in 2.11.0 is service-URI wording: Agent Platform
-auto-detection and a `sqlite:///` memory-service URI.
+**`--state_file` (2.12+).** `adk run <agent-dir> --state_file state.json` seeds
+the session state from a JSON file (commit `c390266`, released in 2.12.0); it sits
+beside the older `--state '<json string>'`. On 2.9–2.11 the flag does not exist,
+so seed state with `--state`, an evalset's `session_input`, or the dev UI. This plugin's
+`run_jsonl.py` (`/adk:agent-debug`) passes `--state-file F` through as
+`--state_file` on a 2.12+ runner, and stops with exit 2 on an older runner or
+one whose version it cannot read. The 2.11.0 `adk run` help change was service-URI wording only
+(Agent Platform auto-detection, a `sqlite:///` memory-service URI).
+
+`--print_detailed_results` output is easier to read on 2.12.0 (commit `69c58ea`):
+the per-invocation details print as readable text instead of a dumped object.
+The judge requests also run with automatic function calling disabled (`cc339e0`),
+and eval session ids are generated in a form Agent Engine accepts (`4368d68`).
+
+### Coming after 2.12.0 (unreleased main)
+
+`adk-python` main after the `v2.12.0` tag (`c2ff634`) makes `adk eval` exit with
+`1 if total_failed or not eval_run_summary else 0`, so a failing case finally
+fails the process. Main also splits each invocation's duration into model, tool
+and framework time (`e3797a4`) and folds Vertex rubric verdicts into the result
+files (`bc220d2`); see `/adk:eval-analyze` `result-schema.md`. None of this is in
+a release yet. **On every released version, `run_evals.py`'s exit code is the
+authoritative verdict**: it reads the result files and exits 1 on any failed or
+not-evaluated case, and it will keep doing so when the upstream fix ships.
 
 ## Two other test commands
 
@@ -126,6 +146,7 @@ Sources: `adk-python: cli/cli_tools_click.py`, `cli/cli_eval.py`, `cli/cli.py`,
 `evaluation/_eval_set_results_manager_utils.py` (`create_eval_set_result`),
 `cli/utils/evals.py`, `evaluation/local_eval_service.py`
 (`_parallelism_semaphore`, the 2.10 guard); `adk-docs: docs/evaluate/index.md`.
-Every flag list above was diffed between the installed 2.9.2, 2.10.0 and 2.11.0
-wheels' `--help` output; `--state_file` is `adk-python` commit `c390266`, on main
-after the `v2.11.0` tag.
+Every flag list above was diffed between the installed 2.9.2, 2.10.0, 2.11.0 and
+2.12.0 wheels' `--help` output; `--state_file` is `adk-python` commit `c390266`
+(in `v2.12.0`); the bare `adk eval` exit code was measured as 0 on 2.12.0 with a
+failing case, and `c2ff634` (the exit-code fix) is on main after the tag.

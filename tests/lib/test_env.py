@@ -125,14 +125,15 @@ def test_only_adk_2x_is_supported():
 
 
 def test_the_oldest_supported_release_is_still_supported():
-    """The plugin targets 2.11 and keeps working on 2.9: a 2.9.2 runner is not
+    """The plugin targets 2.12 and keeps working on 2.9: a 2.9.2 runner is not
     an error, it just reports fewer things (no efficiency metrics)."""
-    assert ADK_MIN_SUPPORTED == "2.9" and ADK_TARGET == "2.11"
+    assert ADK_MIN_SUPPORTED == "2.9" and ADK_TARGET == "2.12"
     assert version_is_supported("2.9.2") is True
     assert version_is_supported("2.10.0") is True
     assert version_at_least("2.9.2", ADK_TARGET) is False
     assert version_at_least("2.10.0", ADK_TARGET) is False
-    assert version_at_least("2.11.0", ADK_TARGET) is True
+    assert version_at_least("2.12.0", ADK_TARGET) is True
+    assert version_at_least("2.11.0", ADK_TARGET) is False
 
 
 def test_the_install_pin_follows_the_targeted_release():

@@ -128,6 +128,14 @@ def analyze_case(case: CaseResult) -> dict:
             })
     if rubrics:
         entry["rubric_scores"] = rubrics
+    explanations = [
+        {"metric": metric.name, "explanation": metric.explanation}
+        for metric in case.gate_metrics() if metric.explanation
+    ]
+    if explanations:
+        # Vertex rubric metrics (ADK main after 2.12.0) add one rationale for the
+        # whole verdict as rubric_id "explanation"; it is not a rubric.
+        entry["rubric_explanations"] = explanations
     return entry
 
 
@@ -180,6 +188,16 @@ def efficiency_table(metrics: list[dict]) -> list[str]:
         lines.append("")
         lines.append(ratio_line)
     for metric in metrics:
+        split = metric.get("duration") or {}
+        if split:
+            parts = ", ".join(
+                f"{key.replace('_seconds', '')} {split[key]:g}s"
+                for key in ("model_seconds", "tool_seconds", "framework_seconds") if key in split
+            )
+            lines.append("")
+            lines.append(f"Duration split ({metric['name']}): {parts} "
+                         "(the parts add up to the total; reported by ADK after 2.12.0).")
+    for metric in metrics:
         usage = metric.get("token_usage") or {}
         if usage:
             lines.append("")
@@ -213,6 +231,8 @@ def render(run: RunResult, cases: list[dict], *, filtered: bool = False) -> str:
             lines.append(f"- `{metric['name']}` {score} vs {threshold} -> {metric['status']}")
             for rubric in metric.get("failed_rubrics") or []:
                 lines.append(f"  - rubric not met: `{rubric}`")
+            if metric.get("explanation"):
+                lines.append(f"  - judge's explanation: {metric['explanation']}")
 
         lines.extend(efficiency_table(entry.get("efficiency") or []))
 

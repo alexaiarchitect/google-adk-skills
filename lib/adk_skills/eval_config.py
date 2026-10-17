@@ -257,6 +257,7 @@ def validate_config(
             custom_metrics=custom_metrics,
             backend=backend,
             known_tools=known_tools,
+            adk_version=adk_version,
         )
 
     _note_efficiency_metrics(criteria, report, path, adk_version=adk_version)
@@ -319,6 +320,7 @@ def _validate_criterion(
     custom_metrics: dict[str, Any],
     backend: BackendInfo | None,
     known_tools: set[str] | None,
+    adk_version: str | None = None,
 ) -> None:
     locator = f"criteria.{name}"
     spec = METRIC_CATALOG.get(name)
@@ -437,7 +439,8 @@ def _validate_criterion(
                 source=_SRC_CRITERIA_DOC,
             )
         else:
-            _validate_rubric_list(rubrics, report, path, locator, known_tools=known_tools)
+            _validate_rubric_list(rubrics, report, path, locator, known_tools=known_tools,
+                                  adk_version=adk_version)
 
     if spec is not None and spec.needs_judge and not spec.needs_vertex:
         # Vertex-served metrics are scored by the evaluation service, which
@@ -540,7 +543,8 @@ def _validate_judge_options(options: Any, report: GapReport, path: str, locator:
 
 
 def _validate_rubric_list(
-    rubrics: Any, report: GapReport, path: str, locator: str, *, known_tools: set[str] | None
+    rubrics: Any, report: GapReport, path: str, locator: str, *, known_tools: set[str] | None,
+    adk_version: str | None = None,
 ) -> None:
     if not isinstance(rubrics, list):
         report.add("CFG040", "error", "config", "`rubrics` must be an array",
@@ -566,10 +570,18 @@ def _validate_rubric_list(
             seen.add(str(rubric_id))
 
         content = rubric.get("rubric_content")
-        if not isinstance(content, dict) or not content.get("text_property"):
+        if not isinstance(content, dict):
             report.add("CFG044", "error", "config",
-                       "rubric needs `rubric_content.text_property`",
+                       "rubric needs a `rubric_content` object",
                        path=path, locator=where, source=_SRC_CRITERIA_DOC)
+            continue
+        if not content.get("text_property"):
+            from .evalset import missing_text_property_finding  # local import: avoids a cycle
+
+            severity, message, fix = missing_text_property_finding(
+                "CFG044", "config", adk_version=adk_version)
+            report.add("CFG044", severity, "config", message, path=path, locator=where,
+                       fix=fix, source=_SRC_CRITERIA_DOC)
             continue
 
         from .rubrics import lint_rubric_text  # local import: avoids a cycle

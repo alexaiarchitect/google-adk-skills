@@ -115,6 +115,14 @@ arguments. Two cases that match on both cost twice and prove once. Two cases
 with the same text but different expected arguments are not duplicates, and it
 will not touch them.
 
+**Frozen suites.** A suite marked `"frozen": true` in `eval_registry.json` is a
+golden baseline: `remove`, `rename`, `move`, `split`, `dedupe` and
+`rebase-app-name` refuse
+any of its cases with `EVS120` (exit 2) unless you pass `--unfreeze`. Adding
+cases is allowed. Freezing exists because deleting the cases a change keeps
+failing is the quickest way to a green suite and a worse agent; the rule and
+when to lift it are in `/adk:eval-ci` `merge-gates.md`.
+
 None of the mutators will open a legacy list-format file. The conversion loses
 enough (ADK assigns a random eval set id on read) that it is its own decision:
 run `migrate_legacy.py` first.
@@ -132,6 +140,43 @@ in the repository as well when the suite is small: a file under version control
 is diffable, reviewable in a pull request, and impossible to lose to a bucket
 lifecycle rule. The two are not exclusive — the repository holds the
 specification, the bucket holds the run history.
+
+## `EVAL.yaml`: the recipes' plugin-skill format
+
+Skills under `adk-recipes/plugins/<plugin>/skills/<skill>/` carry an `EVAL.yaml`
+instead of an evalset. It is not an ADK format and `adk eval` cannot read it.
+Its shape, as used by `plugins/retail` at `05811bba`:
+
+```yaml
+cases:
+- id: headphones_under_200
+  prompt: "I'm looking for wireless headphones under $200, what do you have?"
+  metadata:
+    skill_name: retail-product-search
+    products: [Vector Search, BigQuery]
+  rubric:
+    - "The response MUST only include products priced under $200."
+    - "The response SHOULD use semantic search to match the user intent."
+  assertions:
+    - {type: tool_called, tool: retrieve_docs}
+    - {type: price_under, value: 200}
+```
+
+- One top-level key, `cases`. Each case has `id`, `prompt`, `metadata`
+  (`skill_name`, `products`), `rubric` (a list of sentences phrased with MUST,
+  MUST NOT and SHOULD, for an LLM judge) and optionally `assertions`.
+- Assertion types in use: `contains_product {field, value}`, `price_under
+  {value}`, `tool_called {tool}`, `no_hallucination {forbidden}`,
+  `mentions_price {value}`, `mentions_field {field}`, `response_not_empty`,
+  `response_min_length {value}`, `graceful_no_results`, `skill_covers {topic}`.
+- **No threshold key and no runner.** The 80% target is prose in the skill's
+  `SKILL.md`; the repository's CI only checks that the file exists.
+
+`/adk:eval-review`'s `validate_eval_yaml.py` checks this shape (findings
+`EVY001`–`EVY010`: parse errors, missing `cases`, `id` or `prompt`, duplicate ids, empty rubrics, rubric lines without MUST/SHOULD, unknown assertion types or missing fields, and a `tool_called` the `SKILL.md` never mentions) and never runs the cases. If you want the same
+behaviours gated in an ADK project, translate each case: `prompt` becomes the
+user turn, `tool_called` an expected tool use, the MUST sentences per-case
+rubrics, and the threshold a decision you write into `eval_config.json`.
 
 ## Versioning an evalset with its agent
 
@@ -163,5 +208,10 @@ the skip-on-existing behaviour);
 `adk-python/src/google/adk/evaluation/eval_case.py`
 (`InvocationEvent.model_config`, `extra="ignore"` since 2.10); `adk-python/src/google/adk/evaluation/
 gcs_eval_sets_manager.py` and `gcs_eval_set_results_manager.py` (GCS storage).
+`adk-recipes: plugins/retail/skills/*/EVAL.yaml`,
+`docs/recipe-handbook/plugins.md` (`05811bba`); Ippolito and Saadati, "Three
+layers, one repo: a tour of google/adk-recipes", Google Developers Blog,
+2026-10-15,
+https://developers.googleblog.com/three-layers-one-repo-a-tour-of-googleadk-recipes/.
 Background reading: the LinkedIn Learning course "Evaluating AI Agents with
 Google ADK", which covers the dev-UI evaluation workflow.

@@ -58,7 +58,7 @@ time is the same discipline applied to renames, splits and deletions.
    validate with `/adk:eval-review`'s scripts. An explicit prior grant from the
    user ("proceed without asking") satisfies this step; the plan is still shown.
 
-## The five categories
+## The categories
 
 | Category | Proves | Id prefix |
 |---|---|---|
@@ -67,6 +67,7 @@ time is the same discipline applied to renames, splits and deletions.
 | **adversarial** | pressure, claimed authority and tempting-but-valid data do not change the decision | `adversarial_` |
 | **memory** | a constraint stated once survives intervening turns | `memory_` |
 | **regression** | a fixed bug stays fixed | `regression_` |
+| **activation** | a skill-equipped agent loads the right skill, and none for an unrelated request | `activation_` |
 
 Roughly 70% narrow single-turn cases, 20% multi-turn, 10% adversarial. Weight
 adversarial higher for an agent that spends money or writes to a system of
@@ -122,19 +123,22 @@ threshold sliders; see [managing-evalsets.md](references/managing-evalsets.md).
 | Capturing, converting and trusting golden traces | [golden-traces.md](references/golden-traces.md) |
 | Designing context-retention tests | [memory-tests.md](references/memory-tests.md) |
 | Adversarial cases and trap fixtures | [adversarial-cases.md](references/adversarial-cases.md), [trap-mocks.md](references/trap-mocks.md) |
-| Curating a suite: dev UI, `adk eval_set`, GCS, versioning | [managing-evalsets.md](references/managing-evalsets.md) |
+| Curating a suite: dev UI, `adk eval_set`, GCS, frozen suites, versioning, recipes `EVAL.yaml` | [managing-evalsets.md](references/managing-evalsets.md) |
+| Behavioural assertions in pytest, one failure mode at a time | [behavioral-tests.md](references/behavioral-tests.md) |
+| Activation cases for an agent with ADK skills | [skills-and-progressive-disclosure.md](../agent-create/references/skills-and-progressive-disclosure.md) |
 
-Templates: `assets/templates/evalsets/` — one per category, a baseline no-tools
-case, and a scenario case.
+Templates: `assets/templates/evalsets/` — one per category (including
+`activation.evalset.json`, a positive and a negative skill-load case), a baseline
+no-tools case, and a scenario case.
 
 ## Scripts
 
 | Command | Does | Exit codes |
 |---|---|---|
-| `scripts/gen_cases.py <agent-dir> --spec JSON (--evalset F \| --new ID) [--dry-run]` | adds cases, refuses to touch existing ids | 0, 1 findings or clash, 2 usage |
+| `scripts/gen_cases.py <agent-dir> --spec JSON (--evalset F \| --new ID) [--dry-run]` | adds cases, refuses to touch existing ids; a `{"skill": "name"}` entry in a turn's `tools`, or `"skill": "name"` on the turn (loaded first), becomes `load_skill` with `{"skill_name": "name"}`, prefixed when the toolset sets `tool_name_prefix`; `activation_*` ids land in the activation category | 0, 1 findings or clash, 2 usage |
 | `scripts/session_to_evalset.py --trace F --eval-id ID --evalset F [--drop-final-response]` | turns a run into a case | 0, 1 findings, 2 usage |
 | `scripts/migrate_legacy.py <old.test.json> [--out F] [--eval-set-id ID]` | either legacy shape to the EvalSet schema | 0, 1 findings, 2 usage |
-| `scripts/manage_cases.py list\|show\|rename\|move\|remove\|dedupe\|split\|rebase-app-name ... [--evalset F] [--dry-run]` | curates an existing suite through a write plan | 0, 1 refused, 2 usage |
+| `scripts/manage_cases.py list\|show\|rename\|move\|remove\|dedupe\|split\|rebase-app-name ... [--evalset F] [--dry-run] [--registry F] [--unfreeze]` | curates an existing suite through a write plan; refuses to remove, rename, move (either end), split, `dedupe --apply` or rebase a case in a `"frozen": true` suite (`EVS120`, read from `--registry` or the nearest `eval_registry.json`) unless `--unfreeze`; adding cases to a frozen suite is allowed | 0, 1 refused, 2 usage or frozen |
 
 ## Completion checklist
 

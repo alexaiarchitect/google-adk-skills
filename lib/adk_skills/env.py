@@ -177,6 +177,24 @@ def detect_backend(agent_dir: Path | str | None, *, include_os_environ: bool = T
     return info
 
 
+def dotenv_flag(agent_dir: Path | str | None, name: str) -> bool | None:
+    """Is `name` truthy in the `.env` ADK would load for this agent?
+
+    Same lookup as :func:`detect_backend` (the first `.env` from the agent
+    directory up); the process environment is deliberately not consulted, since
+    what is exported in the reviewer's shell says nothing about the run. None
+    when there is no `.env` at all.
+    """
+    if not agent_dir:
+        return None
+    directory = Path(agent_dir).resolve()
+    for folder in (directory, *directory.parents):
+        candidate = folder / ".env"
+        if candidate.is_file():
+            return _truthy(read_dotenv(candidate).get(name))
+    return None
+
+
 #: One sentence every script uses when it has to say what is missing, so the
 #: instruction the user reads is the same wherever they meet it.
 BACKEND_REQUIREMENT = (
@@ -357,7 +375,7 @@ def _version_tuple(version: str) -> tuple[int, ...]:
 
 
 def version_is_supported(version: str | None) -> bool:
-    """This plugin targets ADK 2.x: 2.9 through 2.11 are all supported."""
+    """This plugin targets ADK 2.x: 2.9 through 2.12 are all supported."""
     if not version:
         return False
     return version.split(".", 1)[0] == ADK_TARGET.split(".", 1)[0]

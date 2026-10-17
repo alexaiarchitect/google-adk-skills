@@ -64,7 +64,7 @@ submits anyway. There is no `forbidden_tools` key, and none is needed.
 ### `final_session_state` is not checked
 
 `EvalCase.final_session_state` parses, serializes and round-trips, and no
-evaluator through ADK 2.11 ever reads it. A case that "asserts" state through it
+evaluator through ADK 2.12 ever reads it. A case that "asserts" state through it
 asserts nothing, and passes whatever the agent did.
 
 **Do not rely on it.** Assert state the way the run can actually observe it:
@@ -217,4 +217,5 @@ replaces in place on 2.10+ and removed-then-appended on 2.9),
 `evaluation/conversation_scenarios.py`; `adk-docs: docs/evaluate/index.md`.
 Compared across installed 2.9.2 and 2.10.0 wheels; the `Invocation` field
 list, `InvocationEvent`'s `extra="ignore"` and the in-place update re-read on
-2.11.0.
+2.11.0; every `google.adk.evaluation` model compared field for field on 2.12.0
+(only `RubricContent.text_property` changed).

@@ -117,6 +117,14 @@ The Firebase team's process for building agent skills, generalized:
    revise and compare again. Every kept improvement leaves its case behind as a
    guard.
 
+Google's "moving past the vibe check" post adds the discipline around the loop:
+change one variable per iteration (production quality took them 50 to 60 small
+ones), freeze the golden cases while tuning, and merge only on a global pass
+threshold plus zero regressions. Those rules and the flags that enforce them:
+`/adk:eval-ci` `merge-gates.md`. An agent that itself uses ADK skills has its own
+version of the three scopes below: `/adk:agent-create`
+`skills-and-progressive-disclosure.md`.
+
 They test at three scopes, which map onto an ADK agent:
 
 | Firebase scope | For an ADK agent |
@@ -154,5 +162,9 @@ The eval-driven loop, the three scopes and the before/after figures are from
 Charlotte Liang, "Eval-driven development: how we build better agent skills for
 Firebase", Firebase blog, 2026-08-11,
 https://firebase.blog/posts/2026/08/eval-driven-development-agent-skills. The
-maturity framing (L0) follows the LinkedIn Learning course *Evaluating AI Agents
+one-variable rule and the merge rules are from Selbie, Zamora, Carah and
+DeMartino, "Evaluating AI agents: moving past the vibe check", Google Developers
+Blog, 2026-10-15,
+https://developers.googleblog.com/evaluating-ai-agents-moving-past-the-vibe-check/.
+The maturity framing (L0) follows the LinkedIn Learning course *Evaluating AI Agents
 with Google ADK*, recommended as background reading.
