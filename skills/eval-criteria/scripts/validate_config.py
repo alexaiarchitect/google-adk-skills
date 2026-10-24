@@ -26,7 +26,7 @@ from adk_skills.eval_config import load_config, validate_config  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
 from adk_skills.metrics import cost_tier  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport  # noqa: E402
-from adk_skills.tools_ast import extract_module  # noqa: E402
+from adk_skills.tools_ast import agent_model_ids, extract_module  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -61,10 +61,14 @@ def main(argv: list[str] | None = None) -> int:
 
     agent_dir = args.agent_dir or layout.agent_dir
     known_tools = None
+    facts = None
     if agent_dir and Path(agent_dir).exists():
-        known_tools = extract_module(agent_dir).bound_tool_names or None
+        facts = extract_module(agent_dir)
+        known_tools = facts.bound_tool_names or None
 
     backend = None if args.no_backend else detect_backend(agent_dir or target.parent)
+    agent_models = (agent_model_ids(facts, backend.model_name if backend else None)
+                    if facts is not None else None)
 
     # Which ADK will run this config decides one note only (CFG071): the four
     # efficiency metrics exist from 2.10 on. Every error is version-independent,
@@ -87,7 +91,8 @@ def main(argv: list[str] | None = None) -> int:
         "adk_version": adk_version or "not detected",
     }
     validate_config(loaded, report=report, backend=backend, agent_dir=agent_dir,
-                    known_tools=known_tools, adk_version=adk_version)
+                    known_tools=known_tools, adk_version=adk_version,
+                    agent_models=agent_models)
 
     print(report.render(args.format))
     if report.has_errors():

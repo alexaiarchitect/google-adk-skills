@@ -195,6 +195,33 @@ def dotenv_flag(agent_dir: Path | str | None, name: str) -> bool | None:
     return None
 
 
+def dotenv_value(agent_dir: Path | str | None, name: str) -> str | None:
+    """The raw value of `name` in the `.env` ADK would load for this agent
+    (the first one from the agent directory up), or None."""
+    if not agent_dir:
+        return None
+    directory = Path(agent_dir).resolve()
+    for folder in (directory, *directory.parents):
+        candidate = folder / ".env"
+        if candidate.is_file():
+            return read_dotenv(candidate).get(name)
+    return None
+
+
+#: Optional environment variables worth knowing about, with what each does.
+#: None of them is needed to run evals; check_env.py reports the ones set.
+OPTIONAL_KNOBS: dict[str, str] = {
+    "ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS":
+        "silences ADK's [EXPERIMENTAL] warnings (the YAML loader's on every 2.x; the "
+        "feature registry's from 2.13)",
+    "ADK_ENABLE_SKILL_LIFECYCLE": "turns on skill lifecycles (unload_skill), experimental",
+    "ADK_TELEMETRY_SCHEMA_VERSION_OPT_IN":
+        "otel_semconv_1_36 brings back the v1 span schema on 2.13 (call_llm, llm_request)",
+    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT":
+        "SPAN_ONLY puts prompts and responses on the 2.13 (v2) spans",
+}
+
+
 #: One sentence every script uses when it has to say what is missing, so the
 #: instruction the user reads is the same wherever they meet it.
 BACKEND_REQUIREMENT = (
@@ -375,7 +402,7 @@ def _version_tuple(version: str) -> tuple[int, ...]:
 
 
 def version_is_supported(version: str | None) -> bool:
-    """This plugin targets ADK 2.x: 2.9 through 2.12 are all supported."""
+    """This plugin targets ADK 2.x: 2.9 through 2.13 are all supported."""
     if not version:
         return False
     return version.split(".", 1)[0] == ADK_TARGET.split(".", 1)[0]
@@ -398,3 +425,38 @@ def default_judge_model(backend: BackendInfo | None = None) -> str:
     if backend and backend.model_name:
         return backend.model_name
     return DEFAULT_MODEL
+
+
+#: A `google-adk` requirement with its specifier: `google-adk[eval]>=2.13,<3`,
+#: `google-adk==2.13.0`, `"google-adk[eval]==2.13.*"` in a `uv run --with`, or
+#: Poetry's `google-adk = "^2.13"`. `google-adk-community` and other packages
+#: whose name only starts with `google-adk` are not matched.
+_ADK_REQUIREMENT = re.compile(
+    r"""google[-_]adk(?![\w-])(?:\[[^\]]*\])?\s*(?:=\s*["'])?\s*"""
+    r"""((?:===?|~=|>=|<=|!=|[<>^~])\s*[\d][\w.*]*(?:\s*,\s*(?:===?|~=|>=|<=|!=|[<>^~])\s*[\d][\w.*]*)*)""",
+    re.I,
+)
+_SPEC_CLAUSE = re.compile(r"(===?|~=|>=|<=|!=|[<>^~])\s*([\d][\w.*]*)")
+
+
+def pinned_adk_version(*texts: str) -> str | None:
+    """The lowest ADK version a project's pins allow, or None when nothing pins it.
+
+    Each text is the content of a `pyproject.toml`, a `requirements*.txt` or a
+    CI workflow. Every `google-adk` requirement found contributes its lower
+    bound (`>=`, `==`, `~=`, `^`, `>`, with a trailing `.*` dropped); upper
+    bounds and exclusions are ignored. The lowest bound wins, because a check
+    that depends on the version must hold for every release the pins accept.
+    """
+    bounds: list[str] = []
+    for text in texts:
+        for match in _ADK_REQUIREMENT.finditer(text or ""):
+            for operator, version in _SPEC_CLAUSE.findall(match.group(1)):
+                if operator in ("<", "<=", "!="):
+                    continue
+                version = version.rstrip("*").rstrip(".")
+                if version and _version_tuple(version):
+                    bounds.append(version)
+    if not bounds:
+        return None
+    return min(bounds, key=_version_tuple)

@@ -19,6 +19,9 @@ For each failing case it reports:
   ratio (`cached_tokens / prompt_tokens`) show whether context caching served
   part of the prompt; both read "n/a" when the run did not report them (ADK 2.9
   has no efficiency metrics). To compare two runs, use `compare_runs.py`.
+* **repeated runs** of one case inside one result file (ADK main after 2.13.0,
+  `multi_run_config.num_runs` above 1, unreleased) are labelled "run k/N", by
+  `repetition_index` when the file carries it.
 
     summarize_results.py <agent-dir | result.json | --dir eval_history>
                          [--latest] [--eval-id ID] [--format json|md]
@@ -84,6 +87,8 @@ def analyze_case(case: CaseResult) -> dict:
 
     entry: dict = {
         "eval_id": case.eval_id,
+        **({"run_label": case.run_label, "repetition_index": case.repetition_index}
+           if case.run_label else {}),
         "status": case.status,
         # Gate metrics only. The informational ones report a value and never a
         # verdict, so mixing them in would read as extra passes.
@@ -133,7 +138,7 @@ def analyze_case(case: CaseResult) -> dict:
         for metric in case.gate_metrics() if metric.explanation
     ]
     if explanations:
-        # Vertex rubric metrics (ADK main after 2.12.0) add one rationale for the
+        # Vertex rubric metrics (ADK 2.13+) add one rationale for the
         # whole verdict as rubric_id "explanation"; it is not a rubric.
         entry["rubric_explanations"] = explanations
     return entry
@@ -196,7 +201,7 @@ def efficiency_table(metrics: list[dict]) -> list[str]:
             )
             lines.append("")
             lines.append(f"Duration split ({metric['name']}): {parts} "
-                         "(the parts add up to the total; reported by ADK after 2.12.0).")
+                         "(the parts add up to the total; reported by ADK 2.13+).")
     for metric in metrics:
         usage = metric.get("token_usage") or {}
         if usage:
@@ -213,6 +218,10 @@ def render(run: RunResult, cases: list[dict], *, filtered: bool = False) -> str:
     lines = [f"# {Path(run.path).name}", ""]
     lines.append(f"`{run.eval_set_id}`: **{run.passed} passed, {run.failed} failed, "
                  f"{run.not_evaluated} never scored** of {len(run.cases)} case(s).")
+    if run.repeated:
+        groups = run.case_groups()
+        lines.append(f"The file holds repeated runs ({len(groups)} distinct case(s)); the "
+                     "counts above are per run. Per-case means: `compare_runs.py`.")
     ratio = run.token_means()["cache_hit_ratio"]
     if ratio is not None:
         lines.append(f"Context cache served {ratio:.1%} of this run's prompt tokens.")
@@ -223,7 +232,8 @@ def render(run: RunResult, cases: list[dict], *, filtered: bool = False) -> str:
 
     for entry in cases:
         marker = {"PASSED": "PASS", "FAILED": "FAIL", "NOT_EVALUATED": "SKIP"}.get(entry["status"], "?")
-        lines.append(f"## [{marker}] `{entry['eval_id']}`")
+        label = f" ({entry['run_label']})" if entry.get("run_label") else ""
+        lines.append(f"## [{marker}] `{entry['eval_id']}`{label}")
         lines.append("")
         for metric in entry["metrics"]:
             score = "-" if metric["score"] is None else f"{metric['score']:.3f}"

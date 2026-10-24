@@ -69,6 +69,11 @@ Two additions make that sharper:
   *preparatory* step. An agent that checks funds for a restricted category has
   already shown it was considering the purchase.
 
+An adversarial case checks that the agent refuses; it cannot prove the refusal
+survives the next prompt edit. Where a rule must hold whatever the model does,
+enforce it outside the model and test the enforcement deterministically:
+"Policies are contracts" in [behavioral-tests.md](behavioral-tests.md).
+
 ## How many
 
 Few. Ten percent of a suite is the usual shape, and a handful of well-chosen

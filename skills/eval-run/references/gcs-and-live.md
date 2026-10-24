@@ -57,8 +57,9 @@ results at a bucket is a coherent setup, and usually the right first step.
   `adk eval_set create <agent> smoke --eval_storage_uri gs://...` the first time
   you wire it, so a permissions problem surfaces for free.
 - `run_evals.py --storage gs://...` passes the flag through, and still parses the
-  printed summary for its own exit code. The exit-code problem does not change:
-  `adk eval` returns 0 with the flag exactly as it does without it.
+  printed summary for its own exit code. The flag does not change the exit
+  code: `adk eval` returns 0 with it through 2.12.0 exactly as it does without
+  it, and 1 on a failure from 2.13.0 either way.
 
 ## Live mode
 
@@ -93,7 +94,7 @@ They answer different questions, and a project wants both:
 |---|---|---|
 | Question | did the interactions change? | is the behaviour still correct? |
 | Cost per run | none — replayed from recordings | model calls, and judge calls if configured |
-| Exit code | real | always 0; needs `run_evals.py` |
+| Exit code | real | 0 whatever happened through 2.12.0, 1 on a failure from 2.13.0; gate with `run_evals.py` either way |
 | Breaks when | a prompt, tool or model output shifts at all | the agent's decisions get worse |
 | Right cadence | every pull request | pull request (cheap tier) and nightly (judged) |
 

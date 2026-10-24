@@ -29,6 +29,11 @@ Ten dimensions:
 12. context — an EventsCompactionConfig ADK rejects (AGT076), long eval
     conversations with no compaction (AGT077), a transfer target that reads the
     whole history (AGT078), a tool returning a large inline blob (AGT079)
+13. state keys — an instruction placeholder `{key}` that no tool, callback,
+    `output_key`, evalset `session_input.state` or `initial_state.json` ever
+    writes (AGT080: ADK raises KeyError when it builds the instruction); agent
+    names shared anywhere in the tree (AGT015: ADK 2.13 warns for siblings,
+    cousins and ancestor/descendant clashes)
 
 Report only. It never edits.
 
@@ -52,7 +57,7 @@ from adk_skills.layout import detect_layout  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport  # noqa: E402
 from adk_skills.tools_ast import (  # noqa: E402
     LLM_AGENT_CALLS, cache_suite_findings, compaction_suite_findings, extract_module,
-    skill_lifecycle_findings,
+    skill_lifecycle_findings, state_placeholder_findings,
 )
 
 
@@ -103,11 +108,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if layout.style == "yaml":
         report.add("AGT050", "warn", "agent",
-                   "this is a YAML config agent; the config classes behind it are deprecated "
-                   "in ADK 2.x",
+                   "this is a YAML config agent: the feature flag is stable from 2.13; the "
+                   "YAML loader still prints an [EXPERIMENTAL] warning and the config classes "
+                   "are deprecated",
                    path=layout.agent_module_file,
                    fix="migrate to a Python agent; `adk create` still offers YAML, but the "
-                       "loader's config path is on the way out",
+                       "config classes behind it are deprecated (AgentConfig, LlmAgentConfig). "
+                       "ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1 silences the loader "
+                       "warning",
                    source="adk-python: agents/config_agent_utils.py")
         report.discovered = {"layout": layout.style, "agent_dir": layout.agent_dir}
         print(report.render(args.format))
@@ -165,6 +173,8 @@ def main(argv: list[str] | None = None) -> int:
     report.extend(cache_suite_findings(facts, docs))
     # 12. context: long conversations want compaction
     report.extend(compaction_suite_findings(facts, docs))
+    # 13. state keys: a required placeholder nothing writes raises KeyError
+    report.extend(state_placeholder_findings(facts, docs, layout.agent_dir))
     # 11. skills: lifecycle modes lean on an experimental flag for unload_skill
     report.extend(skill_lifecycle_findings(
         facts, env_enabled=dotenv_flag(layout.agent_dir, "ADK_ENABLE_SKILL_LIFECYCLE"),

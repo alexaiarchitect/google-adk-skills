@@ -121,6 +121,8 @@ CATEGORY_PREFIXES = {
     "adversarial": ("adversarial", "trap", "attack", "injection", "restricted", "conflict"),
     "memory": ("memory", "recall", "context", "needle", "long_horizon", "multiturn", "multi_turn"),
     "regression": ("regression", "bug", "issue", "repro"),
+    # Pre-seeded `session_input.state`: the session resumes mid-workflow.
+    "resume": ("resume", "resumed", "checkpoint"),
 }
 
 _CAMEL_BOUNDARY = re.compile(r"(?<!^)(?=[A-Z])")
@@ -317,6 +319,10 @@ def case_category(eval_id: str) -> str:
     # re-bucket them.
     if lowered.startswith("activation"):
         return "activation"
+    # Resume cases (`resume_<step>_...`) likewise: "resume_missing_receipt" is a
+    # resumed session, not an edge case.
+    if lowered.startswith("resume"):
+        return "resume"
     for category, prefixes in CATEGORY_PREFIXES.items():
         for prefix in prefixes:
             if lowered.startswith(prefix) or f"_{prefix}" in lowered:
@@ -336,6 +342,7 @@ def stats(doc: dict[str, Any]) -> dict[str, Any]:
     tools_used: dict[str, int] = {}
     with_reference = 0
     total_turns = 0
+    seeded_state = 0
 
     for case in cases:
         category = case_category(str(case.get("eval_id", "")))
@@ -346,6 +353,10 @@ def stats(doc: dict[str, Any]) -> dict[str, Any]:
             multi_turn += 1
         if case.get("conversation_scenario"):
             scenario_cases += 1
+        session_input = case.get("session_input")
+        if isinstance(session_input, dict) and isinstance(session_input.get("state"), dict) \
+                and session_input["state"]:
+            seeded_state += 1
         for _, tool in iter_tool_uses(case):
             name = tool.get("name", "?")
             tools_used[name] = tools_used.get(name, 0) + 1
@@ -358,6 +369,7 @@ def stats(doc: dict[str, Any]) -> dict[str, Any]:
         "turns": total_turns,
         "multi_turn_cases": multi_turn,
         "scenario_cases": scenario_cases,
+        "seeded_state_cases": seeded_state,
         "cases_with_reference_response": with_reference,
         "by_category": by_category,
         "tools_referenced": sorted(tools_used),
@@ -409,6 +421,7 @@ def validate_evalset(
     trajectory_match_type: str | None = None,
     adk_version: str | None = None,
     registered_skills: set[str] | None = None,
+    state_key_read: Any = None,
 ) -> GapReport:
     """Check one evalset against what ADK 2.x will accept and what it needs.
 
@@ -421,6 +434,9 @@ def validate_evalset(
     `adk_version` is the runner's release: a rubric without `text_property` is
     only rejected before 2.12. `registered_skills` is the set of skill names
     the agent's SkillToolsets register (None when unknowable), for EVS074.
+    `state_key_read` is a predicate saying whether the agent reads a state key
+    (placeholder, `state[...]`, `state.get(...)`), None when unknowable, for
+    EVS075. `adk_version` also decides EVS076's severity.
     """
     report = report or GapReport(subject=loaded.path, skill="eval-review")
     path = loaded.path
@@ -479,6 +495,9 @@ def validate_evalset(
                    f"`eval_set_id` {eval_set_id!r} must match ^[a-zA-Z0-9_]+$",
                    path=path, fix="use letters, digits and underscores only (no dashes or dots)",
                    source=f"{_SRC_MANAGER} (id validation on save)")
+    if isinstance(eval_set_id, str):
+        _check_drive_qualified("eval_set_id", eval_set_id, report, path, None,
+                               adk_version=adk_version)
 
     unknown_top = sorted(set(doc) - EVAL_SET_KEYS)
     if unknown_top:
@@ -522,6 +541,8 @@ def validate_evalset(
             reference_metrics=reference_metrics,
             adk_version=adk_version,
         )
+        if state_key_read is not None:
+            _check_seeded_state(case, index, state_key_read, report, path)
     _check_restraint_under_lenient_match(cases, trajectory_match_type, report, path)
     if registered_skills is not None:
         _check_skill_activations(cases, registered_skills, report, path)
@@ -645,7 +666,7 @@ def _validate_case(
         elif case_category(eval_id) == "uncategorized":
             report.add("EVS061", "info", "evalset",
                        f"`eval_id` {eval_id!r} has no category prefix "
-                       "(happy/edge/adversarial/memory/regression/activation)",
+                       "(happy/edge/adversarial/memory/regression/activation/resume)",
                        path=path, locator=locator,
                        fix="prefix the id so coverage reporting can bucket it")
 
@@ -712,6 +733,9 @@ def _validate_case(
                      "artifacts line up and ADK stops appending a mismatch hint to errors"),
                 source="adk-python: runners.py (_enforce_app_name_alignment)",
             )
+        if isinstance(session_input.get("app_name"), str):
+            _check_drive_qualified("app_name", session_input["app_name"], report, path,
+                                   locator, adk_version=adk_version)
         if not session_input.get("user_id"):
             report.add("EVS034", "warn", "evalset",
                        "`session_input.user_id` is unset; user-scoped state needs a stable id",
@@ -720,6 +744,66 @@ def _validate_case(
     for position, rubric in enumerate(case.get("rubrics") or []):
         _validate_rubric(rubric, report, path, f"{locator}.rubrics[{position}]", per_case=True,
                          adk_version=adk_version)
+
+
+#: `evaluation/_path_validation.py` (2.13.0, 29bb053): `re.match(r"[A-Za-z]:")`.
+DRIVE_QUALIFIED_RE = re.compile(r"^[A-Za-z]:")
+#: The release that rejects a drive-qualified id when it saves results.
+DRIVE_QUALIFIED_SINCE = "2.13"
+
+
+def _check_drive_qualified(field_name: str, value: str, report: GapReport, path: str,
+                           locator: str | None, *, adk_version: str | None) -> None:
+    """EVS076: an id starting with a letter and a colon (`c:pass`).
+
+    ADK 2.13 validates `eval_set_id` and `app_name` as path segments when it
+    saves results: `/` and `\\` were refused already on 2.9 ("must not contain
+    path separators", which EVS003 covers for `eval_set_id`), and 2.13 adds
+    "must not be drive-qualified". Through `adk eval` that raises after
+    inference and scoring, so the run is paid for and still exits 1.
+    """
+    if not DRIVE_QUALIFIED_RE.match(value):
+        return
+    from .env import version_at_least  # local import: keeps this module light
+
+    on_213 = version_at_least(adk_version, DRIVE_QUALIFIED_SINCE)
+    report.add(
+        "EVS076", "error" if on_213 else "warn", "evalset",
+        f"`{field_name}` {value!r} is drive-qualified: ADK 2.13 raises ValueError "
+        f"\"{field_name} '{value}' must not be drive-qualified.\" when saving results after "
+        "inference, so the run fails after the model calls are spent"
+        + ("" if on_213 else " (accepted through 2.12.0)"),
+        path=path, locator=locator,
+        fix="drop the `<letter>:` prefix (a colon later in the id is allowed); `/` and `\\` "
+            "were already refused on 2.9 (\"must not contain path separators\", EVS003 for "
+            "eval_set_id)",
+        source="adk-python 2.13.0: evaluation/_path_validation.py (validate_path_segment)",
+    )
+
+
+def _check_seeded_state(case: dict[str, Any], index: int, state_key_read: Any,
+                        report: GapReport, path: str) -> None:
+    """EVS075: a case seeds a state key the agent never reads."""
+    session_input = case.get("session_input")
+    state = session_input.get("state") if isinstance(session_input, dict) else None
+    if not isinstance(state, dict) or not state:
+        return
+    unread = sorted(str(key) for key in state if not state_key_read(str(key)))
+    if not unread:
+        return
+    eval_id = case.get("eval_id")
+    locator = f"eval_cases[{index}]" + (f" ({eval_id})" if isinstance(eval_id, str) else "")
+    report.add(
+        "EVS075", "info", "evalset",
+        f"`session_input.state` seeds {', '.join(repr(k) for k in unread)}, which nothing "
+        "in the agent reads (no `{key}`/`{key?}` instruction placeholder, no "
+        "`state[...]`/`state.get(...)` with that key)",
+        path=path, locator=f"{locator}.session_input.state",
+        fix="check the key's spelling against the agent's state keys; a seeded key nobody "
+            "reads cannot simulate a resumed session, so the case may not test what its id "
+            "says",
+        source="adk-python: utils/instructions_utils.py; adk-docs: docs/sessions/state.md",
+    )
 
 
 def _validate_scenario(scenario: Any, report: GapReport, path: str, locator: str) -> None:

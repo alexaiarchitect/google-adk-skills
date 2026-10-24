@@ -16,7 +16,11 @@ Two kinds of problem, and the second is the reason this exists:
 `--adk-version` names the release that will run the suite. A rubric without
 `text_property` is then an error below 2.12 (EVS082); without it, or on 2.12+,
 it is a warning. When the agent registers skills through a `SkillToolset`, a
-case expecting `load_skill` for a skill it does not register is EVS074.
+case expecting `load_skill` for a skill it does not register is EVS074. A case
+whose `session_input.state` seeds a key the agent never reads is EVS075 (info).
+An `eval_set_id` or `app_name` that starts with a drive letter (`c:...`) is
+EVS076: an error on 2.13+ (ADK raises when it saves the results), a warning
+below or when the version is unknown.
 
 Exit codes: 0 clean, 1 findings, 2 bad target.
 """
@@ -33,7 +37,7 @@ from adk_skills.eval_config import load_config  # noqa: E402
 from adk_skills.evalset import load_evalset, stats, validate_evalset  # noqa: E402
 from adk_skills.layout import EVALSET_SUFFIXES, detect_layout  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport  # noqa: E402
-from adk_skills.tools_ast import extract_module, tool_resolver  # noqa: E402
+from adk_skills.tools_ast import collect_state_keys, extract_module, tool_resolver  # noqa: E402
 
 
 def collect_evalsets(target: Path) -> list[Path]:
@@ -101,11 +105,16 @@ def main(argv: list[str] | None = None) -> int:
     resolver = None
     known_tools = None
     registered_skills = None
+    state_key_read = None
     if agent_dir and Path(agent_dir).exists():
         facts = extract_module(agent_dir)
         resolver = tool_resolver(facts)
         known_tools = facts.bound_tool_names or None
         registered_skills = facts.registered_skill_names
+        state_keys = collect_state_keys(facts.files, facts.str_constants)
+        # A read through a computed key could be any key: EVS075 stays silent.
+        if facts.files and not state_keys.dynamic_reads and not facts.agent_unresolved:
+            state_key_read = state_keys.reads
 
     reference_metrics = True
     match_type = None
@@ -154,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
             reference_metrics=reference_metrics,
             adk_version=args.adk_version,
             registered_skills=registered_skills,
+            state_key_read=state_key_read,
         )
         if isinstance(loaded.doc, dict):
             totals["cases"] += stats(loaded.doc)["cases"]

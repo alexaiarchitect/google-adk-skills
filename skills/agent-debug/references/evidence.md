@@ -69,21 +69,49 @@ registers these routes; `adk api_server` returns 404.
 
 ## Spans and what they carry
 
-Under the current OpenTelemetry schema: `invoke_agent {name}`,
-`invoke_workflow {name}`, `execute_tool {name}`, `generate_content {model}`.
+**2.13 changed the default schema** to the OpenTelemetry GenAI semantic
+conventions ("v2", `otel_semconv_1_44`). One run, as measured on 2.13.0:
 
-Attributes worth reading: `gcp.vertex.agent.llm_request` and `.llm_response`
-(JSON strings — the ground truth for *what the model actually received*),
-`.tool_call_args`, `.tool_response`, plus `gen_ai.usage.input_tokens`,
-`gen_ai.usage.output_tokens` and `gen_ai.response.finish_reasons`.
+```
+invoke_workflow claims_agent          gen_ai.workflow.name, gen_ai.conversation.id
+  invoke_agent claims_agent
+    generate_content <model>          gen_ai.request.model, gen_ai.provider.name, gen_ai.tool.definitions
+    execute_tool lookup_policy        gen_ai.tool.name, gen_ai.tool.call.id, gen_ai.tool.type
+    generate_content <model>
+```
 
-Read `finish_reasons` rather than inferring from the text: a truncated response
-and a refused one look similar in prose and are different problems.
+`invoke_workflow` replaces the old `invocation` root, there is **no `call_llm`
+span**, and `gen_ai.system` became `gen_ai.provider.name`. Message content is
+**off by default**: set `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY`
+(or `SPAN_AND_EVENT`) and `generate_content` gains `gen_ai.input.messages`,
+`gen_ai.output.messages` and `gen_ai.system_instructions` — the ground truth for
+*what the model actually received* — while `execute_tool` gains
+`gen_ai.tool.call.arguments` and `gen_ai.tool.call.result`. A value of `true`
+sends content to log records only (`EVENT_ONLY`), not to spans.
 
-Content capture is controlled by `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS`. Empty
-`"{}"` attributes mean capture is off, not that something failed.
+**Through 2.12, or on 2.13 with `ADK_TELEMETRY_SCHEMA_VERSION_OPT_IN=otel_semconv_1_36`**
+(or `1`; supported until at least 2027-03-31), the legacy tree comes back:
+`invocation` › `invoke_agent` › `call_llm` › `generate_content`, and
+`execute_tool` beside it, with the JSON-string attributes
+`gcp.vertex.agent.llm_request`, `.llm_response`, `.tool_call_args` and
+`.tool_response`; `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS` (on by default) controls
+them, and empty `"{}"` values mean capture is off, not that something failed.
+A dashboard or query written against those names finds nothing under v2 — pin the
+opt-in until it is migrated. `adk web`'s Trace tab still shows model content
+under v2 (it rebuilds it from log records). This plugin's `analyze_trace.py`
+reads `adk run --jsonl` events and result files, not spans, so neither schema
+affects it.
 
-Export with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, or `adk web --otel_to_cloud`.
+Under both: `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` and
+`gen_ai.response.finish_reasons`. Read `finish_reasons` rather than inferring from
+the text: a truncated response and a refused one look similar in prose and are
+different problems.
+
+Export with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (install `google-adk[otel]` on
+2.13+ for the OTLP exporter), or `adk web --otel_to_cloud` for Cloud Trace.
+Third-party sinks read the same spans; ADK's docs link CoreWeave's Agent Lens
+(from the Weave integration page), which groups an agent's conversations, turns
+and tool calls.
 
 ## Eval results
 
@@ -120,7 +148,7 @@ event as `usageMetadata.cachedContentTokenCount`.
 |---|---|
 | what did the agent do? | `adk run --jsonl` |
 | did a tool fail? | the function responses in that trace |
-| what did the model actually receive? | the `llm_request` span attribute |
+| what did the model actually receive? | `gen_ai.input.messages` with content capture on (v2), or the `llm_request` attribute (v1) |
 | why did the case fail? | the eval result file |
 | does it fail every time? | five runs, then pass@k |
 | did this used to work? | conformance recordings, or an older result file |
@@ -132,7 +160,12 @@ Sources: `adk-python: cli/cli.py` (`_print_event`, `--jsonl`), `events/event.py`
 (`log_to_tmp_folder`), `cli/dev_server.py` (trace routes), `telemetry/`,
 `flows/llm_flows/functions.py`, `evaluation/eval_result.py`;
 `telemetry/_token_usage.py` (`gen_ai.usage.cache_read.input_tokens`, read on
-2.11.0); `adk-docs: docs/observability/*`. The reasoning-trace / system-trace
+2.11.0); `telemetry/_schema_version.py`, `telemetry/context.py`
+(`ContentCapturingMode`), `telemetry/_stable_semconv.py`, read in the installed
+2.13.0 wheel, and the span tree measured on 2.12.0 and 2.13.0 with an in-memory
+exporter (schema v2 is `adk-python` commit `7838488`, in `v2.13.0`);
+`adk-docs: docs/observability/*`, `docs/integrations/weave.md` (Agent Lens,
+`cc53b6c14`). The reasoning-trace / system-trace
 distinction is paraphrased from Vlad Kolesnikov, "From 'vibe checks' to
 continuous evaluation: engineering reliable AI agents", Google Cloud blog,
 2026-02-28,

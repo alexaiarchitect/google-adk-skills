@@ -34,6 +34,22 @@ adk eval path/to/my_agent path/to/my_agent/cases.test.json
 
 `.env` is read from beside the agent package, so credentials are per-agent.
 
+**Two more files the CLI picks up by convention.** `services.yaml` (or
+`services.yml`, entries of `scheme`, `type` — `session`, `artifact`, `memory`
+or `task_store` — and `class`) and `services.py` (factories registered through
+`google.adk.cli.service_registry.get_service_registry()`) register custom
+services under a URI scheme, so `--session_service_uri mysession://...` reaches
+your class; `adk run` looks in the agent directory, `adk web` and
+`adk api_server` in the agents root, and the docs name no other command. And on
+2.13+ `adk web` seeds every explicitly created session from
+`<agents_dir>/<app>/initial_state.json`.
+
+**Evals live in Python whatever ships.** ADK also exists for Go, Java,
+TypeScript and Kotlin, but Python is the reference implementation and the one
+with the evaluation tooling, so a project whose production service is in another
+language still keeps its evalsets, configs and this plugin's gates beside a
+Python build of the agent.
+
 ## The two project conventions
 
 ### Recipes layout (what this plugin scaffolds by default)
@@ -167,9 +183,14 @@ also what the results file is named after. When the module exports
 
 ## YAML config agents
 
-`root_agent.yaml` is still loadable and still documented as experimental, but the
-config classes behind it are marked deprecated in the library. Treat an existing
-one as something to migrate to code; do not start a new agent that way.
+`root_agent.yaml` is still loadable. 2.13.0 promoted the `AGENT_CONFIG` feature
+flag to stable, so its "feature is enabled" warning is gone — but the loader
+(`AgentLoader._load_from_yaml_config`) still prints `[EXPERIMENTAL]`, the docs
+still label Agent Config experimental, and the config classes behind it
+(`AgentConfig`, `LlmAgentConfig`, ...) are marked `@deprecated` in the library.
+`ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1` silences the loader warning. Treat
+an existing one as something to migrate to code (`AGT050`); do not start a new
+agent that way.
 
 ---
 
@@ -178,7 +199,14 @@ Sources: `adk-python: cli/utils/agent_loader.py` (`app` then `root_agent` only),
 `cli/cli_tools_click.py` (eval command and `_resolve_eval_config_file_path`),
 `cli/agent_test_runner.py`, `evaluation/evaluation_generator.py`, `runners.py`,
 `evaluation/local_eval_sets_manager.py`, `apps/app.py`;
-`adk-docs: docs/evaluate/index.md`, `docs/agents/config.md`. The three layers:
+`adk-docs: docs/evaluate/index.md`, `docs/agents/config.md`,
+`docs/agents/service-registration.md` (new at `cc53b6c14`); `cli/dev_server.py`
+(`initial_state.json`, `3c8c63e`, in `v2.13.0`); the YAML-loader warning and the
+`AGENT_CONFIG` stage measured on 2.9.2, 2.12.0 and 2.13.0. Python as the home of
+evaluation: Karl Weinmeister, "One Agent Development Kit, five languages", Google
+Cloud blog, 2026-10-13,
+https://cloud.google.com/blog/topics/developers-practitioners/one-agent-development-kit-five-languages.
+The three layers:
 Ippolito and Saadati, "Three layers, one repo: a tour of google/adk-recipes",
 Google Developers Blog, 2026-10-15,
 https://developers.googleblog.com/three-layers-one-repo-a-tour-of-googleadk-recipes/

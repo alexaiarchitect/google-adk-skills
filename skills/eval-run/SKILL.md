@@ -2,9 +2,11 @@
 name: eval-run
 description: >-
   Runs Google ADK evaluations and produces an exit code that means something.
-  `adk eval` prints a pass/fail summary but always exits 0 and counts
-  NOT_EVALUATED cases as failures, so this wrapper reads the result files it
-  wrote and separates passed, failed and never-scored. Covers the right command
+  `adk eval` prints a pass/fail summary but exits 0 whatever happened through
+  ADK 2.12.0 (from 2.13.0 it exits 1 on a failure, still with no pass-rate,
+  regression or budget gate) and counts NOT_EVALUATED cases as failures, so
+  this wrapper reads the result files it wrote and separates passed, failed and
+  never-scored. Covers the right command
   for each layout, case selection, detailed results, GCS eval storage, the
   pytest AgentEvaluator path (including evaluating one sub-agent by name and
   generating a pytest gate for an existing project), batch runs from a registry
@@ -22,7 +24,8 @@ allowed-tools: Read, Grep, Glob, Write, AskUserQuestion, Skill, Bash(python3 *),
 
 # Run ADK evaluations
 
-The thing to know before anything else: **`adk eval` always exits 0.** It prints
+The thing to know before anything else: **through ADK 2.12.0, `adk eval` exits 0
+whatever happened.** It prints
 
 ```
 Eval Run Summary
@@ -31,12 +34,14 @@ expense_claims:
   Tests failed: 1
 ```
 
-and returns success. A CI step calling it directly passes forever. It also counts
+and returns success. A CI step calling it directly on a 2.12 or older pin passes
+forever. It also counts
 `NOT_EVALUATED` in the failed column, so its own summary cannot distinguish a
 regression from an unreachable judge. Everything here runs through a wrapper that
-reads the result files and reports the three statuses separately. (Unreleased
-`adk-python` main after 2.12.0 makes `adk eval` exit 1 on a failure; the
-wrapper's exit code stays the authoritative one on every release.)
+reads the result files and reports the three statuses separately. (From 2.13.0
+`adk eval` exits 1 when a case fails or none ran; the wrapper stays the
+recommended command on every version, because only it gates on a pass rate,
+regressions or budgets and keeps never-scored apart from failed.)
 
 `${CLAUDE_SKILL_DIR}` is this skill's directory.
 
@@ -119,7 +124,7 @@ Never `adk eval` alone in CI. A project with no pytest gate gets one from
 - **Run the cheap tier first.** There is no point paying a judge to score an
   agent that called the wrong tool.
 - **Resolve the runner honestly.** `$ADK_PYTHON`, a project venv, an `adk` on
-  PATH, then `uv run --with "google-adk[eval]==2.12.*"`. If none works, say so and
+  PATH, then `uv run --with "google-adk[eval]==2.13.*"`. If none works, say so and
   give the install command.
 - **Recording conformance needs a running dev server** on 127.0.0.1:8000 started
   with the recordings plugin; the script checks the port and prints the command.
@@ -155,4 +160,4 @@ Templates: `assets/templates/{eval_registry.json,test_eval.py.tmpl,test_behavior
 - [ ] The recipes layout, or any multi-evalset run, got an explicit `--config_file_path`.
 - [ ] Failures and never-scored cases were reported separately.
 - [ ] Result files were located and handed to `/adk:eval-analyze`.
-- [ ] Nothing in CI relies on bare `adk eval`.
+- [ ] Nothing in CI relies on bare `adk eval` (an error before 2.13, a warning from 2.13: `CI001`).

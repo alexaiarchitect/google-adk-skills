@@ -144,8 +144,10 @@ def main(argv: list[str] | None = None) -> int:
         next_steps.append("add a PR-tier workflow: /adk:eval-ci --tier pr")
         if eval_workflows and not gated:
             next_steps.append(
-                "an eval workflow exists but does not gate: bare `adk eval` always exits 0, "
-                "so route it through run_evals.py or pytest"
+                "an eval workflow exists but does not gate: bare `adk eval` exits 0 on every "
+                "version through 2.12.0 and exits 1 on a failure from 2.13.0, but it cannot "
+                "gate on a pass rate, regressions or budgets, so route it through "
+                "run_evals.py or pytest"
             )
     elif level == 2:
         next_steps = [

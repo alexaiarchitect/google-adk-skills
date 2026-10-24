@@ -58,7 +58,10 @@ def test_a_passing_run_is_clean_and_writes_a_result_file(tmp_agent, fake_runner,
 
 
 def test_a_failing_run_is_not_clean_even_though_adk_exits_zero(tmp_agent, fake_runner, monkeypatch):
+    """Through 2.12.0 `adk eval` exits 0 on a failure; the verdict comes from the
+    result files on every version."""
     agent = tmp_agent("flat_good")
+    monkeypatch.setenv("FAKE_ADK_VERSION", "2.12.0")
     monkeypatch.setenv("FAKE_ADK_PASSED", "1")
     monkeypatch.setenv("FAKE_ADK_FAILED", "2")
     outcome = run_adk_eval(agent, ["cases.evalset.json"], runner=fake_runner)

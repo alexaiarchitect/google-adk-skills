@@ -47,6 +47,7 @@ across sessions, `app:` app-wide, `temp:` for the current invocation only.
 | `AgentEvaluator(criteria={...})` | deprecated; pass an `EvalConfig` |
 | dev-server eval routes | moved under `/dev/...` with hyphenated paths; underscore variants are deprecated aliases |
 | `ignore_args` on tool trajectory | new in 2.9, unchanged through 2.12 |
+| bare `adk eval` exit code | 0 whatever happened through 2.12.0; from 2.13.0, 1 when a case fails or none ran. Gate with `run_evals.py` on every version |
 | the four efficiency metrics | new in 2.10: reported on every eval, informational (`eval_status: 4`), and refused if you name them in `criteria` |
 | `EvalStatus` | gained `INFORMATIONAL = 4` in 2.10; anything parsing the int must not read 4 as a pass or a fail |
 | `NOT_EVALUATED` | reported as "not a score regression" by `AgentEvaluator`, still counted as failed by the `adk eval` summary |
@@ -60,9 +61,12 @@ ADK blanks `eval_metric.threshold` before calling, so read
 
 ## YAML config agents
 
-`root_agent.yaml` still loads and the docs still describe it as experimental, but
-the config classes behind it are deprecated in the library. Migrate an existing
-one to code; do not start a new agent that way.
+`root_agent.yaml` still loads. From 2.13.0 the `AGENT_CONFIG` feature flag is
+stable, yet the YAML loader still warns `[EXPERIMENTAL]`, the docs still call the
+feature experimental, and the config classes behind it are `@deprecated` in the
+library. `ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1` quiets the warning; it
+does not change the advice. Migrate an existing one to code; do not start a new
+agent that way.
 
 ## What to do with a 1.x project
 
@@ -82,4 +86,8 @@ Sources: `adk-python: agents/llm_agent.py`, `agents/base_agent.py`,
 `evaluation/custom_metric_evaluator.py`, `evaluation/local_eval_sets_manager.py`,
 `evaluation/_efficiency_evaluators.py` (2.10.0),
 `cli/dev_server.py`, `CHANGELOG.md`; `adk-docs: docs/2.0/index.md`,
-`docs/sessions/state.md`, `docs/agents/config.md`.
+`docs/sessions/state.md`, `docs/agents/config.md`. 2.13.0:
+`features/_feature_registry.py` (`AGENT_CONFIG` stable, `ea298d4`),
+`cli/utils/agent_loader.py` (`@experimental` on `_load_from_yaml_config`),
+`cli/cli_tools_click.py` (exit code, `c2ff634`); warning and exit code measured
+on 2.12.0 and 2.13.0.

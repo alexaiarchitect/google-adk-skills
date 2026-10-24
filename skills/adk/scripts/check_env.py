@@ -7,6 +7,10 @@ Answers three questions, in the order they block you:
 2. Is a GenAI backend configured in the agent's `.env`?
 3. Can the metrics in the eval config be served by that backend?
 
+It also reports which optional knobs are set, in the agent's `.env` or the
+environment, e.g. `ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS` (silences the
+YAML loader's `[EXPERIMENTAL]` warning, and from 2.13 the feature registry's).
+
     check_env.py <agent-dir> [--json] [--config path]
 
 Exit codes: 0 ready, 1 something is missing, 2 the target is unusable.
@@ -16,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -23,7 +28,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 
 from adk_skills import ADK_TARGET  # noqa: E402
 from adk_skills.adk_subprocess import describe_runner  # noqa: E402
-from adk_skills.env import ADK_REQUIREMENT, detect_backend, resolve_runner, version_is_supported  # noqa: E402
+from adk_skills.env import (  # noqa: E402
+    ADK_REQUIREMENT, OPTIONAL_KNOBS, detect_backend, dotenv_value, resolve_runner,
+    version_is_supported,
+)
 from adk_skills.eval_config import load_config  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
 from adk_skills.metrics import METRIC_CATALOG, cost_tier  # noqa: E402
@@ -92,6 +100,16 @@ def main(argv: list[str] | None = None) -> int:
         elif tier != "free":
             notes.append(f"this config spends model calls (cost tier: {tier})")
 
+    knobs: dict[str, dict[str, str]] = {}
+    for name in OPTIONAL_KNOBS:
+        from_dotenv = dotenv_value(agent_dir, name)
+        value = from_dotenv if from_dotenv is not None else os.environ.get(name)
+        if value is not None:
+            knobs[name] = {"value": value,
+                           "from": ".env" if from_dotenv is not None else "environment"}
+    for name, knob in knobs.items():
+        notes.append(f"{name}={knob['value']} is set ({knob['from']}): {OPTIONAL_KNOBS[name]}")
+
     payload = {
         "agent_dir": agent_dir,
         "layout": layout.style,
@@ -103,6 +121,7 @@ def main(argv: list[str] | None = None) -> int:
         "ready": not blockers,
         "blockers": blockers,
         "notes": notes,
+        "knobs": knobs,
     }
 
     if args.json:
@@ -119,6 +138,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  - blocker: {blocker}")
         for note in notes:
             print(f"  - note: {note}")
+        unset = [name for name in OPTIONAL_KNOBS if name not in knobs]
+        if unset:
+            print(f"  - optional knobs (unset): {', '.join(unset)}")
 
     return EXIT_OK if payload["ready"] else EXIT_FINDINGS
 

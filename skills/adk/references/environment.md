@@ -60,12 +60,20 @@ services, Workload Identity in CI, and per-project quota and billing.
 Evaluation lives behind an extra:
 
 ```bash
-pip install "google-adk[eval]==2.12.*"
+pip install "google-adk[eval]==2.13.*"
 ```
 
 `google.adk.evaluation` swallows the `ImportError` when the extra is missing, so
 the package imports fine and `AgentEvaluator` simply is not exported. The CLI
 reports it properly; a script that imports the module may not.
+
+2.13 adds an `[otel]` extra (OTLP exporter plus GenAI, gRPC and httpx
+instrumentation) for exporting traces. Two environment variables worth knowing
+on 2.13: `ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1` silences the
+`[EXPERIMENTAL]` warnings that still print for YAML agents and environment
+simulation, and `ADK_TELEMETRY_SCHEMA_VERSION_OPT_IN=otel_semconv_1_36` restores
+the pre-2.13 span names (`/adk:agent-debug` `evidence.md`). `check_env.py`
+reports the first.
 
 ## Picking an interpreter
 
@@ -75,7 +83,7 @@ Scripts that need ADK resolve a runner in this order:
 1. **`$ADK_PYTHON`** — an explicit interpreter path. Set this when you know best.
 2. **A virtualenv at or above the agent** — `.venv/bin/python`, `venv/bin/python`.
 3. **The interpreter that owns an `adk` on `PATH`**.
-4. **`uv run --with "google-adk[eval]==2.12.*" python`** — installs into a
+4. **`uv run --with "google-adk[eval]==2.13.*" python`** — installs into a
    throwaway environment. Needs `uv` (`brew install uv`).
 
 If none resolve, do not guess: report it and give the fix.
@@ -85,7 +93,7 @@ If none resolve, do not guess: report it and give the fix.
 python3 -c "import google.adk; print(google.adk.version.__version__)"
 
 # a project venv, when uv is unavailable
-python3 -m venv .venv && .venv/bin/pip install "google-adk[eval]==2.12.*"
+python3 -m venv .venv && .venv/bin/pip install "google-adk[eval]==2.13.*"
 ADK_PYTHON=.venv/bin/python python3 <script>
 ```
 
@@ -105,6 +113,8 @@ any other GCS access.
 Sources: `adk-python: cli/utils/envs.py`, `evaluation/vertex_ai_eval_facade.py`
 (credential order), `evaluation/constants.py`,
 `evaluation/__init__.py`, `evaluation/eval_metrics.py` (`JudgeModelOptions`),
-`cli/cli_create.py`, `cli/utils/evals.py`, `pyproject.toml` (`[eval]` extra);
+`cli/cli_create.py`, `cli/utils/evals.py`, `pyproject.toml` (`[eval]` extra; the
+`[otel]` extra read in the 2.13.0 wheel's `METADATA`), `utils/env_utils.py`,
+`telemetry/_schema_version.py` (2.13.0);
 `adk-docs: docs/evaluate/criteria.md`, `docs/get-started/*`;
 `adk-recipes: AGENTS.md` (model deprecations), recipe `.env.example` files.

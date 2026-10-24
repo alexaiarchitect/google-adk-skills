@@ -25,6 +25,7 @@ caller that reports "the agent does not define this tool" reports the same set.
 from __future__ import annotations
 
 import ast
+import json
 import re
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -2142,7 +2143,7 @@ def analyze(facts: ModuleFacts) -> list[Finding]:
             add("AGT015", "warn",
                 f"duplicate sub_agent name(s): {', '.join(sorted(duplicates))}",
                 path=agent.file, locator=locator,
-                fix="ADK only warns, but routing by name becomes ambiguous",
+                fix=DUPLICATE_NAME_FIX,
                 source=_SRC_BASE_AGENT)
 
         if agent.output_schema and agent.sub_agents:
@@ -2232,6 +2233,7 @@ def analyze(facts: ModuleFacts) -> list[Finding]:
 
     findings.extend(_skill_findings(facts))
     findings.extend(_sub_agent_scope_findings(facts))
+    findings.extend(_duplicate_name_findings(facts))
 
     for file_key, lineno, module, name in facts.private_plugin_imports:
         since = PLUGIN_EXPORTS.get(name, "2.0")
@@ -2501,6 +2503,331 @@ def _sub_agent_scope_findings(facts: ModuleFacts) -> list[Finding]:
                     "turn); or call it as an AgentTool, which runs it in a fresh session with "
                     "only the request. Keep 'default' where it genuinely needs the history",
                 source=f"{_SRC_LLM_AGENT} (include_contents); adk-python: tools/agent_tool.py",
+            ))
+    return found
+
+
+DUPLICATE_NAME_FIX = ("ADK never raises, but ADK 2.13 warns for every clash; `find_agent()` "
+                      "returns the first match in a depth-first walk, so transfers and "
+                      "lookups by name reach whichever agent comes first; give every agent "
+                      "in the tree a unique name")
+
+
+def agent_trees(facts: ModuleFacts) -> list[list[tuple[AgentSpec, tuple[str, ...]]]]:
+    """Each agent tree reachable through `sub_agents=` by variable name, as
+    (agent, ancestor-variable path) pairs in depth-first order. A root is an
+    agent no other agent lists as a sub-agent."""
+    by_var: dict[str, AgentSpec] = {}
+    for agent in facts.agents:
+        if agent.var and agent.var not in by_var:
+            by_var[agent.var] = agent
+    children = {var for agent in facts.agents for var in agent.sub_agents}
+    roots = [a for a in facts.agents if a.var and a.var not in children and a.sub_agents]
+    trees: list[list[tuple[AgentSpec, tuple[str, ...]]]] = []
+    for root in roots:
+        nodes: list[tuple[AgentSpec, tuple[str, ...]]] = []
+
+        def walk(agent: AgentSpec, path: tuple[str, ...]) -> None:
+            nodes.append((agent, path))
+            for var in agent.sub_agents:
+                child = by_var.get(var)
+                if child is None or var in path or var == agent.var or len(path) > 32:
+                    continue
+                walk(child, path + (agent.var or "?",))
+
+        walk(root, ())
+        trees.append(nodes)
+    return trees
+
+
+def _duplicate_name_findings(facts: ModuleFacts) -> list[Finding]:
+    """AGT015 across the whole tree: cousins and ancestor/descendant clashes.
+
+    Measured on 2.13.0 (6031bb1d7): ADK logs "Found duplicate agent names: `x`.
+    All agents in the tree must have unique names. find_agent() returns the
+    first match in a depth-first walk." for siblings, cousins and an agent
+    whose name reappears below it; 2.12.0 warned for siblings only. Sibling
+    clashes by the same variable are reported per agent above; this reports
+    distinct agents that share a `name`.
+    """
+    found: list[Finding] = []
+    for nodes in agent_trees(facts):
+        seen: dict[str, list[tuple[AgentSpec, tuple[str, ...]]]] = {}
+        for agent, path in nodes:
+            if agent.name:
+                seen.setdefault(agent.name, []).append((agent, path))
+        for name, entries in sorted(seen.items()):
+            distinct = {id(agent) for agent, _ in entries}
+            if len(distinct) < 2:
+                continue
+            (first, first_path), (second, second_path) = entries[0], entries[1]
+            if first.var in second_path or second.var in first_path:
+                relation = "an ancestor and its descendant"
+            elif first_path and second_path and first_path[-1] == second_path[-1]:
+                relation = "siblings"
+            else:
+                relation = "cousins"
+            root = nodes[0][0]
+            found.append(Finding(
+                id="AGT015", severity="warn", area="agent",
+                message=f"agent name {name!r} is used by {len(distinct)} agents in the tree "
+                        f"under {root.name or root.var!r} ({relation}: "
+                        + ", ".join(sorted({a.var or '?' for a, _ in entries})) + ")",
+                path=second.file, locator=f"line {second.lineno}",
+                fix=DUPLICATE_NAME_FIX,
+                source=f"{_SRC_BASE_AGENT} (validate_sub_agents_unique_names)",
+            ))
+    return found
+
+
+def agent_model_ids(facts: ModuleFacts, env_model: str | None = None) -> list[str] | None:
+    """The model ids the agent's LLM agents run on, or None when any of them is
+    not statically readable. A model read from the environment resolves to
+    `env_model` (MODEL_NAME from the agent's .env) when given, else to the
+    code's fallback."""
+    ids: list[str] = []
+    for agent in facts.agents:
+        if agent.call not in LLM_AGENT_CALLS:
+            continue
+        if agent.model_from_env and env_model:
+            model = env_model
+        else:
+            model = agent.model
+        if model is None:
+            if "model" in agent.kwargs or agent.kwargs_unresolved:
+                return None
+            continue                       # inherits its parent's model
+        if model not in ids:
+            ids.append(model)
+    return ids
+
+
+# ---------------------------------------------------------------------------
+# session state keys: who writes them, who reads them (AGT080, EVS075)
+# ---------------------------------------------------------------------------
+
+#: State-key prefixes with their own scope; `{user:name}` reads key "user:name".
+STATE_PREFIXES = ("app:", "user:", "temp:")
+#: The file `adk web` (2.13+) seeds every new session from.
+INITIAL_STATE_FILE = "initial_state.json"
+_STATE_OWNERS = ("state", "state_delta")
+
+
+def bare_state_key(key: str) -> str:
+    """`user:claimant` -> `claimant`; other keys unchanged."""
+    for prefix in STATE_PREFIXES:
+        if key.startswith(prefix):
+            return key[len(prefix):]
+    return key
+
+
+def instruction_placeholders(text: str | None) -> list[tuple[str, bool]]:
+    """(key, optional) for each state placeholder ADK would fill in `text`.
+
+    Mirrors `utils/instructions_utils.inject_session_state` (2.9.2 and 2.13.0
+    alike): `{artifact.x}` is an artifact; a name that is not an identifier,
+    optionally behind one `app:`/`user:`/`temp:` prefix (`{a.b}`), is left in
+    the text untouched; `{key?}` becomes "" when the key is missing; `{key}`
+    raises KeyError("Context variable not found: `key` ...").
+    """
+    found: list[tuple[str, bool]] = []
+    for match in PLACEHOLDER_RE.finditer(text or ""):
+        inner = match.group()[1:-1]
+        optional = inner.endswith("?")
+        key = inner.rstrip("?")
+        if key.startswith("artifact."):
+            continue
+        parts = key.split(":")
+        if len(parts) == 1:
+            valid = key.isidentifier()
+        else:
+            valid = len(parts) == 2 and f"{parts[0]}:" in STATE_PREFIXES and parts[1].isidentifier()
+        if valid and (key, optional) not in found:
+            found.append((key, optional))
+    return found
+
+
+@dataclass
+class StateKeys:
+    """Literal state keys the agent's source writes and reads."""
+
+    written: dict[str, str] = field(default_factory=dict)   # key -> "file:line how"
+    read: set[str] = field(default_factory=set)
+    #: A write whose key is not a literal (`state[key] = ...`, `state.update(d)`):
+    #: any key may be written, so "never written" cannot be claimed.
+    dynamic_writes: list[str] = field(default_factory=list)
+    #: The same for reads (`state[key]`, `state.get(name)`, `state.to_dict()`).
+    dynamic_reads: list[str] = field(default_factory=list)
+
+    def writes(self, key: str) -> bool:
+        return key in self.written or bare_state_key(key) in {
+            bare_state_key(k) for k in self.written}
+
+    def reads(self, key: str) -> bool:
+        bare = bare_state_key(key)
+        return key in self.read or bare in {bare_state_key(k) for k in self.read}
+
+
+def _owner_is_state(node: ast.AST | None) -> bool:
+    text = _unparse(node) or ""
+    return any(text == owner or text.endswith(f".{owner}") for owner in _STATE_OWNERS)
+
+
+def _key_literal(node: ast.AST | None, constants: dict[str, str]) -> str | None:
+    value = _literal(node)
+    if isinstance(value, str):
+        return value
+    if isinstance(node, ast.Name) and node.id in constants:
+        return constants[node.id]
+    return None
+
+
+def collect_state_keys(files: Iterable[Path | str],
+                       constants: dict[str, str] | None = None) -> StateKeys:
+    """Every literal state key written or read in these Python files.
+
+    Writes: `x.state["k"] = ...` (also `+=`, annotated), `x.state.update({"k":
+    ...})` / `update(k=...)`, `x.state.setdefault("k", ...)`, `state_delta=` /
+    `state=` keyword dicts (`EventActions`, `create_session`), and
+    `output_key="k"` on any call. Reads: `x.state["k"]` loads, `x.state.get("k")`
+    / `.pop`, `"k" in x.state`, and any string constant holding a `{k}` /
+    `{k?}` placeholder (an instruction, wherever it is defined).
+    """
+    keys = StateKeys()
+    constants = constants or {}
+    for path in files:
+        try:
+            tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, SyntaxError, ValueError):
+            continue
+        name = Path(path).name
+
+        def wrote(key: str | None, node: ast.AST, how: str) -> None:
+            if key is None:
+                keys.dynamic_writes.append(f"{name}:{getattr(node, 'lineno', 0)}")
+            else:
+                keys.written.setdefault(key, f"{name}:{getattr(node, 'lineno', 0)} {how}")
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                for target in targets:
+                    if isinstance(target, ast.Subscript) and _owner_is_state(target.value):
+                        wrote(_key_literal(target.slice, constants), node, "assignment")
+            elif isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load) \
+                    and _owner_is_state(node.value):
+                key = _key_literal(node.slice, constants)
+                if key is None:
+                    keys.dynamic_reads.append(f"{name}:{node.lineno}")
+                else:
+                    keys.read.add(key)
+            elif isinstance(node, ast.Compare) and _owner_is_state(node.comparators[0]) \
+                    and any(isinstance(op, (ast.In, ast.NotIn)) for op in node.ops):
+                key = _key_literal(node.left, constants)
+                if key is not None:
+                    keys.read.add(key)
+            elif isinstance(node, ast.Call):
+                func = node.func
+                if isinstance(func, ast.Attribute) and _owner_is_state(func.value):
+                    first = node.args[0] if node.args else None
+                    if func.attr == "update":
+                        if isinstance(first, ast.Dict) and all(k is not None for k in first.keys):
+                            for k in first.keys:
+                                wrote(_key_literal(k, constants), node, "state.update")
+                        elif first is not None:
+                            wrote(None, node, "state.update")
+                        for kw in node.keywords:
+                            wrote(kw.arg, node, "state.update")
+                    elif func.attr in ("setdefault", "__setitem__"):
+                        wrote(_key_literal(first, constants), node, f"state.{func.attr}")
+                    elif func.attr in ("get", "pop", "__getitem__", "__contains__"):
+                        key = _key_literal(first, constants)
+                        if key is None:
+                            keys.dynamic_reads.append(f"{name}:{node.lineno}")
+                        else:
+                            keys.read.add(key)
+                    elif func.attr in ("to_dict", "items", "keys", "values"):
+                        keys.dynamic_reads.append(f"{name}:{node.lineno}")
+                for kw in node.keywords:
+                    if kw.arg == "output_key":
+                        key = _key_literal(kw.value, constants)
+                        if key:
+                            keys.written.setdefault(
+                                key, f"{name}:{node.lineno} output_key")
+                    elif kw.arg in ("state_delta", "state") and isinstance(kw.value, ast.Dict):
+                        for k in kw.value.keys:
+                            wrote(_key_literal(k, constants) if k is not None else None,
+                                  node, kw.arg)
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                for key, _ in instruction_placeholders(node.value):
+                    keys.read.add(key)
+    return keys
+
+
+def seeded_state_keys(docs: Iterable[Any], agent_dir: Path | str | None = None) -> set[str]:
+    """Keys an evalset's `session_input.state` seeds, plus the keys of the
+    agent's `initial_state.json` (read by `adk web` from 2.13)."""
+    seeded: set[str] = set()
+    for doc in docs:
+        if not isinstance(doc, dict):
+            continue
+        for case in doc.get("eval_cases") or []:
+            if not isinstance(case, dict):
+                continue
+            session_input = case.get("session_input")
+            state = session_input.get("state") if isinstance(session_input, dict) else None
+            if isinstance(state, dict):
+                seeded.update(str(k) for k in state)
+    if agent_dir:
+        initial = Path(agent_dir) / INITIAL_STATE_FILE
+        try:
+            data = json.loads(initial.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, ValueError):
+            data = None
+        if isinstance(data, dict):
+            seeded.update(str(k) for k in data)
+    return seeded
+
+
+def state_placeholder_findings(facts: ModuleFacts, docs: Iterable[Any],
+                               agent_dir: Path | str | None = None) -> list[Finding]:
+    """AGT080: an instruction placeholder `{key}` nothing ever puts in state.
+
+    Measured on 2.9.2 and 2.13.0: building the instruction raises
+    `KeyError: "Context variable not found: <key> in agent '<name>'."` when a
+    required placeholder's key is not in session state. Skipped when any write
+    in the agent is not a literal key (it might write anything) and for
+    instructions built at runtime.
+    """
+    keys = collect_state_keys(facts.files, facts.str_constants)
+    if keys.dynamic_writes:
+        return []
+    seeded = seeded_state_keys(list(docs), agent_dir)
+    seeded_bare = {bare_state_key(k) for k in seeded}
+    found: list[Finding] = []
+    reported: set[str] = set()
+    for agent in facts.agents:
+        if agent.call not in LLM_AGENT_CALLS or agent.instruction_is_dynamic:
+            continue
+        for key, optional in instruction_placeholders(agent.instruction_text):
+            if optional or key in reported or keys.writes(key):
+                continue
+            if key in seeded or bare_state_key(key) in seeded_bare:
+                continue
+            reported.add(key)
+            found.append(Finding(
+                id="AGT080", severity="warn", area="agent",
+                message=f"placeholder `{{{key}}}` is never written to state: ADK raises "
+                        f"KeyError (\"Context variable not found: `{key}`\") when it builds "
+                        f"the instruction of {agent.name or agent.var!r} unless the key is in "
+                        f"session state; write it from a tool/callback, seed it, or use "
+                        f"`{{{key}?}}`",
+                path=agent.file, locator=f"line {agent.lineno}",
+                fix=f"set it in a before_agent_callback (`callback_context.state[{key!r}] = "
+                    "...`), from a tool (`tool_context.state[...]`), with another agent's "
+                    "`output_key`, or seed it in every evalset's `session_input.state`; "
+                    f"`{{{key}?}}` renders an empty string when it is missing",
+                source="adk-python: utils/instructions_utils.py (inject_session_state)",
             ))
     return found
 

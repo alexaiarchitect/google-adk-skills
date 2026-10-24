@@ -227,7 +227,7 @@ configured threshold outright.
 A custom metric is deterministic, so it costs nothing and belongs in the
 **pull-request tier** alongside `tool_trajectory_avg_score`. That is the real
 argument for writing one where you could have written a rubric: the check runs
-on every change instead of nightly.
+on every change instead of nightly. Its rule also stays fixed between runs, which makes it the before/after instrument beside adaptive judges (`/adk:eval-analyze` `improvement-loop.md`).
 
 Sources: `adk-python/src/google/adk/evaluation/custom_metric_evaluator.py`
 (the call signature, the awaitable handling, and the `threshold = None` line);

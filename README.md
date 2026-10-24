@@ -1,7 +1,9 @@
 # `adk` — Claude Code skills for Google ADK agents and evaluations
 
 Eleven skills for building, reviewing and evaluating Google Agent Development Kit
-(Python) agents. Checked against **ADK 2.12**; 2.9 compatible.
+(Python) agents. Checked against **ADK 2.13**; 2.9 compatible. Python is where
+ADK's evaluation tooling lives, so these skills apply even when the production
+service is written in Go, Java, TypeScript or Kotlin: the evals stay in Python.
 
 The premise: an agent's instruction is a promise written in prose, and **eval
 cases are the only form of that promise a machine can check**. Prose drifts
@@ -56,13 +58,15 @@ calls), `judge` (Gemini judge calls, multiplied by the sample count), `vertex`
 
 ## Three things worth knowing before you start
 
-**`adk eval` always exits 0** on every release through 2.12.0. It prints a
-pass/fail summary and returns success either way, and counts never-scored cases
-as failures. Every gate in this plugin goes through a wrapper that reads the
-result files instead, so its exit code is the authoritative one; unreleased
-`adk-python` main makes `adk eval` exit 1 on a failure, and the wrapper keeps
-working unchanged when that ships. A CI step that calls the command directly is
-green forever on today's releases.
+**Bare `adk eval` is not a gate.** Through 2.12.0 it exits 0 whatever happened:
+it prints a pass/fail summary and returns success either way. From 2.13.0 it
+exits 1 when a case fails or none ran, but it still counts never-scored cases as
+failures and cannot gate on a pass rate, on regressions against a baseline or on
+a budget. Every gate in this plugin goes through a wrapper that reads the result
+files instead, so its exit code is the one to trust on every version. A CI step
+that calls the command directly is green forever on a 2.12 pin, and
+`lint_workflows.py` reports it (`CI001`: an error below 2.13 or with no pin, a
+warning from 2.13).
 
 **The judge model defaults to a deprecated id.** Leave `judge_model_options` out
 of a config and you get `gemini-2.5-flash` sampled five times per invocation.
@@ -72,7 +76,7 @@ Generated configs here always name the model and the sample count.
 fixed expected answer, so trajectory and response matching are unavailable. Keep
 a separate config for simulated suites.
 
-**ADK 2.10 added four metrics you cannot configure** (unchanged through 2.12). `tool_call_count_v1`,
+**ADK 2.10 added four metrics you cannot configure** (unchanged through 2.13). `tool_call_count_v1`,
 `inference_call_count_v1`, `token_usage_v1` and `invocation_duration_v1` are
 appended to every eval and reported as informational values — lower is better, no
 threshold, no pass or fail. Naming one in `criteria` raises at run time, so this
@@ -89,13 +93,13 @@ Anything that actually runs ADK resolves an interpreter in this order:
 1. `$ADK_PYTHON`
 2. a virtualenv at or above the agent
 3. the interpreter owning an `adk` on `PATH`
-4. `uv run --with "google-adk[eval]==2.12.*"`
+4. `uv run --with "google-adk[eval]==2.13.*"`
 
 ```bash
 # either
 brew install uv
 # or
-python3 -m venv .venv && .venv/bin/pip install "google-adk[eval]==2.12.*"
+python3 -m venv .venv && .venv/bin/pip install "google-adk[eval]==2.13.*"
 export ADK_PYTHON=.venv/bin/python
 ```
 
@@ -123,11 +127,16 @@ python3 skills/adk/scripts/check_env.py <agent-dir> --config <config>
 
 ## Beyond the evalset
 
-Four pages added in the 2.12 sync, each folding a Google article into the
-plugin's own commands:
+Pages that fold a Google article into the plugin's own commands (the first five
+added in the 2.13 sync):
 
 | Page | Covers |
 |---|---|
+| `skills/eval-analyze/references/improvement-loop.md` | the five-stage improvement loop on this plugin's scripts, why whatever proposes a fix never grades it, deltas over absolute judge scores, one stable custom metric beside the adaptive ones, and what the hosted platform (`agents-cli eval`, online monitors) adds after launch |
+| `skills/eval-simulation/references/user-simulation.md` | live and voice evals: `llm_audio` with its real defaults, `live_model_config`, voices and personas, `adk web`'s Live toggle |
+| `skills/eval-create/references/case-taxonomy.md` | the `resume` category: simulating idle time by seeding `session_input.state`, hold-at-gate and proceed-from-step cases |
+| `skills/agent-create/references/state-and-memory.md` | long-running agents: a step machine in state, `{key}` / `{key?}` placeholders, tools as checkpoints, resuming with a `state_delta` |
+| `skills/eval-create/references/behavioral-tests.md` | policies as contracts: enforce outside the model, test the enforcement deterministically |
 | `skills/eval-ci/references/merge-gates.md` | Day 0/1/2, the two merge rules (`--min-pass-rate`, `--max-regressions 0`), frozen golden suites, token/latency/tool-call budgets |
 | `skills/eval-create/references/behavioral-tests.md` | pytest assertions on discrete actions, one failure mode at a time, batch pass rates (`gen_test_eval.py --behavioral`) |
 | `skills/agent-create/references/skills-and-progressive-disclosure.md` | ADK `SkillToolset` skills: `SKILL.md` limits, L1/L2/L3, lifecycles, 2.12 script artifacts, activation evals |
@@ -169,12 +178,15 @@ page ends with the files it was distilled from, so any claim about ADK can be
 checked.
 
 The context-caching, eval-engineering, shadow-rollout, merge-gates,
-behavioural-tests, skills, context-engineering and layouts pages draw on
+behavioural-tests, skills, context-engineering, layouts, improvement-loop,
+user-simulation, case-taxonomy, state-and-memory and workflows pages draw on
 Google-authored articles (on context caching in agent harnesses, continuous
 evaluation, eval-driven development at Firebase, moving past the vibe check,
 harness engineering, building ADK agents with skills, context-aware multi-agent
-design, and the `adk-recipes` tour), paraphrased and cited by title and URL; the
-list is in `THIRD_PARTY_NOTICES.md`.
+design, the `adk-recipes` tour, the agent quality flywheel, live and voice
+evaluation, long-running resumable agents, the Agent Platform evaluation GA,
+Agents CLI for any framework, ADK in five languages, and zero-trust agents),
+paraphrased and cited by title and URL; the list is in `THIRD_PARTY_NOTICES.md`.
 
 The evaluation practices described here — trajectory over final answer, the case
 taxonomy, the branch-coverage rule, restraint rubrics, pass@k, the failure

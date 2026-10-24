@@ -13,8 +13,22 @@ than in the eval config. The feature is experimental in ADK, and the generated
 document validates as `EnvironmentSimulationConfig`.
 
     gen_sim_config.py --kind user [--model M] [--max-invocations N] [--out F]
+    gen_sim_config.py --kind user --audio [--audio-model cloud_tts] [--voice NAME]
+                      [--language CODE] [--live-timeout SECONDS] [--out F]
     gen_sim_config.py --kind env --tools lookup_policy,submit_claim [--out F]
     gen_sim_config.py --kind generate --count 10 [--out F]
+
+**Voice.** `--audio` writes an `llm_audio` simulator: it speaks its turns, by
+default through Cloud Text-to-Speech (`audio_model` "cloud_tts"; a Gemini TTS
+model name also works) in the voice `--voice` names (ADK's default
+en-US-Studio-O) and the language `--language` names (en-US). The nesting is
+`audio_model_configuration.speech_config.voice_config.prebuilt_voice_config.
+voice_name` and `audio_model_configuration.speech_config.language_code`.
+`--live-timeout S` adds a top-level `live_model_config` with `timeout_seconds`,
+which makes `adk eval` run inference over the Live API (ADK's default is 300
+seconds); omit it to run the same cases in text. ADK requires none of these
+fields (all have defaults) and keeps unknown keys silently, which is why they
+are written out in full here.
 
 Exit codes: 0 written, 2 usage error.
 """
@@ -33,17 +47,36 @@ from adk_skills.report import EXIT_OK, EXIT_USAGE  # noqa: E402
 from adk_skills.templating import WritePlan, dumps_json  # noqa: E402
 
 
-def user_config(model: str, max_invocations: int, audio: bool) -> dict:
-    return {
-        "user_simulator_config": {
-            "type": "llm_audio" if audio else "llm_backed",
-            "model": model,
-            # A simulated conversation has no natural end, so cap it: every turn
-            # costs a model call for the simulator and one for the agent.
-            "max_allowed_invocations": max_invocations,
-            "include_function_calls": False,
-        }
+#: `LlmAudioUserSimulatorConfig` defaults (2.12.0 = 2.13.0).
+DEFAULT_AUDIO_MODEL = "cloud_tts"
+DEFAULT_VOICE = "en-US-Studio-O"
+DEFAULT_LANGUAGE = "en-US"
+
+
+def user_config(model: str, max_invocations: int, audio: bool, *,
+                audio_model: str | None = None, voice: str | None = None,
+                language: str | None = None, live_timeout: int | None = None) -> dict:
+    simulator: dict = {
+        "type": "llm_audio" if audio else "llm_backed",
+        "model": model,
+        # A simulated conversation has no natural end, so cap it: every turn
+        # costs a model call for the simulator and one for the agent.
+        "max_allowed_invocations": max_invocations,
+        "include_function_calls": False,
     }
+    if audio:
+        simulator["audio_model"] = audio_model or DEFAULT_AUDIO_MODEL
+        simulator["audio_model_configuration"] = {
+            "speech_config": {
+                "voice_config": {"prebuilt_voice_config": {"voice_name": voice or DEFAULT_VOICE}},
+                "language_code": language or DEFAULT_LANGUAGE,
+            }
+        }
+    document: dict = {"user_simulator_config": simulator}
+    if live_timeout is not None:
+        # `LiveModelConfig.timeout_seconds` is an int.
+        document["live_model_config"] = {"timeout_seconds": int(live_timeout)}
+    return document
 
 
 def env_config(tools: list[str], model: str) -> dict:
@@ -113,6 +146,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--agent-dir")
     parser.add_argument("--max-invocations", type=int, default=8)
     parser.add_argument("--audio", action="store_true", help="llm_audio simulator")
+    parser.add_argument("--audio-model",
+                        help=f"with --audio: cloud_tts or a Gemini TTS model (default "
+                             f"{DEFAULT_AUDIO_MODEL})")
+    parser.add_argument("--voice", metavar="NAME",
+                        help=f"with --audio: prebuilt voice name (default {DEFAULT_VOICE})")
+    parser.add_argument("--language", metavar="CODE",
+                        help=f"with --audio: speech language code (default {DEFAULT_LANGUAGE})")
+    parser.add_argument("--live-timeout", type=int, metavar="SECONDS",
+                        help="add live_model_config.timeout_seconds: run inference over the "
+                             "Live API (ADK default 300)")
     parser.add_argument("--tools", default="", help="comma-separated, for --kind env")
     parser.add_argument("--count", type=int, default=10, help="scenarios to generate")
     parser.add_argument("--out")
@@ -123,8 +166,23 @@ def main(argv: list[str] | None = None) -> int:
     backend = detect_backend(args.agent_dir) if args.agent_dir else None
     model = args.model or default_judge_model(backend)
 
+    voice_flags = [flag for flag, value in (("--audio-model", args.audio_model),
+                                            ("--voice", args.voice),
+                                            ("--language", args.language)) if value]
+    if voice_flags and not (args.kind == "user" and args.audio):
+        print(f"error: {', '.join(voice_flags)} need --kind user --audio", file=sys.stderr)
+        return EXIT_USAGE
+    if args.live_timeout is not None and args.kind != "user":
+        print("error: --live-timeout needs --kind user", file=sys.stderr)
+        return EXIT_USAGE
+    if args.live_timeout is not None and args.live_timeout <= 0:
+        print("error: --live-timeout must be a positive number of seconds", file=sys.stderr)
+        return EXIT_USAGE
+
     if args.kind == "user":
-        document = user_config(model, args.max_invocations, args.audio)
+        document = user_config(model, args.max_invocations, args.audio,
+                               audio_model=args.audio_model, voice=args.voice,
+                               language=args.language, live_timeout=args.live_timeout)
         note = ("Merge this into your eval config. Reference-based metrics cannot score "
                 "simulated conversations; use rubric-based, hallucinations_v1, safety_v1 "
                 "or multi_turn_* instead.")

@@ -56,6 +56,29 @@ That last pair is the one worth knowing: on 2.9 a suite that had quietly stopped
 finding its cases was a **green** test. On 2.10+ the same suite fails loudly, which
 is what you want — a test that evaluates nothing has proved nothing.
 
+**2.13.0 changes two details.** The overall per-metric verdict no longer
+hard-codes `score >= threshold`: it reads the direction from the evaluator's own
+per-invocation `eval_status` values (`5bf7f12`), so a lower-is-better custom
+metric (a cost, a latency) passes when it should; when the invocations disagree
+it falls back to `>=`. And
+`JudgeModelOptions.judge_model` and the user simulator's `model` accept a
+`BaseLlm` instance as well as a model-id string (`c12392e`, `cb48b91`), which is
+how a test points the judge at a wrapped or fake model.
+
+### Coming after 2.13.0 (unreleased main)
+
+Main after the `v2.13.0` tag adds `EvalConfig.multi_run_config` and
+`adk eval --num_runs` (`7f3517e`): per-run results tagged with
+`repetition_index`, combined by `cross_run_scoring` (`mean_over_invocations` by
+default, `mean_of_runs`, `min_over_runs`, or a `{"method": "pass_rate",
+"threshold": ...}` rule), with `max_crashed_runs` and `custom_methods`.
+`AgentEvaluator` keeps its own `num_runs` argument and its default of 2. Main also
+has a tool argument matcher (`google.adk.tools.tool_args_matcher`, not yet used
+by any evaluator), per-session compaction set by a plugin's
+`before_run_callback`, and prompt-cache creation tokens on `LlmResponse`.
+Released versions drop `multi_run_config` silently, so `pass_at_k.py` and
+`--runs` remain the way to batch today.
+
 ## A working test module
 
 ```python
@@ -79,8 +102,9 @@ generates this.
 
 ## Requirements
 
-- `pip install "google-adk[eval]==2.12.*" pytest pytest-asyncio` — the extra
-  pins `google-cloud-aiplatform[evaluation]>=2.2,<3` on 2.12.0 (`>=1.148,<2` on
+- `pip install "google-adk[eval]==2.13.*" pytest pytest-asyncio` — the extra
+  pins `google-cloud-aiplatform[evaluation]>=2.2,<3` on 2.12.0 and 2.13.0 (the
+  `[eval]` extra is byte-identical between them; `>=1.148,<2` on
   2.11.0, no upper bound on 2.9.2); there is no separate `agentplatform`
   package to add. See `/adk:eval-criteria`'s `vertex-requirements.md`
 - `asyncio_mode = "auto"` in the pytest config, or `@pytest.mark.asyncio` on each
@@ -125,4 +149,6 @@ and absent from 2.9.2),
 `evaluation/eval_config.py`,
 `evaluation/eval_set.py`; `adk-recipes: contrib/python/llm-auditor/eval/`.
 Compared across installed 2.9.2, 2.10.0, 2.11.0 and 2.12.0 wheels; the `[eval]`
-pins read from each wheel's `METADATA`.
+pins read from each wheel's `METADATA` (2.13.0's compared with 2.12.0's). The
+2.13.0 changes are commits `5bf7f12`, `c12392e` and `cb48b91`, in `v2.13.0`;
+multi-run (`7f3517e`) and the matcher (`ed76f94`) are post-tag at `12c7bed76`.

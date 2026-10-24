@@ -5,7 +5,7 @@
 ## Setup
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install "google-adk[eval]>=2.12,<3" pytest pytest-asyncio python-dotenv
+python3 -m venv .venv && .venv/bin/pip install "google-adk[eval]>=2.13,<3" pytest pytest-asyncio python-dotenv
 cp .env.example .env    # then fill in the project and location
 gcloud auth application-default login
 ```
@@ -28,8 +28,9 @@ adk eval {{APP_NAME}} tests/eval/evalsets/happy.evalset.json \
 pytest tests/eval -v
 ```
 
-`adk eval` always exits 0, even when cases fail. Use pytest, or
-`/adk:eval-run`, anywhere the result has to gate something.
+Bare `adk eval` exits 0 on every version through 2.12.0 and exits 1 on a
+failure from 2.13.0, but it cannot gate on a pass rate or regressions. Use
+pytest, or `/adk:eval-run`, anywhere the result has to gate something.
 
 ## Layout
 

@@ -11,7 +11,10 @@ how much the agent depends on being lucky or on retrying.
 ADK has no pass@k of its own. `adk eval` runs each case once, and
 `AgentEvaluator(num_runs=N)` averages scores across runs, which hides exactly the
 variance this measures. So produce the runs with `/adk:eval-run --runs N`, which
-keeps each run's results separate, then aggregate here.
+keeps each run's results separate, then aggregate here. ADK main after 2.13.0
+(unreleased) adds `multi_run_config` (`num_runs`, `cross_run_scoring` with a
+`pass_rate` rule), the likely future replacement for this script once released;
+every released version ignores that key.
 
     pass_at_k.py --dir <eval_history> [--evalset ID] [--last N] [--k 1,3,5]
 

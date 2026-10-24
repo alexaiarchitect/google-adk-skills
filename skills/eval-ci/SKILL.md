@@ -7,7 +7,9 @@ description: >-
   and a nightly tier for judge metrics, groundedness, safety and repeated runs
   with a reliability report; wires Workload Identity to Vertex AI or an API-key
   secret; uploads eval history as an artifact; and lints existing workflows for
-  the mistake that matters most, running bare `adk eval`, which always exits 0.
+  the mistake that matters most, running bare `adk eval`, which exits 0
+  whatever happened through ADK 2.12.0 and, from 2.13.0, exits 1 on a failure
+  but still cannot gate on a pass rate, regressions or budgets.
   Also reports an evaluation maturity level from L0 to L4 with the next concrete
   step. Use when asked to "add evals to CI", "gate merges on evals", "set up a
   nightly eval run", "why does my eval workflow always pass", or "how mature is
@@ -19,10 +21,16 @@ allowed-tools: Read, Grep, Glob, Write, Edit, AskUserQuestion, Skill, Bash(pytho
 
 # Gate changes on ADK evals
 
-One fact shapes every workflow here: **`adk eval` always exits 0** (every release
-through 2.12.0; the fix is on unreleased main). A CI step that
-calls it directly is green whether the cases passed or not, and that is the most
-common way an eval suite ends up proving nothing.
+One fact shapes every workflow here: **`adk eval` exits 0 whatever happened on
+every release through 2.12.0.** A CI step that calls it directly on such a pin is
+green whether the cases passed or not, and that is the most common way an eval
+suite ends up proving nothing. From 2.13.0 it exits 1 when a case fails or none
+ran, yet it still cannot gate on a pass rate, on regressions against the default
+branch or on a budget, so the workflows here call `run_evals.py` on every
+version. `lint_workflows.py` reports bare `adk eval` as `CI001`: an error when the
+pin is below 2.13 or unknown, a warning from 2.13 (`--adk-version` overrides the
+pin it detects in `pyproject.toml`, `requirements*.txt` or the workflow's
+`--with`).
 
 The second fact is cost. A judge metric costs model calls per invocation per
 sample, so a suite that is thorough enough to trust for a release is too
@@ -77,7 +85,8 @@ gets disabled, and a disabled gate is worse than a cheap one.
 
 - install a pinned `google-adk[eval]`;
 - authenticate with Workload Identity (or pass an API-key secret);
-- run `run_evals.py`, not `adk eval`, so the exit code is real;
+- run `run_evals.py`, not `adk eval`, so the exit code is real and can carry a
+  pass-rate, regression and budget gate;
 - fail on a case that was never scored, because a suite that silently stops
   scoring is worse than one that fails;
 - upload `.adk/eval_history/` with `if: always()`, so a failure can be examined;
@@ -153,7 +162,7 @@ Templates: `assets/templates/workflows/`.
 |---|---|---|
 | `scripts/gen_workflows.py <repo-root> [--tier pr\|nightly\|both] [--auth wif\|api_key] [--agent-dir D] [--scripts-path P] [--python V] [--cron EXPR] [--conformance] [--dry-run]` | writes the workflows | 0, 1 written with warnings, 2 usage |
 | `scripts/assess_maturity.py <repo-root> [--json]` | the level, evidence and next step | 0 |
-| `scripts/lint_workflows.py <repo-root> [--json]` | checks existing workflows gate | 0 clean, 1 findings, 2 none found |
+| `scripts/lint_workflows.py <repo-root> [--adk-version V] [--json]` | checks existing workflows gate; `CI001` (bare `adk eval`) is version-aware, the pin auto-detected unless `--adk-version` is given | 0 clean, 1 findings, 2 none found |
 
 ## Completion checklist
 

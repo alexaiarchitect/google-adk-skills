@@ -27,7 +27,9 @@ owns it.
 A defense gate is a number, e.g. the article's example of failing the build when
 grounding drops below 0.85. In ADK terms that is `hallucinations_v1` with
 `"threshold": 0.85` in the nightly config, gated by `run_evals.py`, which exits 1
-when a case misses it — and never bare `adk eval`, which exits 0 either way.
+when a case misses it — and never bare `adk eval`, which exits 0 either way
+through 2.12.0 and, from 2.13.0, exits 1 on a failure but has no pass-rate,
+regression or budget gate.
 
 ## Three levels of metric
 
@@ -121,7 +123,12 @@ Google's "moving past the vibe check" post adds the discipline around the loop:
 change one variable per iteration (production quality took them 50 to 60 small
 ones), freeze the golden cases while tuning, and merge only on a global pass
 threshold plus zero regressions. Those rules and the flags that enforce them:
-`/adk:eval-ci` `merge-gates.md`. An agent that itself uses ADK skills has its own
+`/adk:eval-ci` `merge-gates.md`. Google's quality-flywheel post adds who may
+grade: whatever proposed the change never scores it, judge scores are read as
+deltas between runs, and an adaptive metric is paired with one stable custom
+metric for the behaviour under change — `/adk:eval-analyze`
+`improvement-loop.md`, which also maps the hosted `agents-cli eval` family and
+the platform's online monitors onto this plugin. An agent that itself uses ADK skills has its own
 version of the three scopes below: `/adk:agent-create`
 `skills-and-progressive-disclosure.md`.
 
@@ -166,5 +173,8 @@ one-variable rule and the merge rules are from Selbie, Zamora, Carah and
 DeMartino, "Evaluating AI agents: moving past the vibe check", Google Developers
 Blog, 2026-10-15,
 https://developers.googleblog.com/evaluating-ai-agents-moving-past-the-vibe-check/.
+The proposer/grader rule is from Melnyk and Dai, "Driving the Agent Quality
+Flywheel from Your Coding Agent", Google Developers Blog, 2026-06-30,
+https://developers.googleblog.com/driving-the-agent-quality-flywheel-from-your-coding-agent/.
 The maturity framing (L0) follows the LinkedIn Learning course *Evaluating AI Agents
 with Google ADK*, recommended as background reading.

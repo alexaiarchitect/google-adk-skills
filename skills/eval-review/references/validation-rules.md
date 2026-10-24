@@ -11,6 +11,7 @@ rule comes from. Ids are stable.
 | `EVS002` | error | no `eval_set_id` |
 | `EVS003` | error | `eval_set_id` outside `^[a-zA-Z0-9_]+$` (ADK enforces this when it writes an eval set, so a dash or a dot breaks the round trip) |
 | `EVS004`/`EVS005` | error | `eval_cases` missing, or not an array |
+| `EVS076` | error (2.13+) / warn | `eval_set_id` or `session_input.app_name` is drive-qualified — a letter then a colon at the start (`c:pass`). 2.13.0 rejects it with `ValueError: ... must not be drive-qualified.` when it saves the results, after inference has been paid for; earlier versions accept it, so it is a warning there and when the version is unknown. A colon later in the id is allowed |
 | `EVS006` | warn | `eval_cases` is empty: the file asserts nothing — and on ADK 2.10+ the pytest path raises `ValueError` for it, where 2.9 ran and reported nothing |
 | `EVS040` | warn | unrecognized top-level key. `EvalSet` ignores extras, so a typo is silent |
 | `EVS041` | warn | the file mixes camelCase and snake_case keys |
@@ -96,6 +97,14 @@ eval-review report next to a config or conformance one:
 |---|---|---|
 | `CFG070` | error | `criteria` names one of the four ADK 2.10 efficiency metrics. They take no threshold: 2.10+ raises `ValueError` at run time, 2.9 raises `NotFoundError`, and no config-level validation in either version catches it. Remove the entry — they are reported automatically |
 | `CFG071` | info | ADK 2.10+ also reports those four informational metrics on every run, so a result file carries entries your config never asked for. Reported when the resolved runner is 2.10 or newer, or unknown |
+| `CFG072` | info | the config has `multi_run_config`. Only `adk-python` main after 2.13.0 reads it; every released version drops it silently and runs each case once, so batch with `run_evals.py --runs` and `pass_at_k.py` |
+| `CFG073` | error | `multi_run_config` has the wrong shape for main's `MultiRunConfig`: `num_runs` < 1, `max_crashed_runs` < 0, an unknown key, a method that is neither built in (`mean_over_invocations`, `mean_of_runs`, `min_over_runs`, `pass_rate`) nor in `custom_methods`, a `pass_rate` rule without a `threshold` in 0..1, or a `cross_run_scoring_by_metric` key not in `criteria` |
+| `SIM032` | warn | `live_model_config.timeout_seconds` ≤ 0. ADK enforces no bound, so the live run times out at once or never; the default is 300 |
+| `SIM033` | warn | `live_model_config` is set but the agent's model id is not a Live model (`*-live-*`, `*native-audio*`), so the live path is pointed at a model that cannot serve it |
+| `SIM034` | warn | an unknown key in `user_simulator_config`. Both simulator types are `extra="allow"`, so a typo such as `max_allowed_invocation` is accepted and ignored |
+| `CI001` | error / warn | (`lint_workflows.py`) a workflow runs bare `adk eval`. **Error** when the ADK pin is below 2.13 or unknown: it exits 0 whatever happened. **Warn** from 2.13: it exits 1 on a failure, but cannot gate on a pass rate, regressions or budgets; prefer `run_evals.py`. The pin is `--adk-version`, else the lowest `google-adk` specifier in `pyproject.toml` / `requirements*.txt`, else the workflow's `--with "google-adk[eval]==X.*"` |
+| `AGT080` | warn | (`lint_agent.py`) an instruction placeholder `{key}` that no `output_key`, `tool_context.state[...]`, `callback_context.state[...]` or `state_delta` writes and no evalset seeds. Building the instruction raises `KeyError` ("Context variable not found"); seed it, write it, or use `{key?}` for an optional value |
+| `AGT015` | warn | (`lint_agent.py`) two agents in the tree share a `name` — siblings, cousins or an agent and its descendant. ADK only logs a warning (siblings before 2.13, the whole tree from 2.13), and `find_agent()` returns the first match in a depth-first walk |
 | `CFG057` | warn | an unrecognized key on a `custom_metrics` entry (e.g. `metric`), which ADK ignores; the range belongs in `metric_info.metric_value_info.interval` |
 | `CFG058` | error | `metric_info` on a custom metric lacks `metric_name` or `metric_value_info`, or its interval lacks numeric `min_value` / `max_value`, so the config fails to load |
 | `CNF015` | error (exit 2) | a conformance case has `input.yaml` or `test.yaml` and no `spec.yaml`. `adk conformance record --help` names those files on 2.9.2–2.11.0 (2.12.0 fixed the help), but the code reads only `spec.yaml` |
@@ -128,6 +137,7 @@ eval-review report next to a config or conformance one:
 |---|---|---|
 | `EVS070` | warn | the instruction yields no testable rules |
 | `EVS073` | warn | (`coverage_matrix.py`, discovery) skills the agent registers that no case loads with `load_skill`. Reported only when the agent registers skills and at least one case exists |
+| `EVS075` | info | (`validate_evalset.py --agent-dir`) a case seeds a `session_input.state` key that no instruction placeholder, tool or callback in the agent reads: the seed probably has a typo, or the agent stopped using the key. Prefixes `app:` / `user:` / `temp:` are compared without the prefix |
 | `EVS074` | warn | (`validate_evalset.py`) a case expects `load_skill` (or a prefixed `*_load_skill`) with a `skill_name` the agent does not register. Silent when the registered set is unknowable (a registry, GCS, a list built at runtime) or there is no `SkillToolset` |
 | `GAP-BRANCH` | gap | fewer cases than branches + 1 |
 | `GAP-RULE-<n>` | gap | a specific branch with no matching case |
@@ -149,5 +159,11 @@ Sources: `adk-python: evaluation/eval_case.py` (the per-model `extra` settings a
 (the empty-eval-set `ValueError`, 2.10+; absent from 2.9), `evaluation/eval_set.py`,
 `evaluation/common.py`, `evaluation/local_eval_sets_manager.py`,
 `evaluation/evaluation_generator.py`, `evaluation/trajectory_evaluator.py`,
-`runners.py`, `tools/function_tool.py`, `flows/llm_flows/functions.py`;
+`runners.py`, `tools/function_tool.py`, `flows/llm_flows/functions.py`,
+`evaluation/_path_validation.py` (the drive-qualified rule, `29bb053`, in
+`v2.13.0`, measured through `adk eval` on 2.12.0 and 2.13.0),
+`evaluation/simulation/_llm_audio_user_simulator.py` and `LiveModelConfig`
+(measured on 2.12.0 and 2.13.0), `MultiRunConfig` on main `12c7bed76`,
+`utils/instructions_utils.py` (`inject_session_state`),
+`agents/base_agent.py` (`validate_sub_agents_unique_names`, `6031bb1`);
 `adk-docs: docs/evaluate/criteria.md`, `docs/evaluate/index.md`.

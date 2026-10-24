@@ -8,9 +8,11 @@
       Tests passed: 3
       Tests failed: 1
 
-and **returns 0 either way**, counting `NOT_EVALUATED` cases in the failed
-column. A CI step that calls it directly therefore passes forever, and cannot
-tell "the agent regressed" from "the judge was unreachable".
+and counts `NOT_EVALUATED` cases in the failed column. Bare `adk eval` exits 0
+on every version through 2.12.0 and exits 1 on a failure from 2.13.0; this
+wrapper reads the result files and gates (`--min-pass-rate`), so its exit code
+is the one to use. Even on 2.13 the bare exit code cannot tell "the agent
+regressed" from "the judge was unreachable", nor gate on a pass rate.
 
 This wrapper runs the command, finds the result files it wrote, and reports the
 three statuses separately:
@@ -30,9 +32,9 @@ counted as not passed) passed, 1 below it. Without it any failing case fails
 the run. Pair it with `compare_runs.py --max-regressions 0` against the frozen
 baseline for the second merge rule.
 
-On ADK main after 2.12.0 (c2ff634, unreleased) bare `adk eval` also exits
-non-zero when a case fails; every released version up to 2.12.0 exits 0, so
-this wrapper's exit code, read from the result files, stays the one to gate on.
+Relative `--evalset` and `--config` paths are resolved against the caller's
+working directory before `adk eval` starts (it runs from the agent's parent
+directory, where a relative path would point somewhere else).
 
 `--runs N` runs the whole set N times and keeps each run's results separate, so
 `/adk:eval-analyze` can compute pass@k. That is deliberately not
@@ -60,6 +62,22 @@ from adk_skills.metrics import METRIC_CATALOG, cost_tier  # noqa: E402
 from adk_skills.report import (  # noqa: E402
     EXIT_FINDINGS, EXIT_INCONCLUSIVE, EXIT_OK, EXIT_USAGE,
 )
+
+
+#: Shown by `--dry-run` and after a real run.
+EXIT_CODE_NOTE = ("bare `adk eval` exits 0 on every version through 2.12.0 and exits 1 on a "
+                  "failure from 2.13.0; this wrapper reads the result files and gates "
+                  "(`--min-pass-rate`), so its exit code is the one to use")
+
+
+def absolute(path: str | None) -> str | None:
+    """`adk eval` runs with the agent's parent as its working directory, so a
+    path relative to the caller's directory must be made absolute first; a
+    string that names no file (an eval-set id) is passed through unchanged."""
+    if not path:
+        return path
+    candidate = Path(path)
+    return str(candidate.resolve()) if candidate.exists() else path
 
 
 def nearest_config(layout, evalsets: list) -> tuple:
@@ -142,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
                  if layout.sibling_agents else ""), file=sys.stderr)
         return EXIT_USAGE
 
-    evalsets = args.evalset or layout.evalsets
+    evalsets = [absolute(e) for e in (args.evalset or layout.evalsets)]
     if not evalsets:
         print(f"error: no evalsets found under {target}. Write some with /adk:eval-create",
               file=sys.stderr)
@@ -158,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
                   file=sys.stderr)
             return EXIT_USAGE
 
-    config = args.config
+    config = absolute(args.config)
     if not config:
         config, alternatives = nearest_config(layout, evalsets)
         if alternatives:
@@ -200,9 +218,7 @@ def main(argv: list[str] | None = None) -> int:
         if not runner.available:
             print("note: no interpreter with google.adk was found; the command above assumes "
                   "`adk` on PATH", file=sys.stderr)
-        print("note: bare `adk eval` exits 0 on every release up to 2.12.0 whatever the "
-              "result (main after 2.12.0 exits 1 on a failure, unreleased); this wrapper "
-              "reads the result files, so its exit code is the gate", file=sys.stderr)
+        print(f"note: {EXIT_CODE_NOTE}", file=sys.stderr)
         if args.min_pass_rate is not None:
             print(f"note: gating on a pass rate of at least {args.min_pass_rate:.1%}",
                   file=sys.stderr)
@@ -318,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
             print()
             print(f"{len(result_files)} result file(s) written; "
                   "explain them with /adk:eval-analyze")
+        print(f"note: {EXIT_CODE_NOTE}", file=sys.stderr)
         if args.runs > 1:
             print(f"Reliability across {args.runs} runs: /adk:eval-analyze pass_at_k.py")
 

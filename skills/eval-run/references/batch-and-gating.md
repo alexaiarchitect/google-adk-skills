@@ -60,15 +60,33 @@ you have decided to tolerate an individual failure. The two merge rules (a globa
 pass threshold and zero regressions) and the budget flags are in `/adk:eval-ci`
 `merge-gates.md`.
 
-### Coming after 2.12.0 (unreleased main)
+### In 2.13.0
 
 Bare `adk eval` returns 0 on a failing case on every release through 2.12.0.
-`adk-python` main after the tag (`c2ff634`) makes it exit 1 when any case failed
-or no summary was produced; main also adds `details.duration_details` (model,
-tool and framework seconds) and Vertex rubric explanations to the result files.
-**The wrapper's exit code is authoritative on every released version**: it is
-computed from the result files, it distinguishes code 2 and code 3, which the
-upstream fix does not, and it does not change when the fix ships.
+From 2.13.0 (`c2ff634`) it exits 1 when any case failed or no case ran, and
+`NOT_EVALUATED` counts as failed. 2.13.0 also adds `details.duration_details`
+(model, tool and framework seconds, on `invocation_duration_v1`) and Vertex
+rubric explanations (`RubricScore` rows with the ids `"explanation"` and
+`"error"`) to the result files. **The wrapper stays the recommended command on
+every version**: it is computed from the result files, it distinguishes code 2
+and code 3, which a single process exit does not, and it is the only one of the
+two that gates on `--min-pass-rate`, regressions (`compare_runs.py
+--max-regressions`) or budgets.
+
+### Coming after 2.13.0 (unreleased main)
+
+`adk-python` main after the `v2.13.0` tag adds `adk eval --num_runs N` and
+`EvalConfig.multi_run_config` (`7f3517e`): `num_runs`, `cross_run_scoring`
+(`mean_over_invocations` default, `mean_of_runs`, `min_over_runs`, or a
+`{"method": "pass_rate", "threshold": 0.9}` rule), `cross_run_scoring_by_metric`
+(keys must be in `criteria`), `cross_run_criteria`, `max_crashed_runs` (default
+0) and `custom_methods`; each result gets a `repetition_index`, and pinned
+session ids are dropped with a warning when `num_runs > 1`. Main also has a tool
+argument matcher (`google.adk.tools.tool_args_matcher`, not wired into any
+evaluator yet), per-session compaction from a plugin's `before_run_callback`, and
+prompt-cache creation tokens on `LlmResponse`. Released versions drop
+`multi_run_config` silently, so `pass_at_k.py` and `--runs` remain the way to
+batch today; `validate_config.py` says so (`CFG072`).
 
 ## Cost, before you spend it
 
@@ -106,8 +124,10 @@ nightly suite; the trajectory diverged at call 2" is a bug report.
 ---
 
 Sources: this plugin's `run_registry.py` and `run_evals.py`;
-`adk-python: cli/cli_tools_click.py` (the exit-code fix is commit `c2ff634`, on
-main after `v2.12.0`; bare `adk eval` measured at exit 0 on 2.12.0),
+`adk-python: cli/cli_tools_click.py` (the exit-code fix is commit `c2ff634`, in
+`v2.13.0`; bare `adk eval` measured at exit 0 on 2.12.0 and exit 1 on 2.13.0 with
+a failing case), `cli/cli_eval.py`, `evaluation/eval_config.py` (multi-run,
+`7f3517e`, post-tag at `12c7bed76`),
 `evaluation/agent_evaluator.py`; "Evaluating AI agents: moving past the vibe
 check", Google Developers Blog,
 https://developers.googleblog.com/evaluating-ai-agents-moving-past-the-vibe-check/

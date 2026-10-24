@@ -125,6 +125,90 @@ Every turn costs two model calls — one for the simulated user, one for the age
 can be over sixty calls. Cap the conversations, and keep simulated suites in the
 nightly tier.
 
+## Live and voice
+
+A voice agent runs on a Live API model and hears audio, so its suite has to speak.
+`type: llm_audio` keeps the LLM simulator for deciding *what* the user says and
+adds a text-to-speech step for *how* it sounds; `live_model_config` sends the
+run down ADK's live inference path. Both shapes are identical on 2.12.0 and
+2.13.0, and the audio simulator class is still marked experimental.
+
+The same two case kinds apply:
+
+- **Scenario** — `conversation_scenario` with a plan and a persona; the simulated
+  user improvises and hangs up when the plan is done. Use these for coverage.
+- **Fixed** — a scripted `conversation`, each user turn spoken verbatim. Use these
+  for regressions, where the same words must produce the same behaviour.
+
+```json
+{
+  "criteria": {"rubric_based_multi_turn_trajectory_quality_v1": {
+    "threshold": 0.7,
+    "judge_model_options": {"judge_model": "gemini-flash-latest", "num_samples": 3}}},
+  "live_model_config": {"timeout_seconds": 300},
+  "user_simulator_config": {
+    "type": "llm_audio",
+    "model": "gemini-flash-latest",
+    "max_allowed_invocations": 10,
+    "audio_model": "cloud_tts",
+    "audio_model_configuration": {"speech_config": {
+      "voice_config": {"prebuilt_voice_config": {"voice_name": "en-US-Studio-O"}},
+      "language_code": "en-US"}},
+    "include_text_with_audio": true
+  }
+}
+```
+
+| Field | Default | Notes |
+|---|---|---|
+| `audio_model` | `cloud_tts` | Cloud Text-to-Speech; or a Gemini TTS model id, in which case also set `"response_modalities": ["AUDIO"]` in `audio_model_configuration` |
+| `...speech_config.voice_config.prebuilt_voice_config.voice_name` | `en-US-Studio-O` | a Cloud TTS voice matching the language, or a Gemini TTS voice name |
+| `...speech_config.language_code` | `en-US` | BCP-47 |
+| `max_allowed_invocations` | 20 | the opening prompt counts as one |
+| `model` | `gemini-2.5-flash` | the text model behind the simulated user; name it |
+| `include_text_with_audio` | true | sends the text alongside the audio part |
+| `live_model_config.timeout_seconds` | 300 | the only key; ADK enforces no bound |
+
+**Nothing in the audio block is required, and typos are accepted silently**
+(`extra="allow"`): `{"type": "llm_audio"}` alone validates, and a misspelled
+top-level key such as `max_allowed_invocation` is kept and ignored, so the cap
+silently falls back to 20. `validate_sim_config.py` catches what ADK lets through:
+`SIM034` an unknown key in `user_simulator_config`, `SIM032` a
+`timeout_seconds` ≤ 0, `SIM033` a `live_model_config` while the agent's model is
+not a Live model. Generate the block rather than typing it:
+`gen_sim_config.py --kind user --audio [--audio-model M] [--voice V]
+[--language L] [--live-timeout S]` (the last adds `live_model_config`).
+
+**Omit `live_model_config` and the same cases run in text**, through the
+ordinary path, which is a cheap way to debug a plan before paying for audio.
+
+**Metrics.** Judge the whole conversation with a rubric on intent rather than
+wording — `rubric_based_multi_turn_trajectory_quality_v1` at around 0.7 is the
+example in Google's live-evaluation post — and add per-turn metrics where a turn
+has a checkable outcome. Speech recognition varies, so exact text matching on a
+spoken turn measures the transcriber as much as the agent.
+
+**Vary the voice and the user.** Several voices and accents (one config per
+voice, or one suite run per voice) and several personas, `NOVICE` among them,
+because a voice agent that only understands one studio voice is untested.
+Keep the turn cap and the timeout tight: a live conversation that loops costs
+TTS, Live API and judge calls on every turn.
+
+**Credentials.** The run needs the Live API for the agent's model and TTS for the
+simulator: `cloud_tts` calls Cloud Text-to-Speech in `GOOGLE_CLOUD_PROJECT`
+(ADC, the API enabled); a Gemini TTS id goes through the same Gemini or Vertex
+credentials as any model. `check_env.py` reports what it can see.
+
+**In `adk web`**, the eval run dialog has a **Standard | Live** toggle, with the
+input modality, voice and language for the simulated user; the result shows a
+transcript rebuilt from the audio, each turn with a playable clip. Listen to a
+few before trusting a score.
+
+**Where it runs.** Google's post recommends live evals in CI to catch
+regressions before release. In this plugin's tiers that means the nightly or
+release tier: every turn spends on TTS, the Live API and the judge. A short set of
+fixed conversations can gate a pull request when the budget allows.
+
 ## When a simulated suite goes red
 
 Check the harness before the agent. `per_turn_user_simulator_quality_v1` scores
@@ -135,6 +219,16 @@ failure may be a reasonable response to an unreasonable user.
 
 Sources: `adk-python: evaluation/conversation_scenarios.py`,
 `evaluation/simulation/llm_backed_user_simulator.py`,
+`evaluation/simulation/_llm_audio_user_simulator.py`
+(`LlmAudioUserSimulatorConfig`, defaults and `extra="allow"` measured on 2.12.0
+and 2.13.0), `evaluation/simulation/_cloud_tts_llm.py` (Cloud TTS voices,
+`GOOGLE_CLOUD_PROJECT`), `LiveModelConfig` in `evaluation/eval_config.py`,
 `evaluation/simulation/user_simulator_provider.py`, `evaluation/eval_config.py`,
 `cli/cli_tools_click.py`; `adk-docs: docs/evaluate/user-sim.md`,
-`docs/evaluate/criteria.md`.
+`docs/evaluate/criteria.md`. The two case kinds in live mode, the
+conversation-level rubric, the text fallback, voices and personas, the `adk web`
+Live toggle and the CI recommendation are paraphrased from Stephen Allen, "How to
+Evaluate Live & Voice Agents in ADK", Google Developers Blog, 2026-08-24,
+https://developers.googleblog.com/how-to-evaluate-live-voice-agents-in-adk/ (its
+example uses a Gemini TTS model, the "Kore" voice and a cap of 10; those are
+choices, not ADK defaults).

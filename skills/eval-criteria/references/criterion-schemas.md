@@ -135,7 +135,40 @@ and may be sync or async.
 
 `user_simulator_config` switches cases with a `conversation_scenario` to a
 simulated user; see `/adk:eval-simulation`. `live_model_config` switches the run
-to the live/bidi path, which changes how inference is performed.
+to the live/bidi path, which changes how inference is performed. Its only field is
+`timeout_seconds` (default 300, no bound enforced by ADK; `SIM032` warns at ≤ 0).
+From 2.13.0, `judge_model_options.judge_model` and the simulator's `model` also
+accept a `BaseLlm` instance on the programmatic path; a JSON config still names a
+model id.
+
+## Coming after 2.13.0 (unreleased main)
+
+Main after the `v2.13.0` tag adds a fifth top-level key, `multi_run_config`
+(`7f3517e`):
+
+```json
+{"criteria": {"tool_trajectory_avg_score": 1.0},
+ "multi_run_config": {
+   "num_runs": 5,
+   "cross_run_scoring": "mean_over_invocations",
+   "cross_run_scoring_by_metric": {"tool_trajectory_avg_score": "min_over_runs"},
+   "cross_run_criteria": [{"method": "pass_rate", "threshold": 0.9}],
+   "max_crashed_runs": 0}}
+```
+
+Methods are `mean_over_invocations` (default), `mean_of_runs`, `min_over_runs`,
+a `{"method": "pass_rate", "threshold": ...}` rule, or a name from
+`custom_methods` (each with a `code_config` and `uses_scores`); every key of
+`cross_run_scoring_by_metric` must also be in `criteria`. Main also ships
+`google.adk.tools.tool_args_matcher` (exact, casefold, numeric, contains and
+ignore matchers; `ToolArgsMatcher(allow_extra_args=...)`), which no criterion
+uses yet, so `tool_trajectory_avg_score` still compares arguments exactly; plus
+per-session compaction from a plugin's `before_run_callback` and prompt-cache
+creation tokens on `LlmResponse`. **Released versions drop `multi_run_config`
+silently** — `EvalConfig` ignores unknown keys, measured on 2.9.2, 2.12.0 and
+2.13.0 — so `pass_at_k.py` and `--runs` remain the way to batch today.
+`validate_config.py` reports the key as `CFG072` (info) and a malformed one as
+`CFG073` (error).
 
 ---
 
@@ -148,7 +181,8 @@ Sources: `adk-python: evaluation/eval_config.py` (the
 `evaluation/llm_as_judge.py` and `evaluation/hallucinations_v1.py`
 (`criterion_type.model_validate(...)`, the subclass re-validation),
 `evaluation/eval_rubrics.py`, `evaluation/custom_metric_evaluator.py`,
-`evaluation/rubric_based_evaluator.py`;
+`evaluation/rubric_based_evaluator.py`; `MultiRunConfig` and
+`tools/tool_args_matcher/` on main `12c7bed76` (post-tag);
 `adk-docs: docs/evaluate/criteria.md`, `docs/evaluate/custom_metrics.md`.
 The `gemini-2.5-flash` judgement is this plugin's policy, from
 `adk-recipes: AGENTS.md`.

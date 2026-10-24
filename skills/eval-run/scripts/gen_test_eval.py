@@ -31,7 +31,8 @@ single sub-agent — something `adk eval` cannot do at all.
 `--behavioral` writes `tests/eval/test_behaviors.py` instead: fast pytest
 checks on one observable action each, over a real `Runner` - the expected tool
 is called, a forbidden tool is not, the agent asks instead of guessing when a
-detail is missing. Prompts and tool names come from the agent's tools and its
+detail is missing, and a policy holds under an injection-style prompt (no
+forbidden call, no secret-looking token in the reply). Prompts and tool names come from the agent's tools and its
 evalsets (a happy case for the expected call, an edge case for the forbidden
 one, a case with no calls for the question); what cannot be derived is left as
 a `TODO` prompt that the test skips. Repeat runs come from `ADK_EVAL_RUNS` and

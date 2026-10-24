@@ -59,6 +59,33 @@ from .report import GapReport
 
 CONFIG_KEYS = frozenset({"criteria", "custom_metrics", "user_simulator_config", "live_model_config"})
 
+#: Read only by ADK main after 2.13.0 (7f3517e43, unreleased). `EvalConfig` on
+#: 2.9.2, 2.12.0 and 2.13.0 sets no `extra`, so the key is dropped silently.
+MULTI_RUN_KEY = "multi_run_config"
+MULTI_RUN_FIELDS = frozenset({"num_runs", "max_crashed_runs", "cross_run_scoring",
+                              "cross_run_scoring_by_metric", "cross_run_criteria",
+                              "custom_methods"})
+#: Built-in cross-run methods (`_multi_run_aggregation_methods.py` on main):
+#: True combines scores (a plain name, judged against the metric's threshold),
+#: False counts passing runs (an object with a threshold of its own).
+MULTI_RUN_METHODS = {"mean_over_invocations": True, "mean_of_runs": True,
+                     "min_over_runs": True, "pass_rate": False}
+_SRC_MULTI_RUN = "adk-python main after 2.13.0: evaluation/eval_config.py (MultiRunConfig)"
+
+#: `LlmBackedUserSimulatorConfig` / `LlmAudioUserSimulatorConfig` fields
+#: (2.12.0 = 2.13.0). Both set `extra="allow"`, so a misspelt key is kept and
+#: never read.
+SIMULATOR_KEYS = {
+    "llm_backed": frozenset({"type", "model", "model_configuration", "max_allowed_invocations",
+                             "custom_instructions", "include_function_calls"}),
+    "llm_audio": frozenset({"type", "model", "model_configuration", "max_allowed_invocations",
+                            "custom_instructions", "include_function_calls", "audio_model",
+                            "audio_model_configuration", "include_text_with_audio"}),
+}
+#: Model ids that run on the Live API.
+LIVE_MODEL_MARKERS = ("-live-", "native-audio")
+_SRC_SIM_AUDIO = "adk-python: evaluation/simulation/_llm_audio_user_simulator.py"
+
 BASE_CRITERION_FIELDS = frozenset({"threshold", "include_intermediate_responses_in_final"})
 CRITERION_FIELDS: dict[str, frozenset[str]] = {
     "ToolTrajectoryCriterion": BASE_CRITERION_FIELDS | {"match_type", "ignore_args"},
@@ -187,6 +214,7 @@ def validate_config(
     agent_dir: Path | str | None = None,
     known_tools: set[str] | None = None,
     adk_version: str | None = None,
+    agent_models: list[str] | None = None,
 ) -> GapReport:
     """Check a config against the metric catalog, the criterion schemas and the
     backend that has to serve it.
@@ -194,6 +222,7 @@ def validate_config(
     `adk_version` is the version of the runner that will execute this config,
     when one was probed. It only changes the informational note about the
     always-on efficiency metrics: every error here holds on both 2.9 and 2.10.
+    `agent_models` are the agent's model ids when known, for SIM033.
     """
     report = report or GapReport(subject=loaded.path, skill="eval-criteria")
     path = loaded.path
@@ -227,12 +256,27 @@ def validate_config(
                    path=path, fix="normalize to snake_case, as in the ADK docs",
                    source="adk-python: evaluation/common.py")
 
-    unknown_top = sorted(set(doc) - CONFIG_KEYS)
+    unknown_top = sorted(set(doc) - CONFIG_KEYS - {MULTI_RUN_KEY})
     if unknown_top:
         report.add("CFG004", "warn", "config",
                    f"unrecognized top-level key(s): {', '.join(unknown_top)}",
                    path=path, fix="EvalConfig accepts extra keys and ignores them",
                    source=_SRC_CONFIG)
+
+    if MULTI_RUN_KEY in doc:
+        report.add(
+            "CFG072", "info", "config",
+            "multi_run_config is read only by ADK main after 2.13.0 (unreleased); every "
+            "released version drops it silently, so it gates nothing yet",
+            path=path, locator=MULTI_RUN_KEY,
+            fix="for repeated runs today use run_evals.py --runs N and pass_at_k.py; keep the "
+                "key if you want it ready for the release that reads it",
+            source=_SRC_MULTI_RUN,
+        )
+        _validate_multi_run(doc[MULTI_RUN_KEY], doc.get("criteria"), report, path)
+
+    if "live_model_config" in doc or "user_simulator_config" in doc:
+        validate_live_and_audio(doc, report, path, agent_models=agent_models)
 
     criteria = doc.get("criteria")
     if criteria is None:
@@ -770,6 +814,169 @@ def _validate_user_simulator(config: Any, report: GapReport, path: str) -> None:
                    "no `max_allowed_invocations` cap: a simulated conversation can run long "
                    "and every turn costs model calls",
                    path=path, locator=locator, fix="set a small cap while iterating")
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _validate_multi_run(config: Any, criteria: Any, report: GapReport, path: str) -> None:
+    """CFG073: what `MultiRunConfig` (ADK main after 2.13.0) would reject."""
+    def bad(message: str, locator: str) -> None:
+        report.add("CFG073", "error", "config", message, path=path, locator=locator,
+                   fix="see MultiRunConfig: num_runs >= 1, max_crashed_runs >= 0, score "
+                       "methods (mean_over_invocations, mean_of_runs, min_over_runs) as plain "
+                       'names, pass-count methods as {"method": "pass_rate", "threshold": '
+                       "0..1}, cross_run_scoring_by_metric keys from `criteria`",
+                   source=_SRC_MULTI_RUN)
+
+    where = MULTI_RUN_KEY
+    if not isinstance(config, dict):
+        bad("`multi_run_config` must be an object", where)
+        return
+    unknown = sorted(set(config) - MULTI_RUN_FIELDS)
+    if unknown:
+        bad(f"unrecognized multi_run_config key(s): {', '.join(unknown)} (MultiRunConfig "
+            "forbids extra keys)", where)
+
+    num_runs = config.get("num_runs")
+    if num_runs is not None and (not isinstance(num_runs, int) or isinstance(num_runs, bool)
+                                 or num_runs < 1):
+        bad(f"`num_runs` {num_runs!r} must be an integer >= 1", f"{where}.num_runs")
+    crashed = config.get("max_crashed_runs")
+    if crashed is not None and (not isinstance(crashed, int) or isinstance(crashed, bool)
+                                or crashed < 0):
+        bad(f"`max_crashed_runs` {crashed!r} must be an integer >= 0",
+            f"{where}.max_crashed_runs")
+
+    methods = dict(MULTI_RUN_METHODS)
+    custom = config.get("custom_methods")
+    if custom is not None:
+        if not isinstance(custom, dict):
+            bad("`custom_methods` must be an object keyed by method name",
+                f"{where}.custom_methods")
+        else:
+            for name, entry in custom.items():
+                at = f"{where}.custom_methods.{name}"
+                if name in MULTI_RUN_METHODS:
+                    bad(f"custom method {name!r} reuses the name of a built-in method", at)
+                    continue
+                code = entry.get("code_config") if isinstance(entry, dict) else None
+                if not isinstance(code, dict) or not code.get("name"):
+                    bad(f"custom method {name!r} needs `code_config.name`, the dotted path "
+                        "of its function", at)
+                uses_scores = entry.get("uses_scores") if isinstance(entry, dict) else None
+                if not isinstance(uses_scores, bool):
+                    bad(f"custom method {name!r} needs a boolean `uses_scores` (true: "
+                        "combines scores; false: counts passing runs)", at)
+                else:
+                    methods[str(name)] = uses_scores
+
+    def rule(value: Any, at: str, *, object_only: bool = False) -> None:
+        if isinstance(value, str) and not object_only:
+            if value not in methods:
+                bad(f"unknown cross-run method {value!r}; built-in: "
+                    f"{', '.join(sorted(MULTI_RUN_METHODS))}", at)
+            elif not methods[value]:
+                bad(f"{value!r} counts passing runs, so it needs a threshold of its own: "
+                    f'write {{"method": "{value}", "threshold": ...}}', at)
+            return
+        if not isinstance(value, dict):
+            bad("a cross-run rule must be a method name or an object "
+                '{"method": ..., "threshold": 0..1}' if not object_only else
+                'a cross-run criterion must be an object {"method": ..., "threshold": 0..1}', at)
+            return
+        method = value.get("method")
+        threshold = value.get("threshold")
+        extra = sorted(set(value) - {"method", "threshold"})
+        if extra:
+            bad(f"unrecognized key(s) in a cross-run rule: {', '.join(extra)}", at)
+        if not isinstance(method, str) or method not in methods:
+            bad(f"unknown cross-run method {method!r}; built-in: "
+                f"{', '.join(sorted(MULTI_RUN_METHODS))}", at)
+        elif methods[method]:
+            bad(f"{method!r} combines scores, so it is judged against the metric's threshold "
+                "in `criteria` and takes no threshold here: write it as a plain name", at)
+        if not _is_number(threshold) or not 0.0 <= float(threshold) <= 1.0:
+            bad(f"a cross-run rule needs a `threshold` between 0 and 1, got {threshold!r}", at)
+
+    if "cross_run_scoring" in config:
+        rule(config["cross_run_scoring"], f"{where}.cross_run_scoring")
+    by_metric = config.get("cross_run_scoring_by_metric")
+    if by_metric is not None:
+        if not isinstance(by_metric, dict):
+            bad("`cross_run_scoring_by_metric` must be an object keyed by metric name",
+                f"{where}.cross_run_scoring_by_metric")
+        else:
+            names = set(criteria) if isinstance(criteria, dict) else set()
+            for metric, value in by_metric.items():
+                at = f"{where}.cross_run_scoring_by_metric.{metric}"
+                if metric not in names:
+                    bad(f"cross_run_scoring_by_metric names {metric!r}, which is not in "
+                        "`criteria` (EvalConfig rejects it)", at)
+                rule(value, at)
+    criteria_rules = config.get("cross_run_criteria")
+    if criteria_rules is not None:
+        if not isinstance(criteria_rules, list):
+            bad("`cross_run_criteria` must be a list of rule objects",
+                f"{where}.cross_run_criteria")
+        else:
+            for index, value in enumerate(criteria_rules):
+                rule(value, f"{where}.cross_run_criteria[{index}]", object_only=True)
+
+
+def looks_live(model: str | None) -> bool:
+    """Does a model id name a Live API model (`gemini-*-live-*`, `*native-audio*`)?"""
+    return bool(model) and any(marker in str(model) for marker in LIVE_MODEL_MARKERS)
+
+
+def validate_live_and_audio(doc: dict[str, Any], report: GapReport, path: str, *,
+                            agent_models: list[str] | None = None) -> None:
+    """SIM032-SIM034: live and audio settings ADK accepts without complaint."""
+    live = doc.get("live_model_config")
+    if live is not None:
+        timeout = live.get("timeout_seconds") if isinstance(live, dict) else None
+        if isinstance(live, dict) and "timeout_seconds" in live and (
+                not _is_number(timeout) or timeout <= 0):
+            report.add(
+                "SIM032", "warn", "simulation",
+                f"`live_model_config.timeout_seconds` is {timeout!r}: ADK accepts it; plugin "
+                "policy: a non-positive timeout is not a meaningful live run",
+                path=path, locator="live_model_config.timeout_seconds",
+                fix="omit it for ADK's default of 300 seconds, or set a positive number of "
+                    "seconds",
+                source="adk-python: evaluation/eval_config.py (LiveModelConfig)",
+            )
+        models = [m for m in (agent_models or []) if m]
+        if models and not any(looks_live(m) for m in models):
+            report.add(
+                "SIM033", "warn", "simulation",
+                "`live_model_config` is set, so `adk eval` runs inference over the Live API, "
+                f"but the agent's model ({', '.join(sorted(set(models)))}) does not look like "
+                "a live model (no `-live-` or `native-audio` in the id)",
+                path=path, locator="live_model_config",
+                fix="point the agent at a Live API model for these cases, or drop "
+                    "`live_model_config` to run the same cases in text",
+                source="adk-python: evaluation/eval_config.py (LiveModelConfig: \"Required "
+                       "for Live API models\")",
+            )
+    simulator = doc.get("user_simulator_config")
+    if isinstance(simulator, dict):
+        sim_type = simulator.get("type") or "llm_backed"
+        known = SIMULATOR_KEYS.get(str(sim_type))
+        if known is not None:
+            unknown = sorted(set(simulator) - known)
+            if unknown:
+                report.add(
+                    "SIM034", "warn", "simulation",
+                    f"unknown key(s) in `user_simulator_config` for {sim_type}: "
+                    f"{', '.join(unknown)}; ADK uses extra=allow, so a typo is accepted "
+                    "silently and never read",
+                    path=path, locator="user_simulator_config",
+                    fix=f"the {sim_type} keys are {', '.join(sorted(known))}",
+                    source=_SRC_SIM_AUDIO if sim_type == "llm_audio" else
+                    "adk-python: evaluation/simulation/llm_backed_user_simulator.py",
+                )
 
 
 def deprecated_judge_models(loaded: LoadedConfig) -> list[str]:

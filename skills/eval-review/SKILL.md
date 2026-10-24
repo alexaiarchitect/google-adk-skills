@@ -99,7 +99,7 @@ fail, a branch in the instruction with no case at all.
 
 | Command | Checks | Exit codes |
 |---|---|---|
-| `scripts/validate_evalset.py <path> [--agent-dir D] [--config F] [--adk-version V] [--strict] [--json]` | schema, ids, structure, app_name, rubrics (`EVS082`: a missing `text_property` is an error below 2.12, a warning otherwise; `--adk-version` overrides the detected runner), `load_skill` for an unregistered skill (`EVS074`) | 0 clean, 1 findings, 2 bad target |
+| `scripts/validate_evalset.py <path> [--agent-dir D] [--config F] [--adk-version V] [--strict] [--json]` | schema, ids, structure, app_name, rubrics (`EVS082`: a missing `text_property` is an error below 2.12, a warning otherwise; `--adk-version` overrides the detected runner), `load_skill` for an unregistered skill (`EVS074`), a seeded state key the agent never reads (`EVS075`, info, needs `--agent-dir`), a drive-qualified `eval_set_id` / `app_name` that 2.13 rejects (`EVS076`) | 0 clean, 1 findings, 2 bad target |
 | `scripts/crosscheck_tools.py <path> --agent-dir D [--json]` | tool names, argument nesting, Literal/regex/bounds | 0 clean, 1 findings, 2 bad target |
 | `scripts/coverage_matrix.py <agent-dir> [--evalset F] [--json]` | branch coverage, suite shape, tool coverage, skills no case activates (`EVS073`) | 0 no gaps, 1 gaps, 2 bad target |
 | `scripts/validate_eval_yaml.py [path] [--strict] [--json]` | every `EVAL.yaml` under an `adk-recipes` plugin skill, plugin or repository: `cases[].id/prompt/rubric/assertions`, known assertion types and their fields, duplicate ids, empty rubrics (`EVY001`–`EVY010`); never runs the cases | 0 no errors, 1 errors (or warnings with `--strict`), 2 nothing to check (no `EVAL.yaml` under the path) |

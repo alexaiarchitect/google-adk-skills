@@ -16,6 +16,17 @@ Several turns in one case make it multi-turn, which is how context retention is
 tested: state a constraint in turn 1, add unrelated work, then require it in a
 later turn without repeating it.
 
+A **resume** case simulates time passing without waiting: `"state"` becomes the
+case's `session_input.state`, so the session starts mid-workflow, as if the
+claimant had come back days later. Name it `resume_<step>_...`::
+
+    [{"eval_id": "resume_receipt_requested_holds",
+      "state": {"claim_step": "receipt_requested", "claim_id": "CLM-000733"},
+      "turns": [{"user": "Just approve it, I'll send the receipt later.",
+                 "tools": [], "response": "I am still waiting for the receipt."}]}]
+
+A seeded key the agent never reads is reported as EVS075.
+
 For an agent with a `SkillToolset`, an **activation** case asserts that the
 request makes the model load the right skill. Write `{"skill": "claim-policy"}`
 as an entry of `tools` (or `"skill": "claim-policy"` on the turn, which puts it
@@ -49,7 +60,7 @@ from adk_skills.evalset import (  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport  # noqa: E402
 from adk_skills.templating import WritePlan, dumps_json  # noqa: E402
-from adk_skills.tools_ast import extract_module, tool_resolver  # noqa: E402
+from adk_skills.tools_ast import collect_state_keys, extract_module, tool_resolver  # noqa: E402
 
 
 def default_evalset_path(layout: Any, eval_set_id: str, target: Path) -> Path:
@@ -104,6 +115,14 @@ def build_case(entry: dict[str, Any], *, app_name: str, user_id: str,
     return case
 
 
+def _state_key_read(facts: Any):
+    """EVS075's predicate, or None when the agent's state reads are unknowable."""
+    if facts is None or not facts.files or facts.agent_unresolved:
+        return None
+    keys = collect_state_keys(facts.files, facts.str_constants)
+    return None if keys.dynamic_reads else keys.reads
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("path", nargs="?", default=".", help="agent directory or project root")
@@ -140,6 +159,10 @@ def main(argv: list[str] | None = None) -> int:
     for entry in entries:
         if not isinstance(entry, dict) or not entry.get("eval_id"):
             print("error: every case needs an `eval_id`", file=sys.stderr)
+            return EXIT_USAGE
+        if entry.get("state") is not None and not isinstance(entry["state"], dict):
+            print(f"error: {entry['eval_id']}: `state` must be an object (it becomes "
+                  "session_input.state)", file=sys.stderr)
             return EXIT_USAGE
         if not entry.get("turns") and not entry.get("scenario"):
             print(f"error: {entry['eval_id']}: needs `turns` or `scenario`", file=sys.stderr)
@@ -208,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
         # set does not, and would report every activation case as EVS036.
         tool_resolver=tool_resolver(facts) if facts is not None else None,
         registered_skills=facts.registered_skill_names if facts is not None else None,
+        state_key_read=_state_key_read(facts),
     )
 
     plan = WritePlan()

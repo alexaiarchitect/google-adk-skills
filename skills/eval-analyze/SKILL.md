@@ -115,7 +115,10 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/compare_runs.py <baseline> <candidate>
 Pass rate, per-case verdict flips, mean tokens (prompt / cached / output),
 duration and call counts, with deltas. A cheaper run that flipped a case to
 failed is a regression, and the script exits 1 for it. This is the measuring
-step of the eval-driven loop in `../adk/references/eval-engineering.md`.
+step of the eval-driven loop in `../adk/references/eval-engineering.md`. The
+whole loop — five stages, the rule that whatever proposed a fix never grades
+it, deltas over absolute judge scores, and one stable custom metric beside the
+adaptive ones — is in [improvement-loop.md](references/improvement-loop.md).
 
 As a merge gate it takes the two rules and the budgets: `--min-pass-rate 0.95
 --max-regressions 0`, plus `--max-mean-prompt-tokens N`, `--max-mean-seconds S`,
@@ -162,12 +165,13 @@ How many runs: 5 separates "usually works" from "often fails" but not 95% from
 | pass@k, fragility, run counts | [reliability.md](references/reliability.md) |
 | Human calibration: cadence, sample size, what to do on disagreement | [calibration.md](references/calibration.md) |
 | Gating a merge on a comparison: pass threshold, regressions, budgets | [merge-gates.md](../eval-ci/references/merge-gates.md) |
+| The improvement loop, who grades a fix, and what the hosted platform adds after launch | [improvement-loop.md](references/improvement-loop.md) |
 
 ## Scripts
 
 | Command | Does | Exit codes |
 |---|---|---|
-| `scripts/summarize_results.py <path> [--dir D] [--latest] [--eval-id ID] [--json]` | per-case diagnosis, plus an "Efficiency (informational, lower is better)" table with the token breakdown, a `cached` column, a per-case "Cache-hit ratio" line and a run-level "Context cache served X%" when reported; JSON carries `case["efficiency"]`, `run["efficiency"]`, `cases[].cache` and `run.cache_hit_ratio`. On result files from ADK main after 2.12.0 it also shows the model / tool / framework split of `invocation_duration_v1` (`details.duration_details`) and the judge's explanation (the `rubric_id` "explanation" entry, shown as the metric's rationale and `rubric_explanations`, never counted as a verdict) | 0 passed, 1 failures, 3 only never-scored, 2 nothing to read |
+| `scripts/summarize_results.py <path> [--dir D] [--latest] [--eval-id ID] [--json]` | per-case diagnosis, plus an "Efficiency (informational, lower is better)" table with the token breakdown, a `cached` column, a per-case "Cache-hit ratio" line and a run-level "Context cache served X%" when reported; JSON carries `case["efficiency"]`, `run["efficiency"]`, `cases[].cache` and `run.cache_hit_ratio`. On result files from ADK 2.13+ it also shows the model / tool / framework split of `invocation_duration_v1` (`details.duration_details`) and the judge's explanation (the `rubric_id` "explanation" entry, shown as the metric's rationale and `rubric_explanations`, never counted as a verdict) | 0 passed, 1 failures, 3 only never-scored, 2 nothing to read |
 | `scripts/pass_at_k.py [--dir D] [--evalset ID] [--last N] [--k 1,3,5]` | reliability across runs | 0 all reliable, 1 not, 2 nothing to read |
 | `scripts/compare_runs.py <baseline> <candidate> [--latest] [--evalset ID] [--min-pass-rate P] [--max-regressions N] [--max-mean-prompt-tokens N] [--max-mean-seconds S] [--max-mean-tool-calls N] [--json]` | before/after table: pass rate, verdict flips, added/removed cases, per-invocation prompt / cached / uncached-prompt / output tokens, cache-hit ratio, seconds, tool and model calls, with deltas; verdict `REGRESSION` / `IMPROVED` / `NO REGRESSION`; missing figures read `n/a` | 0 no regression, 1 pass rate dropped, more than `--max-regressions` cases (default 0) flipped to failed, the candidate below `--min-pass-rate`, or a budget exceeded; 2 nothing to compare (or a directory holding several runs without `--latest`) |
 | `scripts/calibration_sample.py [--dir D] [--n 5] [--seed 0]` | passing cases for human review, sampled on the gate metrics only | 0, 2 nothing to read |

@@ -16,7 +16,7 @@ comes from. Ids are stable.
 | `AGT007` | info | no `model=` | fine for a sub-agent, which inherits; the root agent should be explicit |
 | `AGT011` | **error** | a name that is not a Python identifier, or is `"user"` | rejected by the validator |
 | `AGT012` | **error** | an `LlmAgent` with no `name` | required |
-| `AGT015` | warn | duplicate `sub_agents` names | ADK only warns, but routing by name becomes ambiguous |
+| `AGT015` | warn | two agents anywhere in the tree share a `name`: siblings, cousins, or an agent and one of its descendants | ADK only logs a warning (siblings before 2.13; the whole tree from 2.13, "find_agent() returns the first match in a depth-first walk"), but routing and `find_agent` by name become ambiguous |
 | `AGT016` | **error** | `temperature`, `top_p`, `max_output_tokens` and friends passed to the agent | raises at construction; move them into `generate_content_config` |
 | `AGT019` | info | `output_schema` together with `tools` | supported in 2.x, but the model may answer with structured output instead of calling a tool |
 | `AGT020` | warn | no `instruction` | behaviour is whatever the model guesses, and nothing is testable |
@@ -40,8 +40,9 @@ comes from. Ids are stable.
 | Id | Severity | Trigger | Why |
 |---|---|---|---|
 | `AGT013` | **error** | `session.state[...] = ...` on a service-fetched session | not recorded as an event, so not persisted and not replayed |
+| `AGT080` | warn | a `{key}` placeholder in a string `instruction` that nothing writes — no `output_key`, `tool_context.state[...]`, `callback_context.state[...]` or `state_delta` in the agent directory — and no evalset seeds in `session_input.state`; skipped when a write uses a computed key, and for `{artifact.…}` and `{key?}` | building the instruction raises `KeyError: Context variable not found`, so the first turn fails. Write it in a `before_agent_callback`, from a tool or `output_key`, seed it, or make it optional with `{key?}` |
 | `AGT014` | info | no `App` exported | the loader prefers one, and plugins, caching and resumability only reach a run through it |
-| `AGT050` | warn | a `root_agent.yaml` config agent | the config classes are deprecated in 2.x |
+| `AGT050` | warn | a `root_agent.yaml` config agent | the config classes are deprecated in 2.x; 2.13 made the `AGENT_CONFIG` flag stable, but the loader still warns `[EXPERIMENTAL]` and the classes stay `@deprecated` |
 | `AGT051` | **error** | nothing loadable exported | `AgentLoader` looks for `app`, then `root_agent`; `adk eval` and `AgentEvaluator` additionally accept `get_agent_async`, so a factory-only module evaluates but will not load in `adk web` / `adk run` |
 | `AGT000` | **error** | the file could not be parsed | |
 
@@ -125,6 +126,10 @@ Sources: `adk-python: agents/base_agent.py`, `agents/llm_agent.py`,
 `agents/loop_agent.py`, `apps/app.py`, `agents/context_cache_config.py`
 (`AGT062`'s bounds), `tools/function_tool.py`,
 `cli/utils/agent_loader.py`, `agents/config_agent_utils.py`;
+`flows/llm_flows/prompt/_instructions_utils.py` (`AGT080`: the `KeyError` for a
+missing `{key}`, measured on 2.9.2 and 2.13.0); `agents/base_agent.py`
+(`AGT015`: `validate_sub_agents_unique_names`, tree-wide from `6031bb1`, in
+`v2.13.0`, measured on 2.12.0 and 2.13.0);
 `adk-docs: docs/tools-custom/function-tools.md`, `docs/sessions/state.md`,
 `docs/2.0/index.md`, `docs/context/caching.md` (`AGT060`–`AGT063`, `AGT065`–`AGT067`); `adk-recipes: AGENTS.md` (`AGT005`, the model-deprecation
 policy — the sole source for it).

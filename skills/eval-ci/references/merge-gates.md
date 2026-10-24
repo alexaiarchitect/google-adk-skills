@@ -67,8 +67,11 @@ directory as the first argument. "Core metrics" is a choice of suite: gate on th
 frozen golden suite, not on the exploratory cases added this week.
 
 Bare `adk eval` cannot implement either rule. It exits 0 on a failure on every
-release through 2.12.0; main after the tag fixes that, but even then it reports
-a failure, not a rate or a flip. The wrapper's exit code is the gate.
+release through 2.12.0. In 2.13.0 it exits 1 when a case fails or none ran (and
+counts `NOT_EVALUATED` as failed), but that is still one failure, not a rate, a
+flip against a baseline or a budget. The wrapper's exit code is the gate on
+every version; `lint_workflows.py` reports bare `adk eval` as `CI001`, an error
+on a pin below 2.13 or an unknown one, a warning on 2.13+.
 
 ## Four anti-patterns, and the answer to each
 
@@ -154,6 +157,12 @@ when a judge metric is involved, or one noisy run decides the iteration.
 
 ## Other harnesses
 
+- **`agents-cli eval`** is Google's hosted counterpart: `eval dataset synthesize`
+  for cases, `eval grade --traces F --config F` on the Agent Platform evaluation
+  service, `eval compare` against a prior run, `eval analyze` to cluster
+  failures. The same two merge rules apply to its output. How each stage maps
+  onto this plugin's scripts, and what the platform adds after launch, is in
+  `/adk:eval-analyze` `improvement-loop.md`.
 - **`agent-eval`** (GoogleCloudPlatform/professional-services) is an open-source
   evaluation toolkit the post links. It is an alternative harness, not something
   this plugin drives; the merge rules above apply to it unchanged.
@@ -169,6 +178,11 @@ https://developers.googleblog.com/evaluating-ai-agents-moving-past-the-vibe-chec
 (Day 0/1/2, the two merge rules, the four anti-patterns, the 50 to 60 iterations;
 paraphrased). This plugin's `run_evals.py`, `compare_runs.py`, `manage_cases.py`,
 `run_registry.py`, `gen_rubrics.py`; `adk-python: cli/cli_tools_click.py` (bare
-`adk eval` exit 0 measured on 2.12.0, fix `c2ff634` on main),
+`adk eval` exit 0 measured on 2.12.0 and 1 on 2.13.0 with a failing case; the fix
+`c2ff634` is in `v2.13.0`),
 `evaluation/_efficiency_evaluators.py`, `plugins/bigquery_agent_analytics_plugin.py`
-(2.12.0 wheel).
+(2.12.0 wheel). The agents-cli eval family: "Powering the Agent Development
+Lifecycle with any framework, from ADK to LangChain and beyond",
+https://developers.googleblog.com/powering-the-agent-development-lifecycle-with-any-framework-from-adk-to-langchain-and-beyond/,
+and "Driving the Agent Quality Flywheel from Your Coding Agent",
+https://developers.googleblog.com/driving-the-agent-quality-flywheel-from-your-coding-agent/.

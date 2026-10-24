@@ -3,8 +3,14 @@
 
 Four mistakes, all of which produce a green pipeline that proves nothing:
 
-* **bare `adk eval`** — the command always exits 0, so the step passes whether or
-  not cases failed. This is the one worth checking for above all others.
+* **bare `adk eval`** — through ADK 2.12.0 the command exits 0 whatever the
+  result, so the step passes whether or not cases failed (an error). From
+  2.13.0 it exits 1 on a failure, but it still cannot gate on a pass rate,
+  regressions or budgets and does not read the result files (a warning). The
+  version comes from `--adk-version`, else from the lowest `google-adk` pin in
+  the project's `pyproject.toml` / `requirements*.txt` (from the workflow's
+  directory up to the repo root) and in the workflow itself; unknown counts as
+  older than 2.13.
 * **judge metrics in the per-change tier** — slow and paid on every push, which
   ends with someone disabling the workflow.
 * **missing `id-token: write`** — Workload Identity authentication cannot mint a
@@ -12,7 +18,7 @@ Four mistakes, all of which produce a green pipeline that proves nothing:
 * **a hardcoded key** — a credential in a workflow file is a credential in the
   repository history.
 
-    lint_workflows.py <repo-root> [--format json|md]
+    lint_workflows.py <repo-root> [--adk-version X.Y] [--format json|md]
 
 Exit codes: 0 clean, 1 findings, 2 nothing to check.
 """
@@ -26,6 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 
+from adk_skills.env import pinned_adk_version, version_at_least  # noqa: E402
 from adk_skills.eval_config import load_config  # noqa: E402
 from adk_skills.metrics import pr_tier_violations  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport  # noqa: E402
@@ -38,11 +45,35 @@ SECRET_LOOKING = re.compile(
     re.I,
 )
 CONFIG_FLAG = re.compile(r"--config(?:_file_path)?[= ]+(\S+)")
+#: The release from which bare `adk eval` exits 1 on a failing case (c2ff634).
+EXIT_CODE_SINCE = "2.13"
+PIN_FILES = ("pyproject.toml", "requirements*.txt")
+
+
+def project_pin_texts(workflow: Path, root: Path) -> list[str]:
+    """Contents of every pin file from the workflow's directory up to `root`."""
+    texts: list[str] = []
+    root = root.resolve()
+    probe = workflow.resolve().parent
+    while True:
+        for pattern in PIN_FILES:
+            for candidate in sorted(probe.glob(pattern)):
+                try:
+                    texts.append(candidate.read_text(encoding="utf-8"))
+                except (OSError, UnicodeDecodeError):
+                    continue
+        if probe == root or probe == probe.parent:
+            break
+        probe = probe.parent
+    return texts
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("path", nargs="?", default=".")
+    parser.add_argument("--adk-version",
+                        help="the ADK version CI installs (default: the lowest google-adk pin "
+                             "in the project files and the workflow; unknown counts as < 2.13)")
     parser.add_argument("--format", choices=("json", "md"), default="md")
     parser.add_argument("--json", action="store_const", const="json", dest="format")
     args = parser.parse_args(argv)
@@ -55,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
 
     report = GapReport(subject=str(directory), skill="eval-ci")
     checked: list[str] = []
+    versions: dict[str, str] = {}
 
     for workflow in sorted(directory.glob("*.y*ml")):
         try:
@@ -66,16 +98,36 @@ def main(argv: list[str] | None = None) -> int:
         checked.append(workflow.name)
         name = workflow.name
 
+        version = args.adk_version or pinned_adk_version(*project_pin_texts(workflow, root), text)
+        if version:
+            versions[name] = version
         if ADK_EVAL.search(text) and not any(marker in text for marker in GATED):
-            report.add(
-                "CI001", "error", "ci",
-                "runs `adk eval` directly, which always exits 0: this step passes even when "
-                "cases fail",
-                path=str(workflow),
-                fix="route it through run_evals.py or run_registry.py, or use pytest with "
-                    "AgentEvaluator, which raises",
-                source="adk-python: cli/cli_tools_click.py (the eval command sets no exit code)",
-            )
+            if version_at_least(version, EXIT_CODE_SINCE):
+                report.add(
+                    "CI001", "warn", "ci",
+                    "runs `adk eval` directly: from ADK 2.13.0 it exits 1 on a failure, but it "
+                    "cannot gate on a pass rate, regressions or budgets and does not read the "
+                    "result files; prefer run_evals.py",
+                    path=str(workflow),
+                    fix="route it through run_evals.py (--min-pass-rate) or run_registry.py, "
+                        "or use pytest with AgentEvaluator",
+                    source="adk-python 2.13.0: cli/cli_tools_click.py (exit 1 on a failed "
+                           f"case, c2ff634); ADK version {version}",
+                )
+            else:
+                report.add(
+                    "CI001", "error", "ci",
+                    "runs `adk eval` directly, which exits 0 whatever the result on every ADK "
+                    "version through 2.12.0" + (f" (pinned: {version})" if version else
+                                                 " (no google-adk pin found)")
+                    + ": this step passes even when cases fail",
+                    path=str(workflow),
+                    fix="route it through run_evals.py or run_registry.py, or use pytest with "
+                        "AgentEvaluator, which raises; pinning google-adk>=2.13 gives a failing "
+                        "exit code but still no pass-rate or regression gate",
+                    source="adk-python: cli/cli_tools_click.py (no exit code through 2.12.0; "
+                           "exit 1 on a failure from 2.13.0)",
+                )
 
         per_change = any(trigger in text for trigger in PER_CHANGE)
         for match in CONFIG_FLAG.finditer(text):
@@ -133,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: no eval-related workflows under {directory}", file=sys.stderr)
         return EXIT_USAGE
 
-    report.discovered = {"workflows_checked": checked}
+    report.discovered = {"workflows_checked": checked, "adk_versions": versions}
     print(report.render(args.format))
     return EXIT_FINDINGS if report.has_errors() else EXIT_OK
 

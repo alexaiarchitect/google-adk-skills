@@ -226,7 +226,7 @@ def test_the_linter_catches_a_workflow_that_cannot_fail(run_script, tmp_path):
     )
     result = run_script("skills/eval-ci/scripts/lint_workflows.py", tmp_path, "--json")
     found = {f["id"] for f in json.loads(result.stdout)["findings"]}
-    assert "CI001" in found, "bare adk eval always exits 0"
+    assert "CI001" in found, "bare adk eval, no google-adk pin: an error"
     assert "CI003" in found, "Workload Identity without id-token: write"
     assert "CI004" in found, "a hardcoded credential"
     assert result.returncode == 1

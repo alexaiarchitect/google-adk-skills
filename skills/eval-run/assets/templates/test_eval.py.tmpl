@@ -1,7 +1,8 @@
 """Run the evalsets under pytest.
 
-`adk eval` prints a summary and exits 0 whatever happens, so it cannot gate
-anything on its own. `AgentEvaluator` raises on failure, which makes pytest's
+Bare `adk eval` prints a summary and exits 0 on every version through 2.12.0
+(exit 1 on a failure from 2.13.0), and it cannot gate on a pass rate or
+regressions on its own. `AgentEvaluator` raises on failure, which makes pytest's
 exit code meaningful — that is why CI runs this rather than the CLI.
 
 Four things worth knowing:

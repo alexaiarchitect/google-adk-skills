@@ -20,7 +20,7 @@ VENVS = {
     version: Path(os.environ.get(f"ADK_SKILLS_PYTHON_{version.replace('.', '')}",
                                  PLUGIN_ROOT.parent / ".venvs" / f"adk{version.replace('.', '')}"
                                  / "bin" / "python"))
-    for version in ("2.9.2", "2.12")
+    for version in ("2.9.2", "2.12", "2.13")
 }
 EFFICIENCY = "eval_history/app_efficiency_1790000000.123456.evalset_result.json"
 CACHED = "eval_history/app_efficiency_cached_1790000100.5.evalset_result.json"
@@ -242,7 +242,7 @@ def test_the_activation_template_is_a_valid_evalset_skeleton(plugin_root):
     assert not report.has_errors()
 
 
-@pytest.mark.parametrize("version", ["2.9.2", "2.12"])
+@pytest.mark.parametrize("version", ["2.9.2", "2.12", "2.13"])
 def test_the_activation_template_validates_under_adk(plugin_root, version):
     python = need_python(version)
     path = plugin_root / "skills/eval-create/assets/templates/evalsets/activation.evalset.json"
@@ -343,7 +343,7 @@ def test_run_evals_gates_on_a_global_pass_rate(run_script, agent_dir, fake_adk, 
                        "--min-pass-rate", "0.96")
     assert above.returncode == 1 and "FAIL" in above.stdout
     dry = run_script("skills/eval-run/scripts/run_evals.py", agent, "--dry-run")
-    assert "main after 2.12.0" in dry.stderr
+    assert "exits 1 on a failure from 2.13.0" in dry.stderr
     assert run_script("skills/eval-run/scripts/run_evals.py", agent,
                       "--min-pass-rate", "2").returncode == 2
 
@@ -489,7 +489,7 @@ def test_gen_test_eval_behavioral_uses_the_happy_and_edge_cases(run_script, tmp_
     assert behaviors["forbidden"]["from_evalset"] is True
 
 
-@pytest.mark.parametrize("version", ["2.9.2", "2.12"])
+@pytest.mark.parametrize("version", ["2.9.2", "2.12", "2.13"])
 def test_the_behaviour_file_imports_under_adk(run_script, tmp_agent, version):
     """Without credentials the module skips itself after its ADK imports; with a
     dummy key it imports fully, including the agent through the Runner."""
@@ -519,7 +519,7 @@ def test_the_behaviour_file_imports_under_adk(run_script, tmp_agent, version):
     env["GOOGLE_API_KEY"] = "dummy-not-used"
     loaded = subprocess.run([str(python), "-c", code, str(out)], capture_output=True, text=True,
                             env=env, timeout=300)
-    assert "LOADED skilled_agent 3" in loaded.stdout, loaded.stdout + loaded.stderr[-800:]
+    assert "LOADED skilled_agent 4" in loaded.stdout, loaded.stdout + loaded.stderr[-800:]
 
 
 def test_run_pytest_eval_behavioral_targets_the_file_and_sets_the_gate(

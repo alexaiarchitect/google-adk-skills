@@ -19,6 +19,13 @@ Behaviour is driven by environment variables:
                                                                  informational efficiency
                                                                  metrics to every case
     FAKE_ADK_PYTEST_RETURNCODE                                   `-m pytest` exit code
+    FAKE_ADK_CHECK_PATHS                                         `eval` resolves its evalset
+                                                                 and config paths against
+                                                                 its cwd, as ADK does
+
+Without FAKE_ADK_RETURNCODE, `eval` exits the way the reported version does:
+0 whatever the result through 2.12.0, 1 when a case did not pass from 2.13.0
+(NOT_EVALUATED counts as not passed).
 
 `-m pytest ...` echoes its arguments and the ADK_EVAL_* variables as one JSON
 line, so the pytest wrapper's command line is observable. `run --state_file F`
@@ -29,13 +36,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
 
 #: The release the plugin targets. `FAKE_ADK_VERSION=2.9.2` makes this stand-in
 #: an older runner, which is how the 2.9-vs-2.10+ behaviour is tested.
-VERSION = os.environ.get("FAKE_ADK_VERSION", "2.12.0")
+VERSION = os.environ.get("FAKE_ADK_VERSION", "2.13.0")
 
 
 def _probe(code: str, args: list[str]) -> int:
@@ -128,7 +136,31 @@ def _status_case(eval_id: str, status: int) -> dict:
     }
 
 
+def _check_paths(args: list[str]) -> int:
+    """ADK reads a positional that is not a file as an eval-set id, and an id
+    with a separator is refused; a missing config file is an error too."""
+    for arg in args[1:]:
+        if arg.startswith("--config_file_path="):
+            config = arg.split("=", 1)[1]
+            if not Path(config).is_file():
+                print(f"FileNotFoundError: {config}", file=sys.stderr)
+                return 1
+            continue
+        if arg.startswith("--"):
+            continue
+        target = re.sub(r":[^/\\]*$", "", arg) if not Path(arg).exists() else arg
+        if not Path(target).exists() and ("/" in target or "\\" in target):
+            print(f"ValueError: eval_set_id '{target}' must not contain path separators.",
+                  file=sys.stderr)
+            return 1
+    return 0
+
+
 def _eval(args: list[str]) -> int:
+    if os.environ.get("FAKE_ADK_CHECK_PATHS"):
+        refused = _check_paths(args)
+        if refused:
+            return refused
     agent_dir = Path(args[0]).resolve() if args else Path.cwd()
     eval_set = os.environ.get("FAKE_ADK_EVAL_SET", "fixture_set")
     passed = int(os.environ.get("FAKE_ADK_PASSED", "2"))
@@ -158,7 +190,10 @@ def _eval(args: list[str]) -> int:
     # ADK counts anything that is not PASSED in the failed column.
     print(f"  Tests passed: {passed}")
     print(f"  Tests failed: {failed + skipped}")
-    return int(os.environ.get("FAKE_ADK_RETURNCODE", "0"))
+    if "FAKE_ADK_RETURNCODE" in os.environ:
+        return int(os.environ["FAKE_ADK_RETURNCODE"])
+    exits_on_failure = tuple(int(p) for p in VERSION.split(".")[:2]) >= (2, 13)
+    return 1 if exits_on_failure and (failed + skipped or not cases) else 0
 
 
 def _run(args: list[str]) -> int:

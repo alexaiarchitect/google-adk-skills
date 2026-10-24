@@ -29,8 +29,8 @@ Their entries carry no `threshold` and no `criterion`; `token_usage_v1` adds a
 counts and out of the NOT_EVALUATED bucket, so this parser tags them and the
 analyzers report them in their own table.
 
-Two shapes from ADK main after 2.12.0 (unreleased at 2.12.0) are read when
-present and never required:
+Two shapes from ADK 2.13+ (absent through 2.12.0) are read when present and
+never required:
 
 * `invocation_duration_v1` gains `details.duration_details`
   (`DurationDetails`: `total_seconds`, `model_seconds`, `tool_seconds`,
@@ -39,6 +39,14 @@ present and never required:
   `rubric_scores`, plus one entry with `rubric_id` "explanation" that carries
   the service's rationale. That entry is an explanation, not a rubric, so it is
   kept out of the verdicts and reported as the metric's rationale.
+
+One shape from ADK main after 2.13.0 (unreleased, 7f3517e43) is tolerated:
+with `multi_run_config.num_runs` above 1, one result file holds one
+`EvalCaseResult` per run of each case, each carrying a 0-based
+`repetition_index`. Released versions write neither. When an `eval_id`
+repeats within one file, each entry is labelled "run k/N" (`repeat`, `repeats`)
+and `RunResult.case_groups()` returns the runs of each case together, so a
+comparison can take the per-case mean instead of letting the last run win.
 """
 
 from __future__ import annotations
@@ -65,7 +73,7 @@ TOKEN_USAGE_FIELDS = (
     "tool_use_tokens", "output_tokens", "candidates_tokens", "reasoning_tokens",
 )
 
-#: `DurationDetails` (post-2.12.0 main): where an invocation's seconds went.
+#: `DurationDetails` (ADK 2.13+): where an invocation's seconds went.
 DURATION_FIELDS = ("total_seconds", "model_seconds", "tool_seconds", "framework_seconds")
 
 #: The rubric id Vertex rubric verdicts use for the service's rationale.
@@ -129,7 +137,7 @@ class MetricResult:
     rubric_scores: list[dict[str, Any]] = field(default_factory=list)
     #: `token_usage_v1` only: the eight nested per-type counts.
     token_usage: dict[str, float] = field(default_factory=dict)
-    #: `invocation_duration_v1` on ADK main after 2.12.0: model / tool /
+    #: `invocation_duration_v1` on ADK 2.13+: model / tool /
     #: framework seconds. Empty when the run did not report the split.
     duration: dict[str, float] = field(default_factory=dict)
     #: A Vertex rubric metric's overall rationale (the "explanation" entry).
@@ -200,6 +208,19 @@ class CaseResult:
     session_id: str = ""
     metrics: list[MetricResult] = field(default_factory=list)
     invocations: list[InvocationResult] = field(default_factory=list)
+    #: ADK main after 2.13.0 (multi-run): the 0-based run index, else None.
+    repetition_index: int | None = None
+    #: Set when the same `eval_id` appears more than once in one file:
+    #: this entry is run `repeat` of `repeats` (1-based).
+    repeat: int | None = None
+    repeats: int | None = None
+
+    @property
+    def run_label(self) -> str | None:
+        """"run k/N" for a repeated case, None for a case run once."""
+        if self.repeat is None or self.repeats is None:
+            return None
+        return f"run {self.repeat}/{self.repeats}"
 
     @property
     def passed(self) -> bool:
@@ -237,7 +258,7 @@ class CaseResult:
 
     def duration_split(self) -> dict[str, float]:
         """Model / tool / framework seconds for this case, or `{}` on every
-        released version up to 2.12.0, which reports only the total."""
+        version through 2.12.0, which reports only the total."""
         metric = self.metric("invocation_duration_v1")
         return dict(metric.duration) if metric else {}
 
@@ -247,6 +268,9 @@ class CaseResult:
             "status": self.status,
             "eval_set_id": self.eval_set_id,
             "session_id": self.session_id,
+            **({"repetition_index": self.repetition_index}
+               if self.repetition_index is not None else {}),
+            **({"run_label": self.run_label} if self.run_label else {}),
             "metrics": [m.to_dict() for m in self.gate_metrics()],
             "efficiency": [m.to_dict() for m in self.efficiency_metrics()],
             "invocations": [i.to_dict() for i in self.invocations],
@@ -348,6 +372,18 @@ class RunResult:
         }
         out["cache_hit_ratio"] = round(cached_sum / prompt_sum, 4) if both and prompt_sum else None
         return out
+
+    def case_groups(self) -> dict[str, list[CaseResult]]:
+        """Every case's entries by `eval_id`, in file order: one entry for a
+        case run once, N for a multi-run file (ADK main after 2.13.0)."""
+        groups: dict[str, list[CaseResult]] = {}
+        for case in self.cases:
+            groups.setdefault(case.eval_id, []).append(case)
+        return groups
+
+    @property
+    def repeated(self) -> bool:
+        return any(len(group) > 1 for group in self.case_groups().values())
 
     def case(self, eval_id: str) -> CaseResult | None:
         for case in self.cases:
@@ -570,8 +606,28 @@ def parse_result(path: Path | str) -> RunResult:
                 expected_text=_content_text(_get(expected, "final_response")),
                 metrics=_metric_results(_get(per, "eval_metric_results", default=[])),
             ))
+        repetition = _get(entry, "repetition_index")
+        if isinstance(repetition, int) and not isinstance(repetition, bool):
+            case.repetition_index = repetition
         run.cases.append(case)
+    _label_repeats(run)
     return run
+
+
+def _label_repeats(run: RunResult) -> None:
+    """Number the entries of every `eval_id` that repeats within the file,
+    by `repetition_index` when present, else in file order."""
+    for group in run.case_groups().values():
+        if len(group) < 2:
+            continue
+        ordered = sorted(
+            enumerate(group),
+            key=lambda pair: (pair[1].repetition_index is None,
+                              pair[1].repetition_index or 0, pair[0]),
+        )
+        for position, (_, case) in enumerate(ordered, start=1):
+            case.repeat = position
+            case.repeats = len(group)
 
 
 def latest_per_evalset(paths: Iterable[Path | str]) -> dict[str, str]:

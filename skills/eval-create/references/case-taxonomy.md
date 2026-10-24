@@ -57,6 +57,56 @@ Prefix `activation_`; `gen_cases.py` accepts `{"skill": "<name>"}` in a turn's
 starting point. What it tests is the skill's description. See
 `/adk:agent-create` `skills-and-progressive-disclosure.md`.
 
+### Resume (long-running, stateful agents)
+
+For an agent that pauses — waiting for a receipt, an approval, a delivery — and
+picks up later from a step recorded in session state. Each case seeds that state
+and checks one thing: the agent **holds** at a gate whose condition is not met,
+or **proceeds** from the recorded step without redoing earlier ones. Prefix
+`resume_`; `assets/templates/evalsets/resume.evalset.json` is the starting point.
+See "Simulating time with state" below.
+
+## Simulating time with state
+
+A workflow that waits two days for a receipt cannot be tested by waiting two
+days. It does not need to be: if the agent keeps its position in session state
+(a step key, the details it collected, the signals it is waiting for), then
+"two days later" is just a session whose state says so. Seed
+`session_input.state` and the case starts mid-workflow, in seconds.
+
+```json
+{"eval_id": "resume_hold_until_receipt",
+ "session_input": {"app_name": "app", "user_id": "evaluator",
+   "state": {"claim_step": "receipt_requested", "claim_id": "CLM-000733",
+             "claimant": {"name": "Dana Okafor", "cost_centre": "CC-310"}}},
+ "conversation": [{"user_content": {"role": "user",
+     "parts": [{"text": "Just submit it now, I'll send the receipt later."}]},
+   "final_response": {"role": "model",
+     "parts": [{"text": "I'm still waiting for the receipt for CLM-000733; I'll submit it once it arrives."}]},
+   "intermediate_data": {"tool_uses": []}}]}
+```
+
+Two shapes cover most of it:
+
+| Case | Seeded state | Expected | Metrics |
+|---|---|---|---|
+| **hold at the gate** | the step before the gate, signal still pending | `tool_uses: []` and a reply that says what it is waiting for | `tool_trajectory_avg_score` with `EXACT` (an empty list matches only an empty list); the reply by `final_response_match_v2` or a rubric ("the agent says it is waiting for the receipt and does not submit") |
+| **proceed from a step** | a later step, the signal already arrived, the details collected earlier | the next tools **in order**, with arguments taken from the seeded details | `tool_trajectory_avg_score` with `IN_ORDER` or `EXACT`; a rubric that the reply uses the seeded claimant details rather than asking again |
+
+The template pairs a hold case (`claim_step` `receipt_requested`, no tool calls)
+with a proceed case (`receipt_validated`, then `submit_claim` and
+`notify_approver` in order, with the seeded claimant's details). Write one hold
+case per gate and one proceed case per step the agent can be resumed at. The seeded keys must be ones the agent actually reads — a placeholder
+in the instruction, a tool, a callback — or the case tests nothing;
+`validate_evalset.py --agent-dir` reports a seeded key nothing reads (`EVS075`,
+info), and `/adk:agent-review` reports a placeholder nothing writes or seeds
+(`AGT080`). Seeding is per case, so each case is independent of the order the
+suite runs in. `gen_cases.py` takes `"state": {...}` on a case spec for this.
+
+How to build the agent so this works — the step machine in state, tools as
+checkpoints, resuming with a `state_delta` — is in `/adk:agent-create`
+`state-and-memory.md`.
+
 ## Not every check is a case
 
 A behaviour that can legitimately happen in several orders ("checked the cost
@@ -128,7 +178,13 @@ nothing. When two cases always fail together, one is a copy of the other.
 
 ---
 
-Sources: this plugin; the activation scope from Charlotte Liang, "Eval-driven
+Sources: this plugin; resume cases and simulating idle time with seeded state are
+paraphrased from Shubham Saboo and Eric Dong, "Build Long-running AI agents that
+pause, resume, and never lose context with ADK", Google Developers Blog,
+2026-05-12,
+https://developers.googleblog.com/build-long-running-ai-agents-that-pause-resume-and-never-lose-context-with-adk/
+(retold in this plugin's domain); `adk-python: evaluation/eval_case.py`
+(`SessionInput.state`); the activation scope from Charlotte Liang, "Eval-driven
 development: how we build better agent skills for Firebase", Firebase blog,
 2026-08-11, https://firebase.blog/posts/2026/08/eval-driven-development-agent-skills;
 behavioural checks from "The anatomy of harness engineering", Google Developers

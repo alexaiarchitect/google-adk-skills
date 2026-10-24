@@ -24,7 +24,8 @@ when someone remembers, which in practice means after the bug.
 
 **To leave.** A deterministic config and a PR-tier workflow: `/adk:eval-criteria
 --tier pr`, then `/adk:eval-ci --tier pr`. Confirm it gates — a workflow that runs
-bare `adk eval` is still L1, because it always passes.
+bare `adk eval` on 2.12 or older is still L1, because it always passes; on 2.13+
+it fails on a broken case but still has no pass-rate or regression gate.
 
 ## L2 — Automated gates
 
@@ -63,6 +64,15 @@ What to keep doing here: calibrate. Sample passing cases and check you still
 agree they should have passed. Criteria that are too lenient produce a green suite
 and a worsening agent, and nothing in the system notices.
 
+What L4 looks like in practice: the same metric names scored in development and
+on live traffic — Google's Agent Platform runs online monitors over sampled
+traffic or Cloud Trace traces, with dashboards, drift alerts and failure
+clustering — with the failing traces turned into cases and every fix graded by
+something other than whatever proposed it. A revision can also be scored before
+it takes traffic ([shadow-rollout.md](shadow-rollout.md)). The loop, and the
+local counterpart of each platform piece: `/adk:eval-analyze`
+`improvement-loop.md`.
+
 ## Discovery and defense
 
 The ladder can also be read as when a project moves from **discovery** mode
@@ -89,8 +99,9 @@ workflow exists. Two checks settle it:
 
 1. Is there a case whose expected behaviour is a **refusal**? Without one, the
    suite cannot detect an agent that says yes to everything.
-2. Does the CI step gate on something other than bare `adk eval`? If not, it has
-   never failed and never will.
+2. Does the CI step gate on something other than bare `adk eval`? On a pin
+   through 2.12 it has never failed and never will; on 2.13+ it fails on a
+   broken case but cannot hold a pass-rate floor or catch a regression.
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/assess_maturity.py <repo-root>
@@ -109,3 +120,6 @@ https://cloud.google.com/blog/topics/developers-practitioners/from-vibe-checks-t
 The Day 0/1/2 mapping is from Selbie, Zamora, Carah and DeMartino, "Evaluating AI
 agents: moving past the vibe check", Google Developers Blog, 2026-10-15,
 https://developers.googleblog.com/evaluating-ai-agents-moving-past-the-vibe-check/.
+The L4 picture draws on Martin and Melnyk, "Agent and Model Evaluations in Gemini
+Enterprise Agent Platform are now GA", Google Developers Blog, 2026-07-31,
+https://developers.googleblog.com/agent-and-model-evaluations-in-gemini-enterprise-agent-platform-are-now-ga/.

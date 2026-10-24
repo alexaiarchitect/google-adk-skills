@@ -101,7 +101,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install "google-adk[eval]==2.12.*"
+      - run: pip install "google-adk[eval]==2.13.*"
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
@@ -135,7 +135,9 @@ jobs:
 
 What makes it a gate rather than a ritual: `promote` depends on `shadow`, which
 depends on `gate`, and `gate` fails on `run_evals.py`'s exit code — never on
-bare `adk eval`, which exits 0 whatever happened. The same rules as the other
+bare `adk eval`, which exits 0 whatever happened through 2.12.0 and, from
+2.13.0, exits 1 on a failure but knows nothing of a pass-rate floor or
+never-scored cases. The same rules as the other
 tiers apply: pin the ADK version, upload `.adk/eval_history/` with
 `if: always()`, fail on `NOT_EVALUATED`.
 

@@ -63,7 +63,28 @@ names in the first three rows, so `from google.adk.plugins import
 GlobalInstructionPlugin` raises `ImportError` — the package's `__getattr__`
 lazily resolves only the names it lists. The others need their submodule path.
 The lazy list was four names on 2.9.2 and 2.10.0; 2.11.0 adds the integrity pair,
-so code that imports them has to require `google-adk>=2.11`.
+so code that imports them has to require `google-adk>=2.11`. 2.13.0 adds
+`ForceEscalationPlugin`, `ModelConsultObservabilityPlugin`, `ToolResultClassifier`
+and `ToolResultClassification` (read in the installed 2.13.0 wheel).
+
+### 2.13, in one line each
+
+- **Stable from 2.13**: tool confirmation (`require_confirmation`), tool config,
+  authenticated function tools, progressive SSE streaming, JSON-schema function
+  declarations, the `AGENT_CONFIG` flag and six more. Their `[EXPERIMENTAL]
+  feature ... is enabled.` warnings are gone; the YAML loader still warns.
+- **`ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1`** silences the remaining
+  experimental warnings (decorator ones on 2.9.2 already, feature-registry ones
+  from 2.13); `/adk:adk` `check_env.py` knows it.
+- **`pip install "google-adk[otel]"`** pulls the OTLP exporter and GenAI/gRPC/httpx
+  instrumentation; without it a configured exporter now degrades to a warning.
+- **`ForceEscalationPlugin()`** (`google.adk.plugins`) forces `ModelConsultTool`
+  calls a weak executor would skip: the first step, after repeated identical
+  calls, or before named state-changing tools. Forced consults are tool calls,
+  so the trajectory changes.
+- **Duplicate agent names** anywhere in the tree are logged (siblings before
+  2.13; cousins and an agent reused below itself from 2.13); `find_agent()`
+  returns the first depth-first match. `AGT015` reports the whole tree.
 
 ### Tool-call integrity (2.11)
 
@@ -142,6 +163,16 @@ built-ins.
 Evaluation and guardrails are not alternatives. A guardrail stops the bad thing
 happening; the eval proves the guardrail works and catches what it misses.
 
+**Policies are contracts.** An instruction ("never approve above the limit") is a
+soft constraint that an injected prompt, a prompt rewrite or a model upgrade can
+undo. A rule that must hold lives outside the model: a `before_tool_callback` or
+plugin that checks tool arguments against fixed bounds, a deterministic gateway
+for secrets and jailbreak phrasing, Model Armor, a sandboxed code executor for
+generated code. Test the enforcement directly — a blocked token, a hijack
+prompt, an out-of-bounds update, an allowed one — and the agent end to end with
+the policy-contract behaviour from `gen_test_eval.py --behavioral`
+(`/adk:eval-create` `behavioral-tests.md`).
+
 ## Callback discipline
 
 - One purpose per callback. They run on every invocation, so cost shows up.
@@ -210,4 +241,9 @@ confirmed absent from 2.9.2,
 `fdda17c`, in `v2.12.0`; both read on the installed 2.12.0 wheel and absent from
 2.11.0); `adk-docs: docs/apps/index.md`, `docs/callbacks/*`,
 `docs/plugins/index.md`, `docs/2.0/index.md`, `docs/graphs/index.md`,
-`docs/safety/index.md`.
+`docs/safety/index.md`. 2.13: `features/_feature_registry.py` (`ea298d4`),
+`utils/feature_decorator.py`, `tools/model_consult/_force_escalation_plugin.py`
+(`a84d978`), `agents/base_agent.py` (`6031bb1`), the `[otel]` extra in the 2.13.0
+wheel's `METADATA`. Policies as contracts: Saboo and Dong, "Build zero-trust AI
+agents with Google's Agent Development Kit", Google Developers Blog, 2026-08-17,
+https://developers.googleblog.com/build-zero-trust-ai-agents-with-googles-agent-development-kit/.

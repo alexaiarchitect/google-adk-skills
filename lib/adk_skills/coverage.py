@@ -183,6 +183,9 @@ class CaseSummary:
     turns: int
     text: str
     evalset: str | None = None
+    #: Keys the case seeds in `session_input.state`: a resumed session, the
+    #: way a suite simulates time passing (a workflow already at a step).
+    seeded_state: list[str] = field(default_factory=list)
 
     @property
     def is_narrow(self) -> bool:
@@ -210,6 +213,8 @@ def summarize_cases(evalsets: dict[str, dict[str, Any]]) -> list[CaseSummary]:
                     str(scenario.get("starting_prompt", "")),
                     str(scenario.get("conversation_plan", "")),
                 ])
+            session_input = case.get("session_input")
+            state = session_input.get("state") if isinstance(session_input, dict) else None
             summaries.append(CaseSummary(
                 eval_id=eval_id,
                 category=case_category(eval_id),
@@ -217,6 +222,7 @@ def summarize_cases(evalsets: dict[str, dict[str, Any]]) -> list[CaseSummary]:
                 turns=len(list(iter_invocations(case))) or 1,
                 text=" ".join(t for t in texts if t),
                 evalset=path,
+                seeded_state=sorted(str(k) for k in state) if isinstance(state, dict) else [],
             ))
     return summaries
 
@@ -302,12 +308,15 @@ def shape(cases: Sequence[CaseSummary]) -> dict[str, Any]:
     for case in cases:
         by_category[case.category] = by_category.get(case.category, 0) + 1
 
+    seeded = seeded_state_cases(cases)
     result = {
         "total": total,
         "counts": counts,
         "ratios": ratios,
         "target": TARGET_SHAPE,
         "by_category": by_category,
+        # Orthogonal to the 70/20/10 split: any case may start from seeded state.
+        "seeded_state_cases": len(seeded),
     }
     if total < MIN_CASES_FOR_SHAPE:
         # A 70/20/10 target cannot be read off three cases. Telling someone
@@ -320,6 +329,11 @@ def shape(cases: Sequence[CaseSummary]) -> dict[str, Any]:
     result["notes"] = notes
     result["verdict"] = "ok" if not notes else "gaps"
     return result
+
+
+def seeded_state_cases(cases: Sequence[CaseSummary]) -> dict[str, list[str]]:
+    """`{eval_id: seeded keys}` for the cases that start from seeded state."""
+    return {case.eval_id: case.seeded_state for case in cases if case.seeded_state}
 
 
 def n_plus_one_gaps(rules: Sequence[SopRule], cases: Sequence[CaseSummary]) -> dict[str, Any]:

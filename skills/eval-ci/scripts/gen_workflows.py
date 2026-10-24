@@ -11,7 +11,10 @@ and thorough enough to trust for a release:
   pass@k. Costs model calls per invocation per sample, so it runs on a schedule
   with a reliability report in the job summary.
 
-Both gate on the wrapper script rather than `adk eval`, which always exits 0.
+Both gate on the wrapper script rather than bare `adk eval`, which exits 0 on
+every version through 2.12.0 and exits 1 on a failure from 2.13.0; the wrapper
+reads the result files and gates (`--min-pass-rate`), so its exit code is the
+one to use.
 
     gen_workflows.py <repo-root> --tier pr|nightly|both [--auth wif|api_key]
                      [--agent-dir app] [--python 3.12] [--dry-run]

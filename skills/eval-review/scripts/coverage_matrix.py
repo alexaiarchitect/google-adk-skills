@@ -13,7 +13,9 @@ them by the tools they call and the words they share, and reports:
 * **tool coverage** - tools no case ever expects, and calls to tools that do not
   exist;
 * **skill activation** - for an agent with a `SkillToolset`, registered skills
-  no case expects to be loaded with `load_skill` (EVS073).
+  no case expects to be loaded with `load_skill` (EVS073);
+* **seeded state** - the cases whose `session_input.state` seeds keys, i.e.
+  that start mid-workflow (resume cases), with the keys each seeds.
 
 Matching is a heuristic, so the matrix is evidence for a human decision, never a
 pass or fail.
@@ -33,8 +35,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 
 from adk_skills.coverage import (  # noqa: E402
-    extract_sop_rules, matrix, n_plus_one_gaps, shape, skill_coverage, summarize_cases,
-    tool_coverage,
+    extract_sop_rules, matrix, n_plus_one_gaps, seeded_state_cases, shape, skill_coverage,
+    summarize_cases, tool_coverage,
 )
 from adk_skills.evalset import load_evalset  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
@@ -95,6 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         "shape": suite_shape["ratios"],
         "tools": tools,
         "skills": skills,
+        "seeded_state_cases": seeded_state_cases(cases),
         "instruction_dynamic": dynamic,
         "root_is_llm_agent": llm_root,
     }
@@ -164,6 +167,11 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, indent=2))
     else:
         print(report.to_md())
+        seeded = report.discovered["seeded_state_cases"]
+        print()
+        print(f"Cases that seed state: {len(seeded)} of {len(cases)}"
+              + (" (" + "; ".join(f"`{k}`: {', '.join(v)}" for k, v in seeded.items()) + ")"
+                 if seeded else ""))
         print()
         print("## Rule coverage")
         print()

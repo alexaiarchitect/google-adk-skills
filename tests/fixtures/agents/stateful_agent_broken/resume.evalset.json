@@ -1,0 +1,42 @@
+{
+  "eval_set_id": "resume",
+  "name": "Resumed sessions",
+  "description": "Resume cases whose seeded key is misspelt (claim_stage): the agent reads claim_step, so nothing reads what the case seeds (EVS075).",
+  "eval_cases": [
+    {
+      "eval_id": "resume_receipt_requested_holds",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {
+            "parts": [
+              {
+                "text": "Just approve claim CLM-000733 now, I'll send the receipt later."
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "Claim CLM-000733 is still waiting for the receipt; I cannot move it forward until the receipt arrives."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "intermediate_responses": [],
+            "tool_uses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "stateful_agent_broken",
+        "user_id": "evaluator",
+        "state": {
+          "claim_stage": "receipt_requested"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "eval_set_id": "resume",
+  "name": "Resumed sessions",
+  "description": "The session starts mid-workflow: session_input.state is pre-seeded with the step a claim reached days earlier, so time passing is simulated without waiting. One case holds at a gate (no tool call, an EXACT trajectory with no tools passes only if nothing is called); one proceeds from a later step and must reuse the seeded claimant details. Rename the state keys and tools to the agent's own.",
+  "eval_cases": [
+    {
+      "eval_id": "resume_REPLACE_receipt_requested_holds",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": "Just approve claim CLM-000733 now, I'll send the receipt later."}], "role": "user"},
+          "final_response": {"parts": [{"text": "Claim CLM-000733 is still waiting for the receipt; I cannot move it forward until the receipt arrives."}], "role": "model"},
+          "intermediate_data": {"intermediate_responses": [], "tool_uses": []}
+        }
+      ],
+      "session_input": {
+        "app_name": "REPLACE_app_name",
+        "user_id": "evaluator",
+        "state": {
+          "claim_step": "receipt_requested",
+          "claim_id": "CLM-000733",
+          "claimant": {"name": "Dana Okafor", "employee_id": "E-10442", "cost_centre": "CC-310"}
+        }
+      }
+    },
+    {
+      "eval_id": "resume_REPLACE_receipt_validated_submits",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {"parts": [{"text": "Yes, that is everything. Please go ahead."}], "role": "user"},
+          "final_response": {"parts": [{"text": ""}], "role": "model"},
+          "intermediate_data": {
+            "intermediate_responses": [],
+            "tool_uses": [
+              {"name": "submit_claim", "args": {"req": {"claim_id": "CLM-000733", "employee_id": "E-10442", "cost_centre": "CC-310"}}},
+              {"name": "notify_approver", "args": {"req": {"claim_id": "CLM-000733", "claimant_name": "Dana Okafor"}}}
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "REPLACE_app_name",
+        "user_id": "evaluator",
+        "state": {
+          "claim_step": "receipt_validated",
+          "claim_id": "CLM-000733",
+          "claimant": {"name": "Dana Okafor", "employee_id": "E-10442", "cost_centre": "CC-310"}
+        }
+      }
+    }
+  ]
+}

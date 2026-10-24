@@ -59,11 +59,11 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 
 | # | Dimension | What goes wrong |
 |---|---|---|
-| 1 | loader and naming | nothing loadable exported; a name that is not an identifier, or is `user` |
+| 1 | loader and naming | nothing loadable exported; a name that is not an identifier, or is `user`; two agents in the tree with one name (`AGT015`) |
 | 2 | model policy | retiring `gemini-2.0-flash` / `gemini-2.5-flash` (a plugin policy, so a warning), preview ids, hardcoded dated ids |
 | 3 | agent configuration | sampling kwargs passed directly; `generate_content_config` carrying tools, system_instruction or response_schema |
 | 4 | tool contracts | no docstring, no `Args:`, untyped parameters, raising instead of returning, no `status` |
-| 5 | state | `session.state[...] = ...` on a service-fetched session |
+| 5 | state | `session.state[...] = ...` on a service-fetched session; an instruction `{key}` nothing writes or seeds (`AGT080`) |
 | 6 | App wiring | no `App`, so plugins, caching and resumability cannot reach a run |
 | 7 | 2.x drift | `SequentialAgent` / `ParallelAgent` / `LoopAgent`, `global_instruction`, YAML config agents |
 | 8 | environment | no backend configured; missing project or location |

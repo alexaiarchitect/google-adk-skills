@@ -2,7 +2,8 @@
 name: eval-create
 description: >-
   Designs, writes and manages Google ADK eval cases. Covers the case taxonomy
-  (happy path, edge and refusal, adversarial, memory, regression), how many
+  (happy path, edge and refusal, adversarial, memory, regression, resume from
+  seeded state), how many
   cases a suite needs and of what shape, naming, capturing a golden trace from
   a real run or a saved session, converting `adk run --jsonl` output into an
   eval case, migrating legacy eval files (both legacy shapes) to the current
@@ -68,6 +69,7 @@ time is the same discipline applied to renames, splits and deletions.
 | **memory** | a constraint stated once survives intervening turns | `memory_` |
 | **regression** | a fixed bug stays fixed | `regression_` |
 | **activation** | a skill-equipped agent loads the right skill, and none for an unrelated request | `activation_` |
+| **resume** | a stateful agent, started from seeded `session_input.state`, holds at an unmet gate or proceeds from the recorded step | `resume_` |
 
 Roughly 70% narrow single-turn cases, 20% multi-turn, 10% adversarial. Weight
 adversarial higher for an agent that spends money or writes to a system of
@@ -128,14 +130,15 @@ threshold sliders; see [managing-evalsets.md](references/managing-evalsets.md).
 | Activation cases for an agent with ADK skills | [skills-and-progressive-disclosure.md](../agent-create/references/skills-and-progressive-disclosure.md) |
 
 Templates: `assets/templates/evalsets/` — one per category (including
-`activation.evalset.json`, a positive and a negative skill-load case), a baseline
-no-tools case, and a scenario case.
+`activation.evalset.json`, a positive and a negative skill-load case, and
+`resume.evalset.json`, a hold-at-gate and a proceed-from-step case seeded with
+state), a baseline no-tools case, and a scenario case.
 
 ## Scripts
 
 | Command | Does | Exit codes |
 |---|---|---|
-| `scripts/gen_cases.py <agent-dir> --spec JSON (--evalset F \| --new ID) [--dry-run]` | adds cases, refuses to touch existing ids; a `{"skill": "name"}` entry in a turn's `tools`, or `"skill": "name"` on the turn (loaded first), becomes `load_skill` with `{"skill_name": "name"}`, prefixed when the toolset sets `tool_name_prefix`; `activation_*` ids land in the activation category | 0, 1 findings or clash, 2 usage |
+| `scripts/gen_cases.py <agent-dir> --spec JSON (--evalset F \| --new ID) [--dry-run]` | adds cases, refuses to touch existing ids; a `{"skill": "name"}` entry in a turn's `tools`, or `"skill": "name"` on the turn (loaded first), becomes `load_skill` with `{"skill_name": "name"}`, prefixed when the toolset sets `tool_name_prefix`; `activation_*` ids land in the activation category; `"state": {...}` on a case seeds its `session_input.state` (resume cases, simulated idle time) | 0, 1 findings or clash, 2 usage |
 | `scripts/session_to_evalset.py --trace F --eval-id ID --evalset F [--drop-final-response]` | turns a run into a case | 0, 1 findings, 2 usage |
 | `scripts/migrate_legacy.py <old.test.json> [--out F] [--eval-set-id ID]` | either legacy shape to the EvalSet schema | 0, 1 findings, 2 usage |
 | `scripts/manage_cases.py list\|show\|rename\|move\|remove\|dedupe\|split\|rebase-app-name ... [--evalset F] [--dry-run] [--registry F] [--unfreeze]` | curates an existing suite through a write plan; refuses to remove, rename, move (either end), split, `dedupe --apply` or rebase a case in a `"frozen": true` suite (`EVS120`, read from `--registry` or the nearest `eval_registry.json`) unless `--unfreeze`; adding cases to a frozen suite is allowed | 0, 1 refused, 2 usage or frozen |

@@ -11,9 +11,10 @@ adk eval AGENT_MODULE_FILE_PATH [EVAL_SET_FILE_PATH_OR_ID ...]
          [--log_level debug|info|warning|error|critical]
 ```
 
-That is the whole list, and the **options are identical on 2.9.2, 2.10.0, 2.11.0
-and 2.12.0**: no eval or conformance flag was added, renamed or removed in 2.10,
-2.11 or 2.12. The only `--help` changes in 2.12.0 are docstring fixes (commit
+That is the whole list, and the **options are identical on 2.9.2, 2.10.0, 2.11.0,
+2.12.0 and 2.13.0**: no eval or conformance flag was added, renamed or removed in
+2.10 through 2.13 (2.13.0's `--help` for `eval`, `run`, `web`, `conformance` and
+`eval_set` matches 2.12.0's). The only `--help` changes in 2.12.0 are docstring fixes (commit
 `d56a994`): `adk eval` now says `AGENT_MODULE_FILE_PATH` is the agent *folder*,
 and `adk conformance record` finally names `spec.yaml` instead of `input.yaml` /
 `test.yaml` and documents its streaming-mode argument. `adk eval_set` and its
@@ -30,12 +31,16 @@ sub-commands are byte-for-byte unchanged.
 
 ### What it does not have
 
-- **No exit code on any release.** It prints the summary and returns 0 whether
-  cases passed or failed — measured again on 2.12.0. This is the single most
-  important fact about the command; see "Coming after 2.12.0" below.
-- **No `--num_runs`.** Repetition is either `AgentEvaluator(num_runs=...)`, which
-  averages, or running the command again, which is what `run_evals.py --runs N`
-  does.
+- **No gate before 2.13.0, and only a coarse one after.** Through 2.12.0 it
+  prints the summary and returns 0 whether cases passed or failed (measured on
+  2.12.0). From 2.13.0 it exits 1 when a case fails or no case ran, and
+  `NOT_EVALUATED` counts as failed (measured on 2.13.0). Either way it cannot
+  gate on a pass rate, on regressions against a baseline, or on a budget; see
+  "In 2.13.0" below.
+- **No `--num_runs` on any release.** Repetition is either
+  `AgentEvaluator(num_runs=...)`, which averages, or running the command again,
+  which is what `run_evals.py --runs N` does. Main after 2.13.0 adds the flag
+  (see the last section).
 - **No parallelism flag.** `InferenceConfig.parallelism` and
   `EvaluateConfig.parallelism` exist, but only on the programmatic path. On 2.10+ a
   value below 1 raises ``ValueError: `parallelism` must be at least 1, got N.``
@@ -85,6 +90,14 @@ adk web <agents-dir>                        # dev UI: trace tab and eval tab
 adk api_server <agents-dir>                 # same API, no UI, no /dev routes
 ```
 
+**`initial_state.json` (2.13+, `adk web` only).** There is no flag: `adk web`
+reads `<agents_dir>/<app>/initial_state.json` whenever a session is created
+explicitly (the UI's new-session button, `POST .../sessions`) and merges it under
+the caller's state, so a key the caller sends wins. Sessions the runner creates
+on its own (`--auto_create_session`) are not seeded, and `adk api_server` never
+reads the file. A missing or malformed file logs a warning and seeds nothing.
+`adk run --state_file` (below) is the equivalent for the terminal.
+
 `adk run` prints events to stdout and writes its log to
 `$TMPDIR/agents_log/agent.latest.log`; `adk web` does the opposite. The directory
 comes from `tempfile.gettempdir()`, so it is platform dependent — `/tmp` on
@@ -105,16 +118,57 @@ the per-invocation details print as readable text instead of a dumped object.
 The judge requests also run with automatic function calling disabled (`cc339e0`),
 and eval session ids are generated in a form Agent Engine accepts (`4368d68`).
 
-### Coming after 2.12.0 (unreleased main)
+### In 2.13.0
 
-`adk-python` main after the `v2.12.0` tag (`c2ff634`) makes `adk eval` exit with
-`1 if total_failed or not eval_run_summary else 0`, so a failing case finally
-fails the process. Main also splits each invocation's duration into model, tool
-and framework time (`e3797a4`) and folds Vertex rubric verdicts into the result
-files (`bc220d2`); see `/adk:eval-analyze` `result-schema.md`. None of this is in
-a release yet. **On every released version, `run_evals.py`'s exit code is the
-authoritative verdict**: it reads the result files and exits 1 on any failed or
-not-evaluated case, and it will keep doing so when the upstream fix ships.
+- **Exit code** (`c2ff634`): `adk eval` exits
+  `1 if total_failed or not eval_run_summary else 0` — 1 on a failed case, 1 when
+  no case ran, and `NOT_EVALUATED` counts as failed. Measured: a failing case
+  exits 0 on 2.12.0 and 1 on 2.13.0; a passing case exits 0 on both.
+- **Duration split** (`e3797a4`): `invocation_duration_v1` results carry
+  `details.duration_details.{total,model,tool,framework}_seconds`, and
+  `--print_detailed_results` prints the breakdown.
+- **Vertex rubric verdicts** (`bc220d2`): extra `RubricScore` rows with the ids
+  `"explanation"` and `"error"` inside the existing `rubric_scores`.
+- **`AgentEvaluator.evaluate`** takes each metric's pass direction from the
+  evaluator's own per-invocation `eval_status` (`5bf7f12`), so lower-is-better
+  custom metrics gate correctly; judge and user-simulator models may be `BaseLlm` instances, not
+  only model-id strings (`c12392e`, `cb48b91`).
+- **Drive-qualified ids** (`29bb053`): an `eval_set_id` (or app name) starting
+  with a letter and a colon (`c:pass`) is rejected when results are saved — after
+  inference has already been paid for. `validate_evalset.py` flags it (`EVS076`).
+
+See `/adk:eval-analyze` `result-schema.md` for the result-file shapes. **`run_evals.py`
+stays the recommended command on every version**: it reads the result files,
+separates failed from never-scored, and gates on `--min-pass-rate`; with
+`compare_runs.py --max-regressions` and the budget flags it gates on things a
+single process exit cannot express. Bare `adk eval` on a 2.13+ pin is a
+`CI001` warning in `lint_workflows.py`, an error on an older or unknown pin.
+
+### Coming after 2.13.0 (unreleased main)
+
+Not in any release yet (checked against `adk-python` `12c7bed76`):
+
+- **`adk eval --num_runs N` and `EvalConfig.multi_run_config`** (`7f3517e`):
+  `num_runs`; `cross_run_scoring` (`mean_over_invocations` by default, or
+  `mean_of_runs`, `min_over_runs`, or a rule such as
+  `{"method": "pass_rate", "threshold": 0.9}`); `cross_run_scoring_by_metric`,
+  whose keys must appear in `criteria`; `cross_run_criteria`, a list of rules;
+  `max_crashed_runs` (default 0); `custom_methods` with a `code_config` and
+  `uses_scores`. Results gain `repetition_index`, and pinned session ids are
+  dropped with a warning when `num_runs > 1`. `AgentEvaluator` keeps its own
+  `num_runs` default of 2.
+- **`google.adk.tools.tool_args_matcher`** (`ed76f94`): `BaseArgMatcher` with
+  exact, casefold, numeric, contains and ignore matchers and
+  `ToolArgsMatcher(allow_extra_args=...)`. No evaluator uses it yet; trajectory
+  matching is still exact.
+- **Per-session compaction** (`9331638`): a plugin's `before_run_callback` can set
+  the compaction config for one session.
+- **Prompt-cache creation tokens** on `LlmResponse` (`b89dda4`).
+
+Released versions drop `multi_run_config` silently (the config model ignores
+unknown keys; measured on 2.9.2, 2.12.0 and 2.13.0), so `pass_at_k.py` and
+`run_evals.py --runs` remain the way to batch today. `validate_config.py` reports
+the key as `CFG072` (info) and checks its shape (`CFG073`).
 
 ## Two other test commands
 
@@ -138,6 +192,34 @@ second. Case management in this plugin sorts on the parsed float.
 With `--eval_storage_uri gs://...` the same content goes to Cloud Storage, which
 is how CI and humans end up reading the same history.
 
+## Deploy, briefly
+
+`adk deploy cloud_run --with_cloud_run_sandbox` (present since 2.12.0; only the
+docs entry is new) enables the Cloud Run sandbox for code execution, off by
+default; ADK then deploys with `gcloud beta run deploy --sandbox-launcher`.
+Deployment is outside this plugin; what matters here is that the evals run
+against the same agent directory before it ships.
+
+## Neighbours: `agents-cli eval`
+
+Google's Agents CLI wraps a hosted path around the same agents:
+`agents-cli eval dataset synthesize` (cases from the user simulator),
+`eval generate` (run inference), `eval grade --traces --config` (score traces with
+the Agent Platform evaluation service), `eval compare`, `eval analyze`, and
+`eval optimize`; `agents-cli eval run` scores trajectories in CI. Its extension
+system is **experimental**, so pin the CLI version and commit the extension
+lockfile (`agents-cli-extensions.yaml`) and vendored `extensions/` directory. In a
+LangChain project, the first-party extension overrides `eval generate`, keeps
+`eval grade|compare|analyze` (they read a shared dataset format), and refuses
+`eval dataset` and `eval optimize`, which need an ADK agent object. This plugin's
+scripts are the local, credential-light equivalent; `/adk:eval-analyze`
+`improvement-loop.md` maps one onto the other.
+
+Python is ADK's reference implementation and where its evaluation tooling
+lives, so the evals stay in Python even when the production service is written
+in Go, Java, TypeScript or Kotlin: `adk eval` or `agents-cli eval run` scores
+trajectories against golden datasets in CI and tests the system end to end.
+
 ---
 
 Sources: `adk-python: cli/cli_tools_click.py`, `cli/cli_eval.py`, `cli/cli.py`,
@@ -149,4 +231,13 @@ Sources: `adk-python: cli/cli_tools_click.py`, `cli/cli_eval.py`, `cli/cli.py`,
 Every flag list above was diffed between the installed 2.9.2, 2.10.0, 2.11.0 and
 2.12.0 wheels' `--help` output; `--state_file` is `adk-python` commit `c390266`
 (in `v2.12.0`); the bare `adk eval` exit code was measured as 0 on 2.12.0 with a
-failing case, and `c2ff634` (the exit-code fix) is on main after the tag.
+failing case and as 1 on 2.13.0 (`c2ff634`, in `v2.13.0`); `initial_state.json` is
+`3c8c63e`, in `v2.13.0` (`cli/dev_server.py`); the multi-run, matcher, compaction
+and cache-token items were classified post-tag against `v2.13.0` at `12c7bed76`;
+`adk-docs: docs/deploy/cloud-run.md` (`cc53b6c14`). Neighbours: "Powering the
+Agent Development Lifecycle with any framework, from ADK to LangChain and beyond"
+(https://developers.googleblog.com/powering-the-agent-development-lifecycle-with-any-framework-from-adk-to-langchain-and-beyond/),
+"One Agent Development Kit, five languages"
+(https://cloud.google.com/blog/topics/developers-practitioners/one-agent-development-kit-five-languages),
+"Driving the Agent Quality Flywheel from Your Coding Agent"
+(https://developers.googleblog.com/driving-the-agent-quality-flywheel-from-your-coding-agent/).

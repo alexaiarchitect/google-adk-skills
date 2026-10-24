@@ -20,7 +20,12 @@ stands.
 
 Each side is a result file, or a directory (an `eval_history`, an agent dir or a
 project) from which `--latest` takes the newest run of each eval set; `--evalset`
-keeps one eval set. Cases are matched by `eval_id`.
+keeps one eval set. Cases are matched by `eval_id`. A file that holds several
+runs of one case (ADK main after 2.13.0, `multi_run_config`, unreleased) counts
+that case once, with the per-case mean: its share of the pass rate is the
+fraction of its runs that passed, its efficiency figures are the means over its
+runs, and it counts as passed for the flip comparison only when every run
+passed (failed when any run failed).
 
     compare_runs.py <baseline> <candidate> [--latest] [--evalset ID] [--json]
                     [--min-pass-rate P] [--max-regressions N]
@@ -129,20 +134,40 @@ def _case_key(case: CaseResult, duplicated: set[str]) -> str:
     return f"{case.eval_set_id}/{case.eval_id}" if case.eval_id in duplicated else case.eval_id
 
 
+def _group_status(group: list[CaseResult]) -> str:
+    """One status for a case's runs: PASSED only when every run passed."""
+    statuses = [case.status for case in group]
+    if all(status == "PASSED" for status in statuses):
+        return "PASSED"
+    if "FAILED" in statuses:
+        return "FAILED"
+    return "NOT_EVALUATED" if "NOT_EVALUATED" in statuses else statuses[0]
+
+
+def _group_mean_metric(group: list[CaseResult], name: str) -> float | None:
+    scores = [float(m.score) for case in group for m in [case.metric(name)]
+              if m is not None and isinstance(m.score, (int, float))]
+    return _mean(scores)
+
+
 def side_stats(runs: list[RunResult]) -> dict[str, Any]:
     """Pass rate and mean efficiency figures over every case in the runs."""
-    cases = [case for run in runs for case in run.cases]
+    groups = [group for run in runs for group in run.case_groups().values()]
+    cases = [group[0] for group in groups]
     ids = [case.eval_id for case in cases]
     duplicated = {i for i in ids if ids.count(i) > 1}
-    statuses = {_case_key(case, duplicated): case.status for case in cases}
+    statuses = {_case_key(group[0], duplicated): _group_status(group) for group in groups}
+    pass_means = {_case_key(group[0], duplicated):
+                  sum(1 for case in group if case.passed) / len(group)
+                  for group in groups}
 
     tokens: dict[str, list[float]] = {name: [] for name in TOKEN_FIGURES}
     calls: dict[str, list[float]] = {name: [] for name in CALL_METRICS}
     uncached: list[float] = []
     cached_sum = prompt_sum = 0.0
     ratio_cases = 0
-    for case in cases:
-        usage = case.token_usage()
+    for group in groups:
+        usage = _group_usage(group)
         for name, key in TOKEN_FIGURES.items():
             if key in usage:
                 tokens[name].append(usage[key])
@@ -153,13 +178,14 @@ def side_stats(runs: list[RunResult]) -> dict[str, Any]:
             prompt_sum += usage["prompt_tokens"]
             ratio_cases += 1
         for name, metric_name in CALL_METRICS.items():
-            metric = case.metric(metric_name)
-            if metric is not None and isinstance(metric.score, (int, float)):
-                calls[name].append(float(metric.score))
+            value = _group_mean_metric(group, metric_name)
+            if value is not None:
+                calls[name].append(value)
 
-    passed = sum(1 for case in cases if case.passed)
+    passed = sum(1 for status in statuses.values() if status == "PASSED")
     figures: dict[str, Any] = {
-        "pass_rate": round(passed / len(cases), 4) if cases else None,
+        "pass_rate": (round(sum(pass_means.values()) / len(pass_means), 4)
+                      if pass_means else None),
         **{name: _mean(values) for name, values in tokens.items()},
         "uncached_prompt_tokens": _mean(uncached),
         "cache_hit_ratio": round(cached_sum / prompt_sum, 4) if ratio_cases and prompt_sum else None,
@@ -170,11 +196,25 @@ def side_stats(runs: list[RunResult]) -> dict[str, Any]:
         "eval_sets": sorted({run.eval_set_id for run in runs}),
         "cases": len(cases),
         "passed": passed,
-        "failed": sum(1 for case in cases if case.status == "FAILED"),
-        "not_evaluated": sum(1 for case in cases if case.not_evaluated),
+        "failed": sum(1 for status in statuses.values() if status == "FAILED"),
+        "not_evaluated": sum(1 for status in statuses.values() if status == "NOT_EVALUATED"),
+        "repeated_cases": {key: {"runs": len(group), "pass_mean": round(pass_means[key], 4)}
+                           for group in groups if len(group) > 1
+                           for key in [_case_key(group[0], duplicated)]},
         "figures": figures,
         "statuses": statuses,
     }
+
+
+def _group_usage(group: list[CaseResult]) -> dict[str, float]:
+    """The token breakdown of a case, averaged key by key over its runs."""
+    if len(group) == 1:
+        return group[0].token_usage()
+    values: dict[str, list[float]] = {}
+    for case in group:
+        for key, value in case.token_usage().items():
+            values.setdefault(key, []).append(value)
+    return {key: sum(v) / len(v) for key, v in values.items()}
 
 
 def compare(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:

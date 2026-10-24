@@ -481,6 +481,6 @@ def test_a_212_run_without_the_split_has_none(fixtures):
     assert run.duration_means() == {}
 
 
-def test_the_target_release_is_2_12():
-    assert ADK_TARGET == "2.12"
+def test_the_target_release_is_2_13():
+    assert ADK_TARGET == "2.13"
     assert "unload_skill" in SKILL_TOOL_NAMES

@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install "google-adk[eval]==2.12.*"
+      - run: pip install "google-adk[eval]==2.13.*"
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
@@ -55,7 +55,7 @@ The parts that matter, and why:
 
 | Line | Why |
 |---|---|
-| `run_evals.py`, not `adk eval` | the command always exits 0 |
+| `run_evals.py`, not `adk eval` | `adk eval` exits 0 whatever happened through 2.12.0; from 2.13.0 it exits 1 on a failure but cannot gate on a pass rate, regressions or budgets |
 | `--not-evaluated fail` | a never-scored case means the gate broke |
 | `id-token: write` | without it, Workload Identity auth fails before any eval runs |
 | `upload-artifact` with `if: always()` | a red pipeline with no artifact teaches nobody anything |
@@ -129,6 +129,20 @@ If you would rather not vendor anything, use the project's own pytest suite
 instead — `pytest tests/eval` gates correctly on its own, because
 `AgentEvaluator` raises.
 
+## Projects whose production code is not ADK Python
+
+A service written in Go, Java, TypeScript or Kotlin still gets its eval gate from
+Python: ADK's evaluation tooling lives in the Python reference implementation and
+scores trajectories against golden datasets end to end, whatever language serves
+production. A team on Google's Agents CLI may run `agents-cli eval run` (or
+`eval grade` over traces) in the same job instead; its extension system is
+experimental, so pin the CLI version and commit the extension lockfile
+(`agents-cli-extensions.yaml`) and the vendored `extensions/` directory, or CI
+and a laptop run different code. A LangChain project on the first-party
+extension keeps `eval grade|compare|analyze` but not `eval dataset|optimize`,
+which need an ADK agent object. Either way the gate rules here hold: a real exit
+code, never-scored counted as a failure, history uploaded.
+
 ## Conformance
 
 An optional third workflow replays recorded transcripts to catch drift. Worth
@@ -138,4 +152,10 @@ every intentional change needs the recordings regenerated.
 ---
 
 Sources: this plugin's workflow templates;
-`google-github-actions/auth` documentation; `adk-python: cli/cli_tools_click.py`.
+`google-github-actions/auth` documentation; `adk-python: cli/cli_tools_click.py`
+(bare `adk eval` exit code measured on 2.12.0 and 2.13.0). Other languages and
+agents-cli: Karl Weinmeister, "One Agent Development Kit, five languages",
+https://cloud.google.com/blog/topics/developers-practitioners/one-agent-development-kit-five-languages;
+Ippolito and Secchi, "Powering the Agent Development Lifecycle with any
+framework, from ADK to LangChain and beyond",
+https://developers.googleblog.com/powering-the-agent-development-lifecycle-with-any-framework-from-adk-to-langchain-and-beyond/.

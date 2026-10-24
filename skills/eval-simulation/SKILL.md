@@ -114,6 +114,13 @@ apply to half the cases.
   needs an HTTP code and a message, and every injection carries exactly one of
   an error or a response. Keep probabilities at 0 except in the case that is
   about the failure.
+- **A voice agent gets a voice suite.** `type: llm_audio` plus
+  `live_model_config` runs the cases through TTS and the Live API; nothing in
+  the audio block is required and ADK accepts misspelled keys, so generate it
+  with `gen_sim_config.py --audio` and let `validate_sim_config.py` check it
+  (`SIM032`–`SIM034`). Drop `live_model_config` to debug the same cases in text.
+  Judge the conversation with an intent rubric, vary voices and personas, and
+  keep live suites out of the PR tier unless the budget allows.
 - **Scenario generation spends on the Vertex evaluation service** and needs
   `GOOGLE_API_KEY` or a project and location; the wrapper checks before paying.
 
@@ -121,7 +128,7 @@ apply to half the cases.
 
 | Question | File |
 |---|---|
-| Scenarios, plans, simulator configs | [user-simulation.md](references/user-simulation.md) |
+| Scenarios, plans, simulator configs, live and voice evals | [user-simulation.md](references/user-simulation.md) |
 | Personas and violation rubrics | [personas.md](references/personas.md) |
 | Mocking tools, injecting errors and latency | [environment-simulation.md](references/environment-simulation.md) |
 
@@ -134,7 +141,8 @@ generation config, and an environment-simulation module.
 |---|---|---|
 | `scripts/gen_scenarios.py <agent-dir> --spec JSON (--evalset F \| --new ID)` | writes scenario cases, checks the config can score them | 0, 1 findings or clash, 2 usage |
 | `scripts/gen_sim_config.py --kind user\|env\|generate [--model M] [--tools ...] [--out F]` | generates a config with the real field names | 0, 2 usage |
-| `scripts/validate_sim_config.py <agent-dir> [--config F]` | checks scenarios, simulator and metrics agree | 0 clean, 1 findings, 2 nothing to check |
+| `scripts/gen_sim_config.py --kind user --audio [--audio-model M] [--voice V] [--language L] [--live-timeout S]` | an `llm_audio` simulator with the voice nested where ADK reads it (`audio_model_configuration.speech_config...`), defaults `cloud_tts`, `en-US-Studio-O`, `en-US`; `--live-timeout S` adds `live_model_config` (Live API inference), omit it to run in text | 0, 2 usage |
+| `scripts/validate_sim_config.py <agent-dir> [--config F]` | checks scenarios, simulator and metrics agree; for live runs, `SIM032` timeout ≤ 0, `SIM033` live config on a non-live model, `SIM034` unknown simulator key | 0 clean, 1 findings, 2 nothing to check |
 | `scripts/generate_eval_cases.py <agent-dir> <eval_set_id> --config F [--dry-run]` | asks the evaluation service for scenarios, validates the result | 0, 1 errors, 2 env |
 
 ## Completion checklist

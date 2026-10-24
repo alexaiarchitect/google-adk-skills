@@ -7,7 +7,7 @@
 ```
 
 `adk create` gitignores `.adk/`. With `--eval_storage_uri gs://...` the same
-content goes to Cloud Storage instead. Unchanged on 2.10, 2.11 and 2.12: the history still lands
+content goes to Cloud Storage instead. Unchanged on 2.10 through 2.13: the history still lands
 inside the **agent module** directory, not at the project root, so a recipes
 layout writes to `<project>/app/.adk/eval_history/`.
 
@@ -130,29 +130,50 @@ A rubric metric's `details.rubric_scores` is a list of
 fastest way to tell "the agent did the wrong thing" from "the rubric asks the
 wrong question".
 
-## Coming after 2.12.0 (unreleased main)
+## In 2.13.0
 
-Three result-file changes sit on `adk-python` main after the `v2.12.0` tag and
-are in no release yet. A parser should tolerate them now; this plugin's does.
+Three result-file changes shipped in 2.13.0 (they sat on main after 2.12.0). A
+parser has to tolerate both shapes; this plugin's does.
 
 - **`details.duration_details`** on the `invocation_duration_v1` entry (overall
   and per invocation): `{total_seconds, model_seconds, tool_seconds,
   framework_seconds}`. The parts partition the turn, so they add back up to the
   total; overlapping model calls or tool runs count once, and
   `framework_seconds` is the remainder. A field is `null` when the invocation was
-  read back rather than run (commit `e3797a4`).
-- **Vertex rubric verdicts** folded into `details.rubric_scores`, with an extra
-  entry whose `rubric_id` is `"explanation"` carrying the judge's overall
-  explanation (commit `bc220d2`). Do not count it as a rubric.
+  read back rather than run (commit `e3797a4`). Measured on 2.13.0: only the
+  `invocation_duration_v1` entry carries it (`duration_details` is `null` on the
+  other metrics), and on 2.12.0 the `details` object has no such key at all.
+- **Vertex rubric verdicts** folded into `details.rubric_scores` as ordinary
+  `RubricScore` rows — no new field — plus an entry whose `rubric_id` is
+  `"explanation"` carrying the judge's overall explanation and, when the service
+  failed, one whose `rubric_id` is `"error"` (commit `bc220d2`; Vertex-served
+  metrics only). Count neither as a rubric.
 - **Per-metric `eval_status`** honoured by `AgentEvaluator.evaluate` (commit
   `5bf7f12`): the overall verdict takes its direction from the evaluator's own
   per-invocation statuses, so a lower-is-better metric (cost, latency) is no
   longer failed by a hard-coded `score >= threshold`. This touches the pytest
   path only; the files `adk eval` writes are unchanged by it.
 
-Main also makes bare `adk eval` exit 1 on a failure (`c2ff634`). On every released
-version the exit code of `run_evals.py`, computed from these files, is the
-authoritative verdict.
+2.13.0 also makes bare `adk eval` exit 1 when a case fails or none ran
+(`c2ff634`; 0 whatever happened through 2.12.0), and rejects a drive-qualified
+`eval_set_id` (`c:pass`) when it saves these files, after inference. The exit code
+of `run_evals.py`, computed from these files, stays the recommended verdict on
+every version: it separates failed from never-scored and carries the pass-rate
+gate.
+
+## Coming after 2.13.0 (unreleased main)
+
+`adk-python` main after the `v2.13.0` tag (`7f3517e`) adds `repetition_index` to
+`EvalCaseResult` and `InferenceResult`, set when `adk eval --num_runs N` or
+`EvalConfig.multi_run_config` repeats a case; the cross-run verdict comes from
+`cross_run_scoring` (`mean_over_invocations` default, `mean_of_runs`,
+`min_over_runs`, or a `pass_rate` rule with a `threshold`) and
+`cross_run_criteria`, with `max_crashed_runs` default 0. `summarize_results.py`
+already groups repeated runs of one `eval_id` when the field is present. Main
+also serialises prompt-cache creation tokens on `LlmResponse`, has a tool
+argument matcher not yet used by any evaluator, and lets a plugin set compaction
+per session. Released versions drop `multi_run_config` silently, so `pass_at_k.py`
+and `run_evals.py --runs` remain the way to batch today.
 
 ## Deprecated fields
 
@@ -172,5 +193,9 @@ Sources: `adk-python: evaluation/eval_result.py`, `evaluation/eval_metrics.py`
 `evaluation/local_eval_service.py`, `cli/cli_tools_click.py`. Result files
 re-measured on installed 2.9.2, 2.10.0, 2.11.0 and 2.12.0 wheels (on 2.12.0 a
 credential-less run still writes `final_eval_status: 2` with no metrics); the efficiency entry shape was
-read off the evaluators driven over a synthetic invocation. Post-2.12 shapes:
-`evaluation/eval_metrics.py` (`DurationDetails`) on main `a6ed859`.
+read off the evaluators driven over a synthetic invocation. The 2.13.0 shapes
+(`DurationDetails`, `duration_details` on `invocation_duration_v1` only) were
+measured on the installed 2.13.0 wheel with a deterministic fake model; the
+rubric-verdict rows (`bc220d2`) were read in source, not measured, because they
+need Vertex credentials. `repetition_index` is `evaluation/eval_result.py` on main
+`12c7bed76`, post-tag.

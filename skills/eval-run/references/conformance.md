@@ -77,9 +77,11 @@ between 2.9.2 and 2.12.0; the help text changed only in 2.12.0's docstring fixes
 
 **It exits non-zero when a case fails.** On failure the command raises
 `click.ClickException("N test(s) failed")`, which click turns into exit 1. That
-makes it the one command in the ADK eval family you can gate CI on directly —
-unlike `adk eval`, which prints failures and still exits 0. Say which one a
-workflow is calling before you trust its green tick.
+made it the one command in the ADK eval family you could gate CI on directly —
+unlike `adk eval`, which prints failures and still exits 0 through 2.12.0 (from
+2.13.0 it exits 1 on a failure, but still cannot gate on a pass rate or a
+regression). Say which one a workflow is calling, and on which ADK version,
+before you trust its green tick.
 
 ### The gap in that gate, closed in 2.11.0
 
