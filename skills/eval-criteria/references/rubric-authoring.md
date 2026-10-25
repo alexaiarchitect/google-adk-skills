@@ -35,6 +35,55 @@ Good: three rubrics, one per clause.
 A compound rubric collapses three facts into one bit, so a failure tells you
 something broke without telling you what. Rubrics are cheap; ambiguity is not.
 
+It also makes the judge inconsistent. Google's Agent Skills team found that an
+expectation bundling several criteria got different verdicts on the same
+output when only one criterion was missed, and that splitting it fixed the
+scores; their suite validator now refuses compound expectations outright. In
+the expense-claim domain:
+
+```
+Compound: The agent submits CLM-000412 for 650 dollars to cost centre ENG-7 and
+          confirms the new amount to the user.
+Atomic:   The agent calls `submit_claim` with `amount_usd` 650.
+          The agent calls `submit_claim` with `cost_centre` "ENG-7".
+          The final response states the amount as 650 dollars.
+```
+
+`validate_config.py` and `gen_rubrics.py --lint` warn on a compound sentence
+(`RUB006`): one connector (" and ", "; ", " and then ", " as well as ") joining
+two clauses that each carry an expectation verb (names, states, calls,
+confirms, ...). A noun pair ("every number and identifier") or an adjective
+pair is one property and stays clean.
+
+## Rubrics that ask about actions need a trajectory metric
+
+A judge that sees only the final reply grades the agent's account of what it
+did, not what it did: an agent that ran `check_cost_centre_funds` first but did
+not mention it fails "the agent checks the funds before submitting", and one
+that claims a check it never ran passes. That is true of judges that really
+see only the reply — `final_response_match_v2`, `response_match_score`, a custom
+or hosted judge whose prompt you built from the response.
+
+ADK's `rubric_based_final_response_quality_v1` is not blind: on 2.9.2 and
+2.13.0 its prompt includes the tool calls and responses (`<response_steps>`),
+but asks whether the **final answer** holds up against them, so an action
+property is graded through the answer. Put a rubric that asks whether the
+agent called, ran, checked or used something under
+`rubric_based_tool_use_quality_v1` (or
+`rubric_based_multi_turn_trajectory_quality_v1` for the whole conversation), or
+beside `tool_trajectory_avg_score`. `validate_config.py` reports it as info
+(`CFG075`) when an action rubric sits under the final-response metric and no
+trajectory-aware metric is in the config.
+
+**Built-in tools and the multi-turn judge.** On ADK through 2.13.0,
+`rubric_based_multi_turn_trajectory_quality_v1` crashes with `TypeError:
+'NoneType' object is not iterable` when the agent carries a built-in tool
+(`google_search`, code execution), because the judge prompt iterates function
+declarations those tools do not have; main after 2.13.0 lists them as built-in.
+`validate_config.py --agent-dir` warns (`CFG076`; info on a runner newer than
+2.13.0) when the metric is configured and the agent binds a built-in tool; use `rubric_based_tool_use_quality_v1` there until a
+release carries the fix.
+
 ## About the transcript, never the agent's mind
 
 ```
@@ -116,14 +165,23 @@ known and below 2.12, and a warning otherwise.
 python3 ${CLAUDE_SKILL_DIR}/scripts/gen_rubrics.py --lint rubrics.json --agent-dir app
 ```
 
-Flags graded scales, subjective words, compound sentences, claims about the
-agent's mind, and tool names the agent does not have.
+Flags graded scales, subjective words, compound sentences (`RUB006`), claims
+about the agent's mind, and tool names the agent does not have.
 
 ---
 
 Sources: `adk-docs: docs/evaluate/criteria.md`;
 `adk-python: evaluation/rubric_based_evaluator.py`, `evaluation/eval_rubrics.py`
 (`RubricContent`, validated on installed 2.9.2, 2.11.0 and 2.12.0; the `None`
-default is commit `7d8c950`, in `v2.12.0`), `evaluation/llm_as_judge.py`. The rubric-design practices follow the LinkedIn
+default is commit `7d8c950`, in `v2.12.0`), `evaluation/llm_as_judge.py`,
+`evaluation/rubric_based_multi_turn_trajectory_evaluator.py` (the `TypeError`
+measured on 2.13.0; fix `047815043` on main `dfd534a88`). Atomic expectations:
+Samborski, "Behind the scenes, two months later: How we ship Google Agent Skills
+like products", Google Cloud Blog, 2026-10-29,
+https://cloud.google.com/blog/topics/developers-practitioners/behind-the-scenes-two-months-later-how-we-ship-google-agent-skills-like-products.
+Action rubrics and reply-only judges: West, "Four evaluation engineering
+lessons learned from building agent plugins", Google Cloud Blog, 2026-10-17,
+https://cloud.google.com/blog/topics/developers-practitioners/four-eval-engineering-lessons.
+Both paraphrased. The rubric-design practices follow the LinkedIn
 Learning course *Evaluating AI Agents with Google ADK*, recommended as background
 reading.

@@ -133,7 +133,9 @@ google-cloud-aiplatform` before anything else.
 
 Unrelated to metrics, same credentials: `adk eval --eval_storage_uri
 gs://bucket/prefix` keeps eval sets and results in Cloud Storage instead of
-`.adk/eval_history/`, which is how CI and humans end up reading the same history.
+`.adk/eval_history/`, which is how CI and humans end up reading the same history
+(`gs://` only through 2.13.0; main after 2.13.0 adds `file://` and
+`ADK_EVAL_STORAGE_URI`).
 
 ---
 

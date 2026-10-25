@@ -46,6 +46,43 @@ UNOBSERVABLE_TERMS = (
 
 CONJUNCTIONS = re.compile(r"\b(?:and also|as well as|;)\b|\band\b(?=.{0,160}\band\b)", re.I)
 
+# Verbs a rubric uses to state an observable expectation, third person. A
+# connector ("and", "; ", "and then", "as well as") followed by one of these,
+# with another one before it, joins two expectations: "names the rule and
+# states the limit". A noun pair ("name and date of birth", "number and
+# identifier") or an adjective pair ("concise and free of filler") does not.
+CLAUSE_VERBS = frozenset("""
+    acknowledges answers apologises apologizes applies asks avoids calls checks
+    cites completes confirms declines delivers describes directs displays does
+    ends escalates explains gives greets hands identifies includes informs
+    invokes lists mentions names notes offers points proposes provides quotes
+    recommends redirects refuses reports requests responds returns runs says
+    sends shows states submits suggests summarises summarizes tells transfers
+    updates uses validates verifies warns
+""".split())
+
+_CONNECTOR = re.compile(r";\s+|\s+and\s+then\s+|\s+as\s+well\s+as\s+|\s+and\s+(?:also\s+)?", re.I)
+_WORD = re.compile(r"[A-Za-z']+")
+_CLAUSE_LEAD = frozenset({"it", "they", "the", "agent", "response", "also", "then", "never",
+                          "always"})
+
+
+def _joins_two_clauses(text: str) -> bool:
+    """One connector between two verb phrases: a two-expectation rubric."""
+    for match in _CONNECTOR.finditer(text):
+        before = {w.lower() for w in _WORD.findall(text[:match.start()])}
+        after = _WORD.findall(text[match.end():])
+        if not after or not before & CLAUSE_VERBS:
+            continue
+        # Skip a restated subject or an adverb: "; it also offers", "and then names".
+        words = [w.lower() for w in after[:4]]
+        while len(words) > 1 and words[0] in _CLAUSE_LEAD:
+            words.pop(0)
+        if words[0] in CLAUSE_VERBS:
+            return True
+    return False
+
+
 NEGATIVE_MARKERS = re.compile(r"\b(?:does not|never|must not|refrains from|avoids|without)\b", re.I)
 
 RUBRIC_TYPES = {
@@ -102,8 +139,10 @@ def lint_rubric_text(
             f"asks about the agent's internal state ({', '.join(sorted(set(unobservable))[:3])})",
             "score what the transcript shows, not what the agent understood")
 
-    if CONJUNCTIONS.search(stripped):
-        add("RUB006", "warn", "bundles several properties into one verdict",
+    if CONJUNCTIONS.search(stripped) or _joins_two_clauses(stripped):
+        add("RUB006", "warn",
+            "bundles several properties into one verdict: one expectation per rubric; "
+            "compound expectations grade inconsistently",
             "split it: one rubric per property, so a failure names the property")
 
     if known_tools:

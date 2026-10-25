@@ -1,0 +1,16 @@
+[
+  {
+    "eval_case_id": "meals_over_limit",
+    "prompt": "Can I claim 120 dollars for a team lunch?",
+    "rubric_groups": {
+      "claims": {
+        "rubrics": [
+          {
+            "rubric_id": "names_the_meals_limit",
+            "content": {"property": {"description": "The response names the 75 dollar meals limit."}}
+          }
+        ]
+      }
+    }
+  }
+]

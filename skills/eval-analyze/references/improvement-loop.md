@@ -4,8 +4,9 @@ A suite that fails tells you the agent is wrong somewhere. Getting from there to
 better agent is its own loop, and it goes wrong in predictable ways: the fix is
 graded by whoever wrote it, one noisy score is read as progress, or a metric that
 rewrites itself between runs is used to compare two runs. This page sets out the
-loop with this plugin's scripts, and then what Google's hosted evaluation
-platform adds once the agent is live.
+loop with this plugin's scripts, how to read and schedule it, and what Google's
+hosted evaluation platform adds once the agent is live (the `agents-cli eval`
+mapping is in `/adk:eval-ci` `merge-gates.md`).
 
 The five-stage shape and the separation rule come from Google's quality-flywheel
 post; the after-launch capabilities from the Agent Platform evaluation GA post
@@ -140,23 +141,81 @@ loop: a monitored drop in task success arrives as traces, the failing ones
 become `regression_*` cases (`session_to_evalset.py`), and the next change is
 graded on them locally. That is maturity **L4** in `/adk:eval-ci` `maturity.md`.
 
-## The hosted path, and this plugin's equivalent
+## Read the per-case table, not the mean
 
-Google's Agents CLI drives the same loop against the platform:
+Google's hill-climbing walkthrough makes the point with two unrelated changes:
+a persona prompt pasted in by mistake, and a swap to a cheaper model. Both cut
+the mean by the same amount. The per-case view told them apart: the bad prompt
+made the agent stop calling its weather tool and invent conditions, while the
+cheaper model held the tool cases and hedged on an off-topic question. The same
+number, two different decisions — revert the first; weigh the second against
+how often production traffic looks like the case it broke. The bad prompt also
+compiled and passed lint, unit and type checks; only the eval saw it.
 
-| `agents-cli eval` | Local equivalent |
-|---|---|
-| `eval dataset synthesize` | `gen_scenarios.py`, `generate_eval_cases.py` (user simulator) |
-| `eval generate` | `run_evals.py` (inference) |
-| `eval grade --traces F --config F` | the config's metrics, via `run_evals.py` |
-| `eval compare` | `compare_runs.py` |
-| `eval analyze` | `summarize_results.py` |
+- Read `compare_runs.py`'s per-case deltas before its summary line; a flat mean
+  can hide a fixed case and a broken one.
+- **Keep the judge constant across a model swap.** Change the agent's model and
+  the judge's together and the delta measures both. Pin
+  `judge_model_options.judge_model` for the length of the experiment.
+- A fair model comparison is each model with its own best prompt: a cheaper
+  model plus a tuned prompt against the stronger model plus its prompt, on the
+  same suite and judge.
+- Keep the full result files; a per-case table cannot be rebuilt from a score.
 
-The hosted path needs a Google Cloud project with the evaluation service
-enabled, and its model-based metrics are billed at model rates. The local path
-needs only what `/adk:adk` `check_env.py` reports. Neither is a substitute for
-real traffic: simulated cases are a cold start, and the suite should grow from
-what production actually gets wrong.
+## Schedule it, and alert on the drop
+
+Run a larger regression set nightly (`/adk:eval-ci` `gen_workflows.py --tier
+nightly`, baseline result files committed under `--baseline-dir`) and compare: `compare_runs.py <baseline>
+<candidate> --max-mean-drop D` exits 1 when a scored metric's mean falls by
+more than `D`, and the scheduler turns that exit code into the alert. Alert on a
+drop, not on a low absolute: a suite at 0.7 for months is a known state, a fall
+from 0.85 to 0.7 overnight is news. The hosted counterpart is `agents-cli eval
+compare` plus a threshold script; the walkthrough's own warning applies to both
+— "A file nobody looks at is not an alert."
+
+`agents-cli eval optimize` (GEPA) hill-climbs the prompt only, for ADK projects
+only, and can overfit to the wording of the metric it climbs. Treat its output
+as a proposal: in this plugin's protocol it is the proposer, the frozen suite
+and the user are the graders.
+
+## Grade the trajectory, not the summary
+
+A judge that reads only the final reply grades the agent's closing pitch. In
+Google's plugin-evaluation lessons, a rubric asked whether the agent checked a
+command's syntax before running it; the agent did, as its first step, but its
+reply talked about data loss instead, and the reply-only judge failed it. That
+applies to any judge that truly sees only the reply (a custom or hosted judge,
+`final_response_match_v2`). ADK's `rubric_based_final_response_quality_v1`
+does see the tool calls, but only as evidence for the final answer. So a rubric
+that asks "did it call / run / check X" belongs under
+`rubric_based_tool_use_quality_v1` or beside a trajectory metric;
+`validate_config.py` notes it (`CFG075`, info) otherwise.
+
+Keep turn structure when reading a failure: tools dispatched together in one
+turn can run before guidance that arrives in the next (a skill's instructions,
+a retrieved policy), which a flattened call list hides. Read `intermediate_data`
+per invocation and `analyze_trace.py` per event.
+
+## Live and plan-only runs
+
+The same lessons pair two conditions. A **live** run (sandboxed credentials,
+real tools) tests execution and restraint, but stops at the first permission
+error. A **plan-only** run (no credentials; the agent explains what it would
+do) exposes the reasoning a live run cut short; about half their important
+findings came from the difference. Here: keep a plan-only variant of the
+evalset for agents with destructive tools — the same prompts, the destructive
+tools mocked by environment simulation or replaced by a "describe your plan"
+turn, graded by rubric — and diff its failures against the live suite's.
+`--dry-run` and `--no-backend` are not plan-only runs; they never call the
+model.
+
+## Golden sets outlast models
+
+Models, harnesses and tools change every few months; an expert-curated golden
+suite is the stable reference across them. Freeze it (`"frozen": true`,
+`EVS120`), grow it from production failures, and re-take the baseline on a
+model change rather than editing cases. One impressive demo is what the
+lessons call a "vanity metric": it proves the agent can, not that it does.
 
 ---
 
@@ -179,4 +238,12 @@ https://developers.googleblog.com/powering-the-agent-development-lifecycle-with-
 `evaluation/app_details.py`, `evaluation/evaluation_generator.py` (recording
 `app_details`), at `12c7bed76`. This plugin's `summarize_results.py`,
 `compare_runs.py`, `calibration_sample.py`, `gen_custom_metric.py`,
-`manage_cases.py`.
+`manage_cases.py`. Per-case reading, the constant judge, scheduling, the
+threshold alert and `eval optimize`: Ippolito and Secchi, "Hill-Climbing Agent
+Quality with Agents CLI Evaluation", Google Developers Blog, 2026-10-28,
+https://developers.googleblog.com/hill-climbing-agent-quality-with-agents-cli-evaluation/.
+Trajectory over summary, turn structure, live and plan-only runs, golden sets:
+Casey West, "Four evaluation engineering lessons learned from building agent
+plugins", Google Cloud Blog, 2026-10-17,
+https://cloud.google.com/blog/topics/developers-practitioners/four-eval-engineering-lessons
+(both paraphrased; one short phrase quoted from each).

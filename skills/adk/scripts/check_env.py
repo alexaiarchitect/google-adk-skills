@@ -9,7 +9,9 @@ Answers three questions, in the order they block you:
 
 It also reports which optional knobs are set, in the agent's `.env` or the
 environment, e.g. `ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS` (silences the
-YAML loader's `[EXPERIMENTAL]` warning, and from 2.13 the feature registry's).
+`[EXPERIMENTAL]` warnings: the YAML loader's through 2.13.0, and from 2.13 the
+feature registry's; main after 2.13.0 drops the YAML loader's and graduates the
+eval and user-simulation classes).
 
     check_env.py <agent-dir> [--json] [--config path]
 

@@ -55,7 +55,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 4. **Confirm before editing anything.** If the user wants fixes applied, make the
    smallest change that addresses each finding, and re-run the review.
 
-## The thirteen dimensions
+## The fourteen dimensions
 
 | # | Dimension | What goes wrong |
 |---|---|---|
@@ -72,6 +72,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 | 11 | context caching | a cached prefix that changes per request, a long instruction nothing caches, an out-of-range `ContextCacheConfig`, caching no eval case can exercise (`AGT060`–`AGT063`), and plugin imports that need 2.11 or a public path (`AGT065`, `AGT066`), and a prefix too small for the cache floor (`AGT067`) |
 | 12 | skills | a `SKILL.md` ADK will reject, instructions too long to disclose progressively, an agent instruction that repeats a skill's body, a description too vague to trigger it, lifecycle settings out of range (`AGT070`–`AGT075`) |
 | 13 | context engineering | an `EventsCompactionConfig` ADK rejects, long conversations with no compaction, a sub-agent scoped wider than its job, a tool returning a large inline blob instead of an artifact (`AGT076`–`AGT079`) |
+| 14 | streaming tools | an async-generator tool on a text model, or on a live model whose evals lack `live_model_config` (`AGT081`) |
 
 ## Decision rules
 
@@ -87,6 +88,11 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 - **A raising tool is worth explaining, not just flagging.** An exception ends the
   invocation; a returned error is an observation the model can act on. That is
   the difference between an agent that self-corrects and one that gives up.
+- **A streaming tool belongs to a live agent.** `AGT081` as a warning means a
+  text agent has an async-generator tool: on 2.12+ its second `yield` aborts a
+  `run_async` run, on 2.9 its body never runs. As an info it means the agent is
+  live but no eval config sets `live_model_config`, so evals never exercise the
+  streaming. Point at `../agent-create/references/live-agents.md`.
 - **The load check is optional and it costs an import.** Offer it when the static
   review is clean but the agent is reported not to work, or when the user is
   mid-migration.
@@ -102,6 +108,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 | Context caching: the decision, the prefix rules, measuring it | [`../agent-create/references/context-caching.md`](../agent-create/references/context-caching.md) |
 | Skills: frontmatter limits, progressive disclosure, lifecycles | [`../agent-create/references/skills-and-progressive-disclosure.md`](../agent-create/references/skills-and-progressive-disclosure.md) |
 | Context engineering: compaction, `include_contents`, artifacts | [`../agent-create/references/context-engineering.md`](../agent-create/references/context-engineering.md) |
+| Live agents: streaming tools, `stop_streaming`, `run_live` vs `run_async` | [`../agent-create/references/live-agents.md`](../agent-create/references/live-agents.md) |
 
 The 1.x-to-2.x drift table lives in the router skill:
 `../adk/references/adk-1x-to-2x-migration.md`.
@@ -110,7 +117,7 @@ The 1.x-to-2.x drift table lives in the router skill:
 
 | Command | Does | Exit codes |
 |---|---|---|
-| `scripts/lint_agent.py <agent-dir> [--strict] [--no-backend] [--adk-version V] [--json]` | the static review; `--adk-version` stands in for the resolved runner in version-gated checks (`AGT066`, `AGT074`) | 0 clean, 1 findings, 2 no agent |
+| `scripts/lint_agent.py <agent-dir> [--strict] [--no-backend] [--adk-version V] [--json]` | the static review, fourteen dimensions (streaming tools: `AGT081`, warn on a text model, info on a live one whose evals lack `live_model_config`); `--adk-version` stands in for the resolved runner in version-gated checks (`AGT066`, `AGT074`) | 0 clean, 1 findings, 2 no agent |
 | `scripts/load_agent.py <agent-dir> [--json]` | imports it the way ADK does | 0 loaded, 1 did not load, 2 no runner |
 
 ## Completion checklist

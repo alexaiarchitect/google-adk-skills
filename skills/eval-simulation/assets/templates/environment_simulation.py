@@ -6,9 +6,11 @@ is **1.0**, so an injection you forget to switch off fires on every call. Turn o
 on only for the case that is about it: a suite where a third of tool calls
 randomly fail teaches you nothing except that your evals are flaky.
 
-Environment simulation is an experimental ADK feature
-(`@experimental(FeatureName.ENVIRONMENT_SIMULATION)`); its API may change between
-releases.
+Environment simulation prints `[EXPERIMENTAL]` warnings through ADK 2.13.0
+(`@experimental(FeatureName.ENVIRONMENT_SIMULATION)`); main after 2.13.0
+graduated user simulation and environment simulation (the semantic argument
+matcher there stays experimental). `ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1`
+silences them.
 
 Docs: https://google.github.io/adk-docs/evaluate/environment_simulation/
 """

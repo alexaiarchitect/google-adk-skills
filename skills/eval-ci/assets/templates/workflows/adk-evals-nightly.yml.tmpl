@@ -3,6 +3,9 @@
 # Everything that costs model calls lives here: rubric metrics, groundedness,
 # safety, and repeated runs for pass@k. `runs` is an input so a release
 # candidate can be qualified with more of them without editing the workflow.
+# The drift step compares tonight's newest run with a committed baseline and
+# fails when a metric's mean falls by more than 0.05: alert on a drop, not on
+# a low absolute.
 name: ADK evals (nightly)
 
 on:
@@ -42,6 +45,16 @@ jobs:
             --config {{NIGHTLY_CONFIG}} \
             --runs "${{ github.event.inputs.runs || '5' }}" \
             --not-evaluated fail
+
+      - name: Alert on a drop against the baseline
+        # Alert on a drop, not on a low absolute. The baseline is a good night's
+        # result files committed under {{BASELINE_DIR}}; refresh it when a change
+        # is accepted. Read the per-case table before trusting a mean.
+        if: always() && hashFiles('{{BASELINE_DIR}}/**/*.evalset_result.json') != ''
+        run: |
+          python3 {{SCRIPTS_PATH}}/eval-analyze/scripts/compare_runs.py \
+            {{BASELINE_DIR}} {{AGENT_DIR}}/.adk/eval_history --latest \
+            --max-mean-drop 0.05 >> "$GITHUB_STEP_SUMMARY"
 
       - name: Reliability report
         if: always()

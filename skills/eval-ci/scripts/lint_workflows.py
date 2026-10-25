@@ -18,6 +18,11 @@ Four mistakes, all of which produce a green pipeline that proves nothing:
 * **a hardcoded key** — a credential in a workflow file is a credential in the
   repository history.
 
+Also noted: a scheduled judged run with no drift alert (CI007, info): without
+`compare_runs.py --max-mean-drop` against a baseline it only fails below an
+absolute floor, so a slow slide stays green. `compare_runs.py` counts as a gate
+(it exits 1 on a regression, a floor, a budget or a mean drop).
+
     lint_workflows.py <repo-root> [--adk-version X.Y] [--format json|md]
 
 Exit codes: 0 clean, 1 findings, 2 nothing to check.
@@ -38,7 +43,13 @@ from adk_skills.metrics import pr_tier_violations  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport  # noqa: E402
 
 ADK_EVAL = re.compile(r"^\s*(?:-\s*)?(?:run:\s*)?.*\badk\s+eval\b", re.M)
-GATED = ("run_evals.py", "run_registry.py", "pytest", "run_pytest_eval.py")
+GATED = ("run_evals.py", "run_registry.py", "pytest", "run_pytest_eval.py", "compare_runs.py")
+#: compare_runs.py flags that make it fail a job; `--max-regressions` (default 0)
+#: is always on. A scheduled job without the drift flag gates only on floors.
+COMPARE_GATE_FLAGS = ("--max-regressions", "--min-pass-rate", "--max-mean-prompt-tokens",
+                      "--max-mean-seconds", "--max-mean-tool-calls", "--max-mean-drop")
+DRIFT_FLAG = "--max-mean-drop"
+SCHEDULED = re.compile(r"^\s*schedule:", re.M)
 PER_CHANGE = ("pull_request", "push:")
 SECRET_LOOKING = re.compile(
     r"""(?:GOOGLE_API_KEY|GEMINI_API_KEY|api[_-]?key)\s*[:=]\s*["']?(?!\$\{\{)[A-Za-z0-9_\-]{12,}""",
@@ -171,6 +182,18 @@ def main(argv: list[str] | None = None) -> int:
                 "eval results are not uploaded, so a failure cannot be examined after the fact",
                 path=str(workflow),
                 fix="upload `<agent>/.adk/eval_history/` with `if: always()`",
+            )
+
+        if (SCHEDULED.search(text) and any(m in text for m in ("run_evals.py", "run_registry.py"))
+                and not ("compare_runs.py" in text and DRIFT_FLAG in text)):
+            report.add(
+                "CI007", "info", "ci",
+                "a scheduled eval run with no drift alert: it fails only below an absolute "
+                "floor, so a metric that slides a little every night stays green",
+                path=str(workflow),
+                fix="add a step running compare_runs.py <baseline> <agent>/.adk/eval_history "
+                    "--latest --max-mean-drop 0.05 against committed baseline result files "
+                    "(gen_workflows.py --tier nightly writes one)",
             )
 
         if "--not-evaluated" not in text and any(m in text for m in ("run_evals.py", "run_registry.py")):

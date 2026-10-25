@@ -9,8 +9,10 @@ reference-based metrics are out.
 **Environment simulation** fakes the *tools* instead of the user: mocked
 responses, injected errors, injected latency. It is how you test failure paths
 without breaking anything real, and it is configured on the agent side rather
-than in the eval config. The feature is experimental in ADK, and the generated
-document validates as `EnvironmentSimulationConfig`.
+than in the eval config. The generated document validates as
+`EnvironmentSimulationConfig`. Both features print `[EXPERIMENTAL]` warnings through 2.13.0; main after 2.13.0 graduated user
+simulation and environment simulation; `ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1`
+silences them.
 
     gen_sim_config.py --kind user [--model M] [--max-invocations N] [--out F]
     gen_sim_config.py --kind user --audio [--audio-model cloud_tts] [--voice NAME]
@@ -201,7 +203,10 @@ def main(argv: list[str] | None = None) -> int:
             "injection_probability defaults to 1.0, so every entry here sets 0.0 "
             "explicitly - raise one to 1.0 in the case that is about that failure. "
             "mock_strategy_type is an integer (0 unspecified, 1 tool spec, 2 tracing - "
-            "deprecated); the member names do not validate. The feature is experimental."
+            "deprecated); the member names do not validate. It prints [EXPERIMENTAL] "
+            "warnings through 2.13.0; main after 2.13.0 graduated user simulation and "
+            "environment simulation; ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1 silences "
+            "them."
         )
     else:
         document = generation_config(args.count, model)

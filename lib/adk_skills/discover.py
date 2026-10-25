@@ -28,7 +28,7 @@ from .metrics import DEFAULT_CRITERIA, cost_tier
 from .report import GapReport, Option
 from .results import find_result_files, latest_per_evalset, parse_result
 from .tools_ast import (
-    LLM_AGENT_CALLS, PLUGIN_EXPORTS, ModuleFacts, cache_suite_findings,
+    LLM_AGENT_CALLS, PLUGIN_EXPORTS, ModuleFacts, builtin_model_tools, cache_suite_findings,
     compaction_suite_findings, extract_module, skill_lifecycle_findings, tool_resolver,
 )
 
@@ -240,6 +240,13 @@ class Discovery:
                     Path(p).name for p in self.layout.foreign_configs
                 ]
             data["layout"]["project_root"] = str(root)
+            if self.layout.agents_cli_datasets:
+                data["layout"]["agents_cli_datasets"] = [
+                    _rel(p, root) for p in self.layout.agents_cli_datasets
+                ]
+            layout_notes = [n for n in self.layout.notes if "deprecated" not in n]
+            if layout_notes:
+                data["layout"]["notes"] = layout_notes
             if self.layout.sibling_agents:
                 data["layout"]["agents_found"] = [
                     _rel(p, root) for p in self.layout.sibling_agents
@@ -545,6 +552,7 @@ class Discovery:
                 agent_dir=self.layout.agent_dir,
                 known_tools=self.tool_names or None,
                 adk_version=self.runner.adk_version if self.runner else None,
+                builtin_tools=builtin_model_tools(self.facts) if self.facts else None,
             )
 
     def _add_gaps(self, report: GapReport) -> None:

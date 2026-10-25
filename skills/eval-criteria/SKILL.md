@@ -76,7 +76,14 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
   Use an alias id, and 3 samples for a majority vote at moderate cost.
 - **Rubrics are yes/no claims.** No 1-5 scales: graded prompts make scores cluster
   in the middle, where they decide nothing. One property per rubric, named in
-  terms a reader of the transcript could check.
+  terms a reader of the transcript could check: a compound sentence grades
+  inconsistently (`RUB006`).
+- **A rubric about actions needs a judge that sees actions.** "Did it call /
+  run / check X" under the final-response metric is graded through the final
+  answer (its judge reads the tool calls only as evidence for it); put it under
+  `rubric_based_tool_use_quality_v1` or beside a trajectory metric (`CFG075`,
+  info). Through ADK 2.13.0 the multi-turn trajectory judge crashes on an agent
+  with a built-in tool (`CFG076`, warn; needs `--agent-dir`).
 - **Restraint needs its own metric.** Trajectory matching and response quality
   both pass an agent that does too much. `rubric_based_tool_use_quality_v1` at
   threshold **1.0** with "does NOT call X when Y" is the only check that fails it.
@@ -119,7 +126,7 @@ Templates: `assets/templates/configs/` (one per criterion family) and
 |---|---|---|
 | `scripts/metric_info.py [name] [--tier pr\|nightly] [--user-sim] [--json]` | the catalog (17 entries: 13 configurable, 4 informational), or one metric in detail | 0, 2 unknown name |
 | `scripts/gen_config.py --tier pr\|nightly\|custom [--metrics ...] [--rubrics-file F] [--judge-model M] [--num-samples N] [--style snake\|camel] [--out F] [--dry-run]` | writes a config and validates it. No tier emits an efficiency metric and `--metrics` refuses one (exit 2) — there is nothing to add, so there is no flag for it | 0, 1 contradictory, 2 usage |
-| `scripts/validate_config.py <config\|agent-dir> [--agent-dir D] [--no-backend] [--no-probe] [--adk-version V] [--strict]` | checks an existing config, and reports the resolved `adk_version`: `CFG070` (error) for an efficiency metric named in `criteria`, `CFG071` (info) that 2.10+ reports the four anyway, `CFG072` (info) a `multi_run_config` only unreleased main reads and `CFG073` (error) a malformed one. `--no-probe` skips resolving the runner, `--adk-version` states it | 0 clean, 1 findings, 2 bad target |
+| `scripts/validate_config.py <config\|agent-dir> [--agent-dir D] [--no-backend] [--no-probe] [--adk-version V] [--strict]` | checks an existing config, and reports the resolved `adk_version`: `CFG070` (error) for an efficiency metric named in `criteria`, `CFG071` (info) that 2.10+ reports the four anyway, `CFG072` (info) a `multi_run_config` only unreleased main reads and `CFG073` (error) a malformed one, `RUB006` (warn) a compound rubric, `CFG075` (info) an action rubric under the final-response judge with no trajectory metric, `CFG076` (warn through 2.13, info on a newer runner) the multi-turn trajectory judge with a built-in tool on the agent (needs `--agent-dir`). `--no-probe` skips resolving the runner, `--adk-version` states it | 0 clean, 1 findings, 2 bad target |
 | `scripts/gen_rubrics.py --kind positive\|restraint\|trajectory [--tool T --condition C] [--spec JSON] [--lint F]` | builds and lints rubrics | 0 clean, 1 findings, 2 usage |
 | `scripts/gen_custom_metric.py --name N --out F [--kind sync\|async\|trajectory-precision\|trajectory-recall] [--with-args] [--threshold F] [--with-metric-info] [--dry-run]` | scaffolds a custom metric that reads `criterion.threshold` and returns per-invocation results, plus its `criteria` + `custom_metrics` config snippet (also kept as `CONFIG_SNIPPET`); the trajectory kinds score extra or missing tool calls as a fraction, multiset match, order ignored | 0 written, 1 refused, 2 usage |
 

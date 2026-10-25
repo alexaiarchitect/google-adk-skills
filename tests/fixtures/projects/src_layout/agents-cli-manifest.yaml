@@ -1,0 +1,4 @@
+# Fixture: an agents-cli project in a src layout. agents-cli finds the agent
+# package through this key, not through an `app/` directory.
+name: claims-agent
+agent_directory: src/claims_agent

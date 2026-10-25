@@ -110,6 +110,14 @@ graph read `nodeInfo.path` in traces; a node may set its output once.
   one kind of request belongs in a `SkillToolset` skill the agent loads on
   demand; a large tool result belongs in an artifact, and a long conversation
   wants event compaction. The instruction stays short and always relevant.
+- **A live (voice) agent: read [live-agents.md](references/live-agents.md)
+  first.** A slow tool there is silence; make it a streaming (`yield`) or
+  non-blocking tool, add `stop_streaming`, and give its evals
+  `live_model_config`. A streaming tool on a text model never streams
+  (`AGT081`: on 2.12+ a second `yield` aborts the run).
+- **A remote step is a state, not a crash.** A `RemoteA2aAgent` that cannot be
+  reached yields an error event and the pipeline runs on; write the
+  manual-review hold yourself ([workflow-graphs.md](references/workflow-graphs.md)).
 - **The generated TODOs are not decoration.** A tool docstring that still says
   "TODO" is a tool the model has to guess about; say so before the user runs
   anything.
@@ -122,7 +130,8 @@ graph read `nodeInfo.path` in traces; a node may set its output once.
 | Writing the instruction so its branches are testable | [instruction-design.md](references/instruction-design.md) |
 | App, plugins, callbacks and where guardrails belong | [app-and-plugins.md](references/app-and-plugins.md) |
 | State, memory and what persists | [state-and-memory.md](references/state-and-memory.md) |
-| Workflow graphs: nodes, edges, joins, human input, testing them | [workflow-graphs.md](references/workflow-graphs.md) |
+| Workflow graphs: nodes, edges, joins, human input, remote A2A steps, testing them | [workflow-graphs.md](references/workflow-graphs.md) |
+| Live and voice agents: streaming and non-blocking tools, `stop_streaming`, barge-in, scheduling | [live-agents.md](references/live-agents.md) |
 | Context caching: when it pays, what breaks the prefix, proving the gain | [context-caching.md](references/context-caching.md) |
 | ADK skills: `SKILL.md`, `SkillToolset`, discovery and lifecycles, activation evals | [skills-and-progressive-disclosure.md](references/skills-and-progressive-disclosure.md) |
 | What the model sees: compaction, `include_contents`, agents as tools, artifacts | [context-engineering.md](references/context-engineering.md) |

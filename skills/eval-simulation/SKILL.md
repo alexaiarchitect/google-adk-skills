@@ -27,7 +27,8 @@ Two different things, both called simulation:
   you did not anticipate, and the human habit of not repeating yourself.
 - **Environment simulation** replaces the *tools* with mocks that can return
   errors and add latency. It is how you test failure paths without breaking
-  anything real. It is an experimental ADK feature.
+  anything real. Through 2.13.0 it is an experimental ADK feature (it warns);
+  main after 2.13.0 marks it stable.
 
 The constraint that shapes all of user simulation: **no fixed conversation means
 no reference**, so this plugin keeps reference-based metrics off simulated
@@ -120,7 +121,13 @@ apply to half the cases.
   with `gen_sim_config.py --audio` and let `validate_sim_config.py` check it
   (`SIM032`–`SIM034`). Drop `live_model_config` to debug the same cases in text.
   Judge the conversation with an intent rubric, vary voices and personas, and
-  keep live suites out of the PR tier unless the budget allows.
+  keep live suites out of the PR tier unless the budget allows. Only the live
+  path exercises streaming and non-blocking tools; in text they do not stream
+  (`AGT081`). Grade acknowledgement-before-result, not update counts.
+- **Semantic argument matching is main-only.** `InjectionConfig.args_matcher`
+  (a `semantic` matcher that asks a model whether two values mean the same)
+  arrives after 2.13.0; on 2.13.0 the key is ignored, so keep `match_args`
+  exact until a release has it.
 - **Scenario generation spends on the Vertex evaluation service** and needs
   `GOOGLE_API_KEY` or a project and location; the wrapper checks before paying.
 
@@ -142,7 +149,7 @@ generation config, and an environment-simulation module.
 | `scripts/gen_scenarios.py <agent-dir> --spec JSON (--evalset F \| --new ID)` | writes scenario cases, checks the config can score them | 0, 1 findings or clash, 2 usage |
 | `scripts/gen_sim_config.py --kind user\|env\|generate [--model M] [--tools ...] [--out F]` | generates a config with the real field names | 0, 2 usage |
 | `scripts/gen_sim_config.py --kind user --audio [--audio-model M] [--voice V] [--language L] [--live-timeout S]` | an `llm_audio` simulator with the voice nested where ADK reads it (`audio_model_configuration.speech_config...`), defaults `cloud_tts`, `en-US-Studio-O`, `en-US`; `--live-timeout S` adds `live_model_config` (Live API inference), omit it to run in text | 0, 2 usage |
-| `scripts/validate_sim_config.py <agent-dir> [--config F]` | checks scenarios, simulator and metrics agree; for live runs, `SIM032` timeout ≤ 0, `SIM033` live config on a non-live model, `SIM034` unknown simulator key | 0 clean, 1 findings, 2 nothing to check |
+| `scripts/validate_sim_config.py <agent-dir> [--config F]` | checks scenarios, simulator and metrics agree; for live runs, `SIM032` timeout ≤ 0, `SIM033` live config on a model with no `live`/`native-audio` in its id (`gemini-3.8-live` counts), `CFG076` the multi-turn trajectory judge with a built-in tool, `SIM034` unknown simulator key | 0 clean, 1 findings, 2 nothing to check |
 | `scripts/generate_eval_cases.py <agent-dir> <eval_set_id> --config F [--dry-run]` | asks the evaluation service for scenarios, validates the result | 0, 1 errors, 2 env |
 
 ## Completion checklist

@@ -83,6 +83,12 @@ on:
             --runs "${{ github.event.inputs.runs || '5' }}" \
             --not-evaluated fail
 
+      - name: Alert on a drop against the baseline
+        if: always() && hashFiles('eval_baseline/**/*.evalset_result.json') != ''
+        run: |
+          python3 .../compare_runs.py eval_baseline app/.adk/eval_history --latest \
+            --max-mean-drop 0.05 >> "$GITHUB_STEP_SUMMARY"
+
       - if: always()
         run: |
           python3 .../pass_at_k.py --dir app/.adk/eval_history >> "$GITHUB_STEP_SUMMARY" || true
@@ -95,6 +101,22 @@ on:
 The reliability table and the failure explanation go into the **job summary**,
 where they are visible without downloading anything. `|| true` on those steps
 keeps a reporting failure from masking the eval result.
+
+**The drift step is the alert.** It compares tonight's newest run with result
+files committed under `eval_baseline/` (`gen_workflows.py --baseline-dir`), and
+exits 1 when any scored metric's mean over the shared cases falls by more than
+0.05 on that metric's own scale; GitHub's failed-run notification (or a Cloud
+Scheduler / cron job on the same exit code) does the rest. It is skipped until a
+baseline is committed; refresh the baseline deliberately when a change is
+accepted, never to silence the alert. Alert on the drop, not on a low absolute,
+and read the per-case table in the summary before trusting the mean.
+
+**Expensive suites on purpose.** The nightly tier also has `workflow_dispatch`,
+so a judged suite can be run for a pull request by hand. A PR comment trigger
+(`issue_comment` matching `/run-evals`) or a label, or `paths:` limited to the
+agent's instruction, tools and eval files, are the other ways to spend only when
+the change can move a judged score. Whatever triggers it, the PR links that
+run's report, from its latest commit (`merge-gates.md`).
 
 ## Authentication
 
@@ -156,6 +178,13 @@ Sources: this plugin's workflow templates;
 (bare `adk eval` exit code measured on 2.12.0 and 2.13.0). Other languages and
 agents-cli: Karl Weinmeister, "One Agent Development Kit, five languages",
 https://cloud.google.com/blog/topics/developers-practitioners/one-agent-development-kit-five-languages;
+The drift alert: Ippolito and Secchi, "Hill-Climbing Agent Quality with Agents
+CLI Evaluation", Google Developers Blog, 2026-10-28,
+https://developers.googleblog.com/hill-climbing-agent-quality-with-agents-cli-evaluation/;
+manual triggers for expensive checks: Samborski, "Behind the scenes, two months
+later: How we ship Google Agent Skills like products", Google Cloud Blog,
+2026-10-29,
+https://cloud.google.com/blog/topics/developers-practitioners/behind-the-scenes-two-months-later-how-we-ship-google-agent-skills-like-products.
 Ippolito and Secchi, "Powering the Agent Development Lifecycle with any
 framework, from ADK to LangChain and beyond",
 https://developers.googleblog.com/powering-the-agent-development-lifecycle-with-any-framework-from-adk-to-langchain-and-beyond/.

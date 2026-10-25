@@ -16,7 +16,7 @@ and when each is the right one.
 | create an empty set, or add scenario cases in bulk | `adk eval_set create` / `add_eval_case` |
 | generate scenarios from a description | `adk eval_set generate_eval_cases` (see `/adk:eval-simulation`) |
 | rename, move, split, dedupe, rebase app names | `manage_cases.py` |
-| share history between CI and humans | `--eval_storage_uri gs://<bucket>` |
+| share history between CI and humans | `--eval_storage_uri gs://<bucket>` (`file://` and `ADK_EVAL_STORAGE_URI` only on main after 2.13.0) |
 
 The dev UI is for *capture and inspection*; the CLI is for *bulk creation*;
 `manage_cases.py` is for *refactoring*, which is the operation neither of the
@@ -134,6 +134,9 @@ and every `adk eval_set` subcommand. With it, both the eval **sets** and the
 **results** move out of the working tree and into the bucket
 (`GcsEvalSetsManager`, `GcsEvalSetResultsManager`), which is what makes a
 nightly CI run and a person at a laptop share one history instead of two.
+Through 2.13.0 only `gs://` is accepted; main after 2.13.0 also takes
+`file:///abs/path` and reads `ADK_EVAL_STORAGE_URI` when the flag is omitted
+(`/adk:eval-run` `gcs-and-live.md`), without migrating existing files.
 
 Use it when the suite is the team's, not one engineer's. Keep the evalset files
 in the repository as well when the suite is small: a file under version control

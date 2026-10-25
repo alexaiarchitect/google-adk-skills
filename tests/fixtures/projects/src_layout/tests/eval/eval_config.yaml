@@ -1,0 +1,7 @@
+# Fixture: an agents-cli eval config (not an ADK eval config).
+metrics_to_run:
+  - final_response_quality
+custom_metrics:
+  - name: final_response_quality
+    metric_spec_parameters:
+      rubric_group_key: claims

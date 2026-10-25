@@ -151,8 +151,10 @@ there is no way to ask for them.
 | `token_usage_v1` | tokens per invocation (`total_tokens`) | free | none | none — rejected |
 | `invocation_duration_v1` | wall-clock **seconds** per invocation | free | none | none — rejected |
 
-Each is computed per invocation and **averaged** over the eval case; invocations
-that report nothing are left out of the average. All four write
+Each is computed per invocation and **averaged** over the eval case. Through
+2.13.0 `token_usage_v1` averages each count over **every** invocation, so a turn
+that reported no usage drags the mean down; only main after 2.13.0 leaves
+no-usage turns out (`5e52b21a8`). All four write
 `eval_status: 4` (`INFORMATIONAL`), overall and per invocation, so they never
 land in a pass or fail column — `/adk:eval-analyze` shows them in their own
 table.
@@ -211,6 +213,25 @@ Read them as a trend across runs, not as a gate: a duration that doubles is a
 question, not a failure, and the two call counts tell you whether a turn got
 expensive through more attempts or a bigger context.
 
+## Coming after 2.13.0 (unreleased main)
+
+Not released (post-tag at `adk-python` `dfd534a88`; `token_usage_v1` is
+above); validators keep 2.13.0 behaviour:
+
+- **Judge and rubric metrics stop warning** (`1112606c2`): through 2.13.0
+  `final_response_match_v2`, the rubric metrics, `hallucinations_v1`, the
+  registry and `LocalEvalService` print `[EXPERIMENTAL]`; main graduates them.
+- **`response_match_score` skips thought parts** (`571670d9f`); 2.13.0 scores
+  thoughts as response text.
+- **`final_response_match_v2` labels** (`4c66a0091`): `almost`/`partially…` →
+  INVALID and unknown → NOT_FOUND on main; 2.13.0 counts both as VALID.
+- **Built-in tools and the multi-turn trajectory judge** (`047815043`): on
+  2.13.0 `rubric_based_multi_turn_trajectory_quality_v1` crashes with
+  `TypeError: 'NoneType' object is not iterable` when the agent has a built-in
+  tool such as `google_search` (no function declarations; same code on 2.9.2);
+  main lists it as `- google_search (built-in)`. `validate_config.py
+  --agent-dir` warns (`CFG076`; info on a runner newer than 2.13.0).
+
 ---
 
 Sources: `adk-python: evaluation/eval_metrics.py`,
@@ -224,4 +245,6 @@ descriptions quoted above, and `requires_threshold`),
 `evaluation/metric_evaluator_registry.py` (`_register_standard_metrics`),
 `evaluation/eval_config.py` (`get_eval_metrics_from_config` appends them);
 measured on installed wheels 2.9.2 and 2.10.0; the 17-metric registry and
-`_reject_threshold` re-read on 2.11.0 and 2.12.0.
+`_reject_threshold` re-read on 2.11.0 and 2.12.0. The 2.13.0 `token_usage_v1`
+docstring ("every invocation") and the trajectory-judge `TypeError` were
+measured on the 2.13.0 wheel; the main-only changes were read at `dfd534a88`.

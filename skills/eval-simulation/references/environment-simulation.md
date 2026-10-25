@@ -9,8 +9,10 @@ agent does when a backend fails without arranging for a backend to fail.
 It is configured on the **agent** side, not in the eval config, because it changes
 what the tools return rather than how results are scored.
 
-The whole feature is gated `@experimental(FeatureName.ENVIRONMENT_SIMULATION)`.
-The shapes below were read on 2.9.2 and re-read on 2.10.0, 2.11.0 and 2.12.0 — identical, field for
+Through 2.13.0 the whole feature is gated
+`@experimental(FeatureName.ENVIRONMENT_SIMULATION)` and prints `[EXPERIMENTAL]
+feature ENVIRONMENT_SIMULATION is enabled.`; main after 2.13.0 makes it stable
+(`799fc9459`, below). The shapes below were read on 2.9.2 and re-read on 2.10.0, 2.11.0 and 2.12.0 — identical, field for
 field. Re-check them on an upgrade all the same.
 
 ## Where the classes live
@@ -175,6 +177,37 @@ failure injection tests your patience.
 
 Start at 1 and move up only when you need something it cannot do.
 
+## Coming after 2.13.0 (unreleased main)
+
+Main (`08c289bb4`, post-tag at `dfd534a88`) adds **semantic argument matching**
+to injections, so an injection for cost centre `"Marketing EMEA"` also fires
+on `"EMEA marketing"` without listing every spelling:
+
+```python
+InjectionConfig(
+    match_args={"cost_centre": "Marketing EMEA"},
+    args_matcher={"per_arg_matchers": {"cost_centre": {"type": "semantic"}}},
+    injected_error=InjectedError(injected_http_error_code=503,
+                                 error_message="funds service unavailable"),
+    injection_probability=1.0)
+```
+
+- `args_matcher` is a `ToolArgsMatcher` (`default_matcher`, `per_arg_matchers`,
+  `allow_extra_args=True`; built-ins `exact`, `casefold`, `numeric`,
+  `contains`, `ignore`, `semantic`) and **requires `match_args`**, else a
+  validation error.
+- **Exact first**: configs whose `match_args` equal the request are tried, in
+  order, before any matcher runs, and an equal value never consults a model.
+- The `semantic` matcher asks a model for a verdict, a 0..1 score and a reason
+  (`model` defaults to `simulation_model`; optional `criteria`,
+  `timeout_seconds` 60); results are cached and the engine bounds concurrent
+  comparisons. Each miss costs a model call, so keep it off cases that gate.
+- `ENVIRONMENT_SIMULATION` is STABLE on main and its classes lose the warning;
+  the matcher itself stays experimental (`TOOL_ARGS_MATCHER`).
+
+On 2.13.0 `InjectionConfig` has no `args_matcher` field and silently ignores
+the key, and `google.adk.tools.tool_args_matcher` does not import.
+
 ## What it does not replace
 
 Simulated tool results are not the real backend. A schema that drifted, an API
@@ -190,6 +223,8 @@ Sources: `adk-python: tools/environment_simulation/environment_simulation_config
 `tools/environment_simulation/environment_simulation_plugin.py`,
 `tools/environment_simulation/__init__.py`;
 `adk-docs: docs/evaluate/environment_simulation.md`; every field above compared
-between the installed 2.9.2, 2.10.0, 2.11.0 and 2.12.0 wheels. The `gemini-2.5-flash`
+between the installed 2.9.2, 2.10.0, 2.11.0 and 2.12.0 wheels; the 2.13.0
+warning measured; `tool_args_matcher/_semantic_arg_matcher.py` and
+`features/_feature_registry.py` read on main `dfd534a88`. The `gemini-2.5-flash`
 policy is this plugin's, sourced from `adk-recipes: AGENTS.md`, not from ADK —
 ADK still defaults `simulation_model` to it.

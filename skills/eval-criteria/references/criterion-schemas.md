@@ -170,6 +170,15 @@ silently** — `EvalConfig` ignores unknown keys, measured on 2.9.2, 2.12.0 and
 `validate_config.py` reports the key as `CFG072` (info) and a malformed one as
 `CFG073` (error).
 
+No criterion shape changed in the later main commits (post-tag at
+`dfd534a88`), but four scores do: `token_usage_v1` averages only turns that
+reported usage (2.13.0: every turn); `response_match_score` ignores thought
+parts; `final_response_match_v2` maps `almost`/`partially…` to INVALID and an
+unknown label to NOT_FOUND (2.13.0: VALID); and the multi-turn trajectory judge
+lists built-in tools instead of crashing on them (2.13.0: `TypeError`, see
+`CFG076`). The judge, rubric and simulator classes also stop printing
+`[EXPERIMENTAL]` (`1112606c2`). `metric-catalog.md` has the detail.
+
 ---
 
 Sources: `adk-python: evaluation/eval_config.py` (the
@@ -182,7 +191,8 @@ Sources: `adk-python: evaluation/eval_config.py` (the
 (`criterion_type.model_validate(...)`, the subclass re-validation),
 `evaluation/eval_rubrics.py`, `evaluation/custom_metric_evaluator.py`,
 `evaluation/rubric_based_evaluator.py`; `MultiRunConfig` and
-`tools/tool_args_matcher/` on main `12c7bed76` (post-tag);
+`tools/tool_args_matcher/` on main `12c7bed76` (post-tag); the score changes
+`5e52b21a8`, `571670d9f`, `4c66a0091`, `047815043` at `dfd534a88`;
 `adk-docs: docs/evaluate/criteria.md`, `docs/evaluate/custom_metrics.md`.
 The `gemini-2.5-flash` judgement is this plugin's policy, from
 `adk-recipes: AGENTS.md`.

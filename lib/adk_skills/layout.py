@@ -113,6 +113,9 @@ class LayoutInfo:
     env_files: list[str] = field(default_factory=list)
     workflow_files: list[str] = field(default_factory=list)
     sibling_agents: list[str] = field(default_factory=list)
+    #: agents-cli eval datasets (`tests/eval/datasets/*.json`, graded with
+    #: `tests/eval/eval_config.yaml` by `agents-cli eval`): not ADK evalsets.
+    agents_cli_datasets: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -454,6 +457,7 @@ def detect_layout(path: Path | str) -> LayoutInfo:
             # parent would pull in every sibling agent's evalsets.
             info.project_root = str(resolved)
         _classify_eval_files(search_root, info)
+        _note_agents_cli_datasets(Path(info.project_root), info)
         _collect_workflow_files(info, resolved)
         return info
 
@@ -465,12 +469,21 @@ def detect_layout(path: Path | str) -> LayoutInfo:
     ]
     if len(candidates) == 1:
         agent_dir = candidates[0]
+        style = "recipes" if agent_dir.name == "app" else "shim"
+        package = _src_layout_package(resolved, agent_dir) if agent_dir.name == "src" else None
+        if package is not None:
+            agent_dir, style = package, "src"
         entry = _agent_entry_file(agent_dir)
         assert entry is not None
         _fill_agent_dir(info, agent_dir, entry)
         info.project_root = str(resolved)
-        info.style = "recipes" if agent_dir.name == "app" else "shim"
+        info.style = style
+        if style == "src":
+            info.notes.append(
+                f"src layout: the agent package is src/{agent_dir.name}; `adk` commands take "
+                f"src/ as the agents dir and {agent_dir.name!r} as the app name")
         _classify_eval_files(resolved, info)
+        _note_agents_cli_datasets(resolved, info)
         _collect_workflow_files(info, agent_dir)
         return info
     if len(candidates) > 1:
@@ -491,6 +504,46 @@ def detect_layout(path: Path | str) -> LayoutInfo:
     _classify_eval_files(resolved, info)
     info.notes.append("no ADK agent found (no agent.py, loadable __init__.py or root_agent.yaml)")
     return info
+
+
+_MANIFEST_AGENT_DIR = re.compile(r"^agent_directory:\s*['\"]?([^'\"\s#]+)", re.M)
+
+
+def _src_layout_package(root: Path, src: Path) -> Path | None:
+    """The agent package under `src/` in a src-layout project, or None.
+
+    `src/__init__.py` re-exporting `root_agent` makes `src` itself loadable,
+    but the package is the agent: `agents-cli-manifest.yaml`
+    (`agent_directory: src/<pkg>`) names it, else the one package under `src/`
+    with an `agent.py`.
+    """
+    manifest = root / "agents-cli-manifest.yaml"
+    if manifest.is_file():
+        try:
+            match = _MANIFEST_AGENT_DIR.search(manifest.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            match = None
+        if match:
+            named = (root / match.group(1)).resolve()
+            if named.parent == src.resolve() and is_agent_dir(named):
+                return named
+    packages = [child for child in sorted(src.iterdir())
+                if child.is_dir() and child.name not in SKIP_DIRS
+                and (child / "agent.py").is_file()]
+    return packages[0] if len(packages) == 1 else None
+
+
+def _note_agents_cli_datasets(root: Path, info: LayoutInfo) -> None:
+    """Record agents-cli eval datasets so nobody mistakes them for evalsets."""
+    datasets = root / "tests" / "eval" / "datasets"
+    if not datasets.is_dir():
+        return
+    info.agents_cli_datasets = sorted(str(p) for p in datasets.glob("*.json"))
+    if info.agents_cli_datasets:
+        info.notes.append(
+            f"{len(info.agents_cli_datasets)} agents-cli eval dataset(s) under "
+            "tests/eval/datasets (graded by `agents-cli eval` with tests/eval/eval_config.yaml): "
+            "not ADK evalsets, so `adk eval` and this plugin's evalset tools do not read them")
 
 
 def _fill_agent_dir(info: LayoutInfo, agent_dir: Path, entry: tuple[Path, str]) -> None:

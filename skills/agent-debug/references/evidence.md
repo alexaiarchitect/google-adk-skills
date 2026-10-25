@@ -107,6 +107,16 @@ Under both: `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` and
 the text: a truncated response and a refused one look similar in prose and are
 different problems.
 
+**Coming after 2.13.0 (unreleased main).** Under schema v2 only, main
+(`ad467193e`, `7367645c5`) adds the semconv-genai token metrics: counters
+`gen_ai.client.inference.usage.{input_tokens,output_tokens,cache_read.input_tokens,cache_write.input_tokens,reasoning.output_tokens}`
+split by `gen_ai.token.modality`, and histograms
+`gen_ai.client.inference.operation.{input,output}_tokens`, beside the unchanged
+`gen_ai.client.token.usage`; failed calls record 0 under modality `unknown`.
+Spans that end in an error, and compaction failures, carry `error.type`
+(`a96fc11b5`, `8038bd7f4`), which is the attribute to filter on when a run
+failed without a useful message. Through 2.13.0 neither exists.
+
 Export with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (install `google-adk[otel]` on
 2.13+ for the OTLP exporter), or `adk web --otel_to_cloud` for Cloud Trace.
 Third-party sinks read the same spans; ADK's docs link CoreWeave's Agent Lens
@@ -165,7 +175,8 @@ Sources: `adk-python: cli/cli.py` (`_print_event`, `--jsonl`), `events/event.py`
 2.13.0 wheel, and the span tree measured on 2.12.0 and 2.13.0 with an in-memory
 exporter (schema v2 is `adk-python` commit `7838488`, in `v2.13.0`);
 `adk-docs: docs/observability/*`, `docs/integrations/weave.md` (Agent Lens,
-`cc53b6c14`). The reasoning-trace / system-trace
+`cc53b6c14`); main after 2.13.0: the four telemetry commits above, read at
+`dfd534a88`. The reasoning-trace / system-trace
 distinction is paraphrased from Vlad Kolesnikov, "From 'vibe checks' to
 continuous evaluation: engineering reliable AI agents", Google Cloud blog,
 2026-02-28,

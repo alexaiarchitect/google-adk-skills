@@ -37,7 +37,7 @@ from adk_skills.evalset import iter_cases, load_evalset  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
 from adk_skills.metrics import METRIC_CATALOG, incompatible_with_user_sim  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport  # noqa: E402
-from adk_skills.tools_ast import agent_model_ids, extract_module  # noqa: E402
+from adk_skills.tools_ast import agent_model_ids, builtin_model_tools, extract_module  # noqa: E402
 
 PREBUILT_PERSONAS = ("EXPERT", "NOVICE", "EVALUATOR")
 
@@ -75,17 +75,20 @@ def main(argv: list[str] | None = None) -> int:
 
     known_tools = None
     agent_models = None
+    builtin_tools = None
     backend = detect_backend(layout.agent_dir)
     if layout.agent_dir:
         facts = extract_module(layout.agent_dir)
         known_tools = facts.bound_tool_names or None
         agent_models = agent_model_ids(facts, backend.model_name)
+        builtin_tools = builtin_model_tools(facts) or None
 
     # SIM032-SIM034 (live timeout, non-live agent model, unknown simulator
     # keys) come from validate_config, which validate_config.py shares.
     validate_config(
         loaded, report=report, backend=backend,
         agent_dir=layout.agent_dir, known_tools=known_tools, agent_models=agent_models,
+        builtin_tools=builtin_tools,
     )
 
     scenario_cases: list[str] = []

@@ -62,7 +62,8 @@ ADK blanks `eval_metric.threshold` before calling, so read
 ## YAML config agents
 
 `root_agent.yaml` still loads. From 2.13.0 the `AGENT_CONFIG` feature flag is
-stable, yet the YAML loader still warns `[EXPERIMENTAL]`, the docs still call the
+stable, yet through 2.13.0 the YAML loader still warns `[EXPERIMENTAL]` (main
+after 2.13.0 drops the decorator, `c54b253eb`), the docs still call the
 feature experimental, and the config classes behind it are `@deprecated` in the
 library. `ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1` quiets the warning; it
 does not change the advice. Migrate an existing one to code; do not start a new
@@ -88,6 +89,7 @@ Sources: `adk-python: agents/llm_agent.py`, `agents/base_agent.py`,
 `cli/dev_server.py`, `CHANGELOG.md`; `adk-docs: docs/2.0/index.md`,
 `docs/sessions/state.md`, `docs/agents/config.md`. 2.13.0:
 `features/_feature_registry.py` (`AGENT_CONFIG` stable, `ea298d4`),
-`cli/utils/agent_loader.py` (`@experimental` on `_load_from_yaml_config`),
+`cli/utils/agent_loader.py` (`@experimental` on `_load_from_yaml_config`
+through 2.13.0; removed on main `dfd534a88`),
 `cli/cli_tools_click.py` (exit code, `c2ff634`); warning and exit code measured
 on 2.12.0 and 2.13.0.

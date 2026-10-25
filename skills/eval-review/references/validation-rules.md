@@ -98,12 +98,17 @@ eval-review report next to a config or conformance one:
 | `CFG070` | error | `criteria` names one of the four ADK 2.10 efficiency metrics. They take no threshold: 2.10+ raises `ValueError` at run time, 2.9 raises `NotFoundError`, and no config-level validation in either version catches it. Remove the entry — they are reported automatically |
 | `CFG071` | info | ADK 2.10+ also reports those four informational metrics on every run, so a result file carries entries your config never asked for. Reported when the resolved runner is 2.10 or newer, or unknown |
 | `CFG072` | info | the config has `multi_run_config`. Only `adk-python` main after 2.13.0 reads it; every released version drops it silently and runs each case once, so batch with `run_evals.py --runs` and `pass_at_k.py` |
+| `RUB006` | warn | a rubric bundles several properties into one verdict: one connector (`and`, `;`, `and then`, `as well as`, `and also`) joins two clauses that each carry an expectation verb. Compound expectations grade inconsistently; split it so a failure names the property. Noun and adjective pairs stay clean |
+| `CFG075` | info | a rubric under `rubric_based_final_response_quality_v1` asks about an action (runs, calls, invokes, "uses the ... tool", "checks ... before") and no metric in the config grades the trajectory. ADK's final-response judge reads the tool calls only as evidence for the final answer; move the rubric under `rubric_based_tool_use_quality_v1` or add a trajectory metric |
+| `CFG076` | warn / info | `rubric_based_multi_turn_trajectory_quality_v1` with a built-in tool on the agent (`google_search`, `url_context`, Vertex AI Search, built-in code execution ...; needs `--agent-dir`). On ADK 2.13.0 and earlier the judge raises `TypeError: 'NoneType' object is not iterable` before any score; fixed on main after 2.13.0. **Warn** on a runner ≤ 2.13 or one not probed, **info** on a newer one |
 | `CFG073` | error | `multi_run_config` has the wrong shape for main's `MultiRunConfig`: `num_runs` < 1, `max_crashed_runs` < 0, an unknown key, a method that is neither built in (`mean_over_invocations`, `mean_of_runs`, `min_over_runs`, `pass_rate`) nor in `custom_methods`, a `pass_rate` rule without a `threshold` in 0..1, or a `cross_run_scoring_by_metric` key not in `criteria` |
 | `SIM032` | warn | `live_model_config.timeout_seconds` ≤ 0. ADK enforces no bound, so the live run times out at once or never; the default is 300 |
-| `SIM033` | warn | `live_model_config` is set but the agent's model id is not a Live model (`*-live-*`, `*native-audio*`), so the live path is pointed at a model that cannot serve it |
+| `SIM033` | warn | `live_model_config` is set but the agent's model id has no `live` or `native-audio` in it (`gemini-3.8-live` counts as live), so the live path is pointed at a model that cannot serve it |
 | `SIM034` | warn | an unknown key in `user_simulator_config`. Both simulator types are `extra="allow"`, so a typo such as `max_allowed_invocation` is accepted and ignored |
 | `CI001` | error / warn | (`lint_workflows.py`) a workflow runs bare `adk eval`. **Error** when the ADK pin is below 2.13 or unknown: it exits 0 whatever happened. **Warn** from 2.13: it exits 1 on a failure, but cannot gate on a pass rate, regressions or budgets; prefer `run_evals.py`. The pin is `--adk-version`, else the lowest `google-adk` specifier in `pyproject.toml` / `requirements*.txt`, else the workflow's `--with "google-adk[eval]==X.*"` |
 | `AGT080` | warn | (`lint_agent.py`) an instruction placeholder `{key}` that no `output_key`, `tool_context.state[...]`, `callback_context.state[...]` or `state_delta` writes and no evalset seeds. Building the instruction raises `KeyError` ("Context variable not found"); seed it, write it, or use `{key?}` for an optional value |
+| `AGT081` | warn / info | (`lint_agent.py`) a streaming tool (an `async def` that `yield`s, or annotated `AsyncGenerator`/`AsyncIterator`) on an `LlmAgent`. ADK streams it only under `run_live`. **Warn** on a text model: through `run_async` a second `yield` aborts the run on 2.12+ (`ValueError: Output already set`) and on 2.9.2 the body never runs. **Info** on a live model (`live`/`native-audio` id or `CascadeLive(...)`) when no eval config beside the agent sets `live_model_config`, plus a `stop_streaming` hint when none is bound |
+| `CI007` | info | (`lint_workflows.py`) a scheduled eval workflow with no drift alert, i.e. no `compare_runs.py --max-mean-drop` step against committed baseline result files: a metric that slides a little every night stays green |
 | `AGT015` | warn | (`lint_agent.py`) two agents in the tree share a `name` — siblings, cousins or an agent and its descendant. ADK only logs a warning (siblings before 2.13, the whole tree from 2.13), and `find_agent()` returns the first match in a depth-first walk |
 | `CFG057` | warn | an unrecognized key on a `custom_metrics` entry (e.g. `metric`), which ADK ignores; the range belongs in `metric_info.metric_value_info.interval` |
 | `CFG058` | error | `metric_info` on a custom metric lacks `metric_name` or `metric_value_info`, or its interval lacks numeric `min_value` / `max_value`, so the config fails to load |
@@ -165,5 +170,13 @@ Sources: `adk-python: evaluation/eval_case.py` (the per-model `extra` settings a
 `evaluation/simulation/_llm_audio_user_simulator.py` and `LiveModelConfig`
 (measured on 2.12.0 and 2.13.0), `MultiRunConfig` on main `12c7bed76`,
 `utils/instructions_utils.py` (`inject_session_state`),
-`agents/base_agent.py` (`validate_sub_agents_unique_names`, `6031bb1`);
+`agents/base_agent.py` (`validate_sub_agents_unique_names`, `6031bb1`),
+`evaluation/rubric_based_final_response_quality_v1.py` (`CFG075`: `<response_steps>`
+in the prompt, read on 2.9.2 and 2.13.0),
+`evaluation/rubric_based_multi_turn_trajectory_evaluator.py` (`CFG076`: the
+`TypeError` measured on 2.13.0, fix `047815043` on main `dfd534a88`),
+`flows/llm_flows/tools/_agent_tools.py` (`AGT081`); rubric atomicity
+(`RUB006`) from Samborski, "Behind the scenes, two months later: How we ship
+Google Agent Skills like products", Google Cloud Blog, 2026-10-29,
+https://cloud.google.com/blog/topics/developers-practitioners/behind-the-scenes-two-months-later-how-we-ship-google-agent-skills-like-products;
 `adk-docs: docs/evaluate/criteria.md`, `docs/evaluate/index.md`.

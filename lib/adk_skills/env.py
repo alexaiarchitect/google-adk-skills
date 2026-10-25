@@ -212,8 +212,8 @@ def dotenv_value(agent_dir: Path | str | None, name: str) -> str | None:
 #: None of them is needed to run evals; check_env.py reports the ones set.
 OPTIONAL_KNOBS: dict[str, str] = {
     "ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS":
-        "silences ADK's [EXPERIMENTAL] warnings (the YAML loader's on every 2.x; the "
-        "feature registry's from 2.13)",
+        "silences ADK's [EXPERIMENTAL] warnings (the YAML loader's through 2.13.0, dropped "
+        "on main after 2.13.0; the feature registry's from 2.13)",
     "ADK_ENABLE_SKILL_LIFECYCLE": "turns on skill lifecycles (unload_skill), experimental",
     "ADK_TELEMETRY_SCHEMA_VERSION_OPT_IN":
         "otel_semconv_1_36 brings back the v1 span schema on 2.13 (call_llm, llm_request)",
@@ -227,6 +227,17 @@ OPTIONAL_KNOBS: dict[str, str] = {
 BACKEND_REQUIREMENT = (
     "needs either GOOGLE_API_KEY, or GOOGLE_CLOUD_PROJECT + GOOGLE_CLOUD_LOCATION with ADC"
 )
+
+
+#: Live API model ids: `gemini-3.8-live`, `gemini-3.8-live-extended-thinking`,
+#: `gemini-3.1-flash-live-preview`, `gemini-live-2.5-flash-native-audio`,
+#: `gemini-2.5-flash-native-audio-preview-12-2025` (adk-docs docs/live/models.md).
+_LIVE_MODEL = re.compile(r"(?:^|[-/])live(?:-|$)|native-audio", re.I)
+
+
+def is_live_model_id(model: str | None) -> bool:
+    """Does a model id name a Live API model?"""
+    return bool(model) and bool(_LIVE_MODEL.search(str(model)))
 
 
 def classify_model_id(model: str | None) -> str:

@@ -144,7 +144,9 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
 
     spec_text = args.spec
-    if Path(args.spec).exists():
+    # Inline JSON can be longer than a path may be; on Python < 3.14 asking
+    # whether it exists raises OSError (ENAMETOOLONG) instead of saying no.
+    if not spec_text.lstrip().startswith(("[", "{")) and Path(args.spec).exists():
         spec_text = Path(args.spec).read_text(encoding="utf-8")
     try:
         entries = json.loads(spec_text)

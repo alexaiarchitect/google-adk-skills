@@ -164,7 +164,9 @@ def efficiency_table(metrics: list[dict]) -> list[str]:
     lines = [
         "",
         "**Efficiency (informational, lower is better).** Reported by ADK 2.10+ on every "
-        "run, per invocation, averaged over the case. No thresholds, no pass or fail: "
+        "run, per invocation, averaged over the case (`token_usage_v1`: 2.13.0 averages "
+        "over every invocation; main after 2.13.0 leaves no-usage turns out). No "
+        "thresholds, no pass or fail: "
         "compare against your own earlier runs (`compare_runs.py`).",
         "",
         "| metric | value | unit | cached |",

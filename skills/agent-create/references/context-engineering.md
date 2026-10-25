@@ -29,8 +29,9 @@ sub-agent its whole ancestry when it needed one question.
 
 `App(events_compaction_config=EventsCompactionConfig(...))` replaces older
 invocations with an LLM-written summary once a trigger fires. Import it from
-`google.adk.apps.app` (it is not re-exported by `google.adk.apps`); the class is
-marked experimental.
+`google.adk.apps.app` (it is not re-exported by `google.adk.apps`); through
+2.13.0 the class is marked experimental and warns (main after 2.13.0 graduates
+it, `c54b253eb`).
 
 ```python
 from google.adk.apps.app import App, EventsCompactionConfig

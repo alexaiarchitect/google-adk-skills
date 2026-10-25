@@ -73,6 +73,34 @@ flip against a baseline or a budget. The wrapper's exit code is the gate on
 every version; `lint_workflows.py` reports bare `adk eval` as `CI001`, an error
 on a pin below 2.13 or an unknown one, a warning on 2.13+.
 
+## Cheap gates first, evidence on every PR
+
+Google's Agent Skills team ships each skill change through gates in a fixed
+order: structure, linters and the version bump first — fast, deterministic and
+blocking — then a valid eval suite with a fresh report, link checks, an AI
+reviewer and a human. Nothing that costs a model call runs until the free checks
+pass. Three habits carry over:
+
+- **Order by cost.** `lint_agent.py`, `validate_evalset.py`,
+  `validate_config.py` and `lint_workflows.py` call no model; run them before
+  any judged job, which is what the PR tier in
+  [tiered-pipeline.md](tiered-pipeline.md) does.
+- **Validate the suite as well as the agent.** Their validator rejects compound
+  expectations (one expectation, one criterion), duplicate prompts and
+  conflicting expectations. Here: `RUB006` for a compound rubric,
+  `manage_cases.py dedupe` for duplicate cases, `EVS012` for a duplicate id;
+  conflicting expectations across cases are still a reviewer's job
+  (`/adk:eval-review`).
+- **Link the evidence, and check it is fresh.** Every eval-affecting PR carries
+  the report of a run on its **latest commit** — `summarize_results.py --latest`
+  in the job summary, the `eval_history` artifact uploaded — and a report from
+  an earlier commit does not count, because authors keep iterating during
+  review. Compare the report's commit with the PR head before approving.
+- **Trigger the expensive suites on purpose.** A judged suite on every push is
+  waste; run it on `workflow_dispatch`, a `/run-evals` comment, a label, or when
+  the diff touches the agent's instruction, tools or config (`paths:`), and
+  always nightly.
+
 ## Four anti-patterns, and the answer to each
 
 ### 1. Baseline erosion
@@ -157,11 +185,8 @@ when a judge metric is involved, or one noisy run decides the iteration.
 
 ## Other harnesses
 
-- **`agents-cli eval`** is Google's hosted counterpart: `eval dataset synthesize`
-  for cases, `eval grade --traces F --config F` on the Agent Platform evaluation
-  service, `eval compare` against a prior run, `eval analyze` to cluster
-  failures. The same two merge rules apply to its output. How each stage maps
-  onto this plugin's scripts, and what the platform adds after launch, is in
+- **`agents-cli eval`** is Google's hosted counterpart (below). The same two
+  merge rules apply to its output; what the platform adds after launch is in
   `/adk:eval-analyze` `improvement-loop.md`.
 - **`agent-eval`** (GoogleCloudPlatform/professional-services) is an open-source
   evaluation toolkit the post links. It is an alternative harness, not something
@@ -169,6 +194,30 @@ when a judge metric is involved, or one noisy run decides the iteration.
 - **User simulation** for Day 0 scenarios: `/adk:eval-simulation`.
 - **Adaptive rubrics** (Vertex-generated, per prompt) are the Vertex-served rubric
   metrics: `/adk:eval-criteria` `vertex-requirements.md`.
+
+## The hosted path, and this plugin's equivalent
+
+Google's Agents CLI drives the same loop against the platform:
+
+| `agents-cli eval` | Local equivalent |
+|---|---|
+| `eval dataset synthesize` | `gen_scenarios.py`, `generate_eval_cases.py` (user simulator) |
+| `eval generate` | `run_evals.py` (inference) |
+| `eval grade --traces F --config F` | the config's metrics, via `run_evals.py` |
+| `eval compare` | `compare_runs.py` (per-case deltas; `--max-mean-drop` for a scheduled alert) |
+| `eval analyze` | `summarize_results.py` |
+| `eval optimize` | none; a proposal for the user to approve (`improvement-loop.md`) |
+
+Its datasets (`tests/eval/datasets/*.json`) and config
+(`tests/eval/eval_config.yaml`, `metrics_to_run`, `custom_metrics`) are separate
+version-controlled files, like an evalset and its `eval_config.json` here;
+`eval grade` reports scores only, so a pass threshold is a script on top of it.
+
+The hosted path needs a Google Cloud project with the evaluation service
+enabled, and its model-based metrics are billed at model rates. The local path
+needs only what `/adk:adk` `check_env.py` reports. Neither is a substitute for
+real traffic: simulated cases are a cold start, and the suite should grow from
+what production actually gets wrong.
 
 ---
 
@@ -185,4 +234,12 @@ paraphrased). This plugin's `run_evals.py`, `compare_runs.py`, `manage_cases.py`
 Lifecycle with any framework, from ADK to LangChain and beyond",
 https://developers.googleblog.com/powering-the-agent-development-lifecycle-with-any-framework-from-adk-to-langchain-and-beyond/,
 and "Driving the Agent Quality Flywheel from Your Coding Agent",
-https://developers.googleblog.com/driving-the-agent-quality-flywheel-from-your-coding-agent/.
+https://developers.googleblog.com/driving-the-agent-quality-flywheel-from-your-coding-agent/;
+the dataset/config split and the threshold script: Ippolito and Secchi,
+"Hill-Climbing Agent Quality with Agents CLI Evaluation", 2026-10-28,
+https://developers.googleblog.com/hill-climbing-agent-quality-with-agents-cli-evaluation/.
+Gate order, suite validation, fresh evidence and manual triggers: Remigiusz
+Samborski, "Behind the scenes, two months later: How we ship Google Agent Skills
+like products", Google Cloud Blog, 2026-10-29,
+https://cloud.google.com/blog/topics/developers-practitioners/behind-the-scenes-two-months-later-how-we-ship-google-agent-skills-like-products
+(paraphrased).

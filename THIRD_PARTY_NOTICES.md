@@ -14,14 +14,17 @@ tree it came from.
     Licensed under the Apache License, Version 2.0
     https://github.com/google/adk-python
 
-Snapshot: `12c7bed76` (2026-10-24) on `main`. The `v2.13.0` release tag is
+Snapshot: `dfd534a88` (2026-10-29) on `main`, 87 commits after the previous
+snapshot `12c7bed76` (2026-10-24), none of them in a release; the reference
+pages describe them under "Coming after 2.13.0 (unreleased main)" and keep
+2.13.0 behaviour as the target. The `v2.13.0` release tag is
 `d68ca857` (2026-10-23), which sits on a release branch: it is the merge-base
 `a221ccd8` plus twelve release-only commits (ten of them cherry-picks of later
 `main` commits), and `main` carries 49 commits after that merge-base. Behaviour
 was also measured against the installed `google-adk[eval]` 2.9.2, 2.12.0 and
 2.13.0 wheels (and, at earlier snapshots, 2.10.0 and 2.11.0); where a change is
 only on `main` and not in a release, the reference page says so. Previous
-snapshot: `a6ed8590` (2026-10-17, after `v2.12.0`, tag `38381f65`).
+snapshot before those: `a6ed8590` (2026-10-17, after `v2.12.0`, tag `38381f65`).
 
 Used as the authoritative source for the evaluation data model, criteria
 catalog, CLI surface and agent-loading rules described in this plugin's
@@ -33,8 +36,11 @@ references. No source files are redistributed.
     Licensed under the Apache License, Version 2.0
     https://github.com/google/adk-docs
 
-Snapshot: `cc53b6c14` (2026-10-23; previously `923938a4`). Changes since the
-previous snapshot under `docs/evaluate/` are cosmetic; new since then are
+Snapshot: `49c928f1e` (2026-10-29; previously `cc53b6c14`, before that
+`923938a4`). Nothing under `docs/evaluate/` changed in the latest twelve
+commits; new are the Gemini 3.8 Live models and the voice-architectures
+(speech-to-speech and cascade) pages under `docs/live/`, and the CLI reference
+regenerated for 2.13.0 (version strings only). Earlier:
 `docs/agents/service-registration.md`, the Cloud Run sandbox flag in
 `docs/deploy/cloud-run.md` and the Agent Lens link in `docs/integrations/weave.md`.
 
@@ -47,8 +53,10 @@ Used as a source for the condensed reference pages, including
     Licensed under the Apache License, Version 2.0
     https://github.com/google/adk-recipes
 
-Snapshot: `a6d62a409` (2026-10-22; previously `05811bba`; the three commits
-between them are README and documentation wording). The repository is
+Snapshot: `665f7b2a1` (2026-10-29; previously `a6d62a409`, before that
+`05811bba`). Since `a6d62a409`: `core/python/ambient-quality-agent` v0.2.0, and
+`long-horizon-harness` moved 69 of its 78 eval cases to `agents-cli eval`
+datasets (`af088392`), keeping two `adk eval` replay suites. The repository is
 organised in three layers: reference patterns under `core/`, installable
 plugin skills under `plugins/` (with an `EVAL.yaml` per skill), and deployable
 services under `contrib/`. Its `AGENTS.md` still names `gemini-3.7-flash` as the
@@ -63,10 +71,11 @@ file is redistributed or derived from.
 
 ## Background reading
 
-Fifteen Google-authored articles informed the context-caching, eval-engineering,
-shadow-rollout, merge-gates, behavioural-tests, skills, context-engineering,
-layouts, improvement-loop, user-simulation, case-taxonomy, state-and-memory,
-workflows and CLI guidance. Nothing is reproduced from them: the references
+Twenty-one Google-authored articles informed the context-caching,
+eval-engineering, shadow-rollout, merge-gates, behavioural-tests, skills,
+context-engineering, layouts, improvement-loop, user-simulation, case-taxonomy,
+state-and-memory, workflows, maturity, rubric-authoring, live-agents,
+workflow-graphs, app-and-plugins and CLI guidance. Nothing is reproduced from them: the references
 paraphrase their ideas in this plugin's own words, cite them by title and URL in
 their `Sources:` footers, and quote no more than a short phrase.
 
@@ -135,6 +144,30 @@ their `Sources:` footers, and quote no more than a short phrase.
   Development Kit", Google Developers Blog, 2026-08-17 —
   https://developers.googleblog.com/build-zero-trust-ai-agents-with-googles-agent-development-kit/
   (`behavioral-tests.md`, `app-and-plugins.md`).
+- Pier Paolo Ippolito and Elia Secchi, "Hill-Climbing Agent Quality with Agents
+  CLI Evaluation", Google Developers Blog, 2026-10-28 —
+  https://developers.googleblog.com/hill-climbing-agent-quality-with-agents-cli-evaluation/
+  (`improvement-loop.md`, `merge-gates.md`, `maturity.md`, `layouts.md`).
+- Casey West, "Four evaluation engineering lessons learned from building agent
+  plugins", Google Cloud Blog, 2026-10-17 —
+  https://cloud.google.com/blog/topics/developers-practitioners/four-eval-engineering-lessons
+  (`improvement-loop.md`, `rubric-authoring.md`).
+- Remigiusz Samborski, "Behind the scenes, two months later: How we ship Google
+  Agent Skills like products", Google Cloud Blog, 2026-10-29 —
+  https://cloud.google.com/blog/topics/developers-practitioners/behind-the-scenes-two-months-later-how-we-ship-google-agent-skills-like-products
+  (`merge-gates.md`, `maturity.md`, `rubric-authoring.md`, `case-taxonomy.md`).
+- Stephen Allen and Kaz Sato, "Step by Step guide: Build a Voice Agent That
+  Never Goes Silent using ADK", Google Developers Blog, 2026-10-19 —
+  https://developers.googleblog.com/step-by-step-guide-build-a-voice-agent-that-never-goes-silent-using-adk/
+  (`live-agents.md`, `user-simulation.md`).
+- Shubham Saboo and Eric Dong, "Build Cross-Language Multi-Agent Team with
+  Google's Agent Development Kit and A2A", Google Developers Blog, 2026-06-22 —
+  https://developers.googleblog.com/en/build-cross-language-multi-agent-team-with-google-agent-development-kit-and-a2a/
+  (`workflow-graphs.md`, `case-taxonomy.md`).
+- Anant Nawalgaria, "Architecting Governed, Self-Evolving AI Agents on Google
+  Cloud", Google Developers Blog, 2026-10-22 —
+  https://developers.googleblog.com/architecting-governed-self-evolving-ai-agents-on-gemini-agent-platform/
+  (`app-and-plugins.md`, one paragraph on governance gates).
 
 ## Not included
 
@@ -145,5 +178,5 @@ Exercise File License, which does not permit redistribution. No code, data,
 evalset, checklist or prose from that repository is included in this plugin;
 every reference page, template and fixture here is original work. The course is
 credited as background reading only. (Snapshot consulted for the background
-reading credit only: `17924c4`, unchanged at the 2026-10-17 and 2026-10-24
-syncs.)
+reading credit only: `17924c4`, unchanged at the 2026-10-17, 2026-10-24 and
+2026-10-29 syncs.)

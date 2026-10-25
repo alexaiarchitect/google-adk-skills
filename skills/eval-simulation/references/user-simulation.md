@@ -15,9 +15,8 @@ A scripted case fixes the user's turns. A scenario case fixes the user's
 
 A case has either a `conversation` or a `conversation_scenario`, never both.
 
-What that buys: phrasings nobody scripted, follow-ups nobody anticipated, and the
-ordinary human behaviour of stating something once and expecting it to be
-remembered. What it costs: the reference.
+It buys phrasings and follow-ups nobody scripted, and users who say something
+once and expect it remembered. It costs the reference.
 
 There is no fixed expected invocation to compare against, so ADK returns
 `NOT_EVALUATED` for reference-based metrics here, and raises for the ones that
@@ -36,12 +35,9 @@ Good: Say you work in engineering. Ask about a 900 dollar flight, then a 40 doll
       say you already told it. Confirm both outcomes, then stop.
 ```
 
-Three things a good plan states:
-
-1. **What the user reveals, and when.** This is how a memory test gets built
-   without scripting turns.
-2. **What they do not repeat.** The interesting failures live here.
-3. **When they stop.** Otherwise the conversation runs until the cap.
+A good plan states **what the user reveals, and when** (a memory test without
+scripted turns), **what they do not repeat** (where the interesting failures
+live), and **when they stop** (or it runs until the cap).
 
 ## The simulator config
 
@@ -80,9 +76,8 @@ The rule is simple: if a metric needs something the eval case declared in
 advance — an expected trajectory or an expected answer — it cannot score a
 conversation that was invented at runtime.
 
-**Use two configs.** One deterministic, for the scripted cases; one for the
-simulated ones. Sharing a config means half the metrics quietly apply to half the
-cases, which reads as a passing suite that is testing less than you think.
+**Use two configs**, one for scripted and one for simulated cases. A shared one
+applies half the metrics to half the cases and reads as a passing suite.
 
 ## Rubrics that suit simulated runs
 
@@ -99,8 +94,7 @@ When the agent declines, its response names the specific constraint that blocked
 the request.
 ```
 
-All three are true-or-false about a transcript, whatever words the simulated user
-chose.
+Each is true-or-false about a transcript, whatever the simulated user said.
 
 ## Generating scenarios
 
@@ -113,9 +107,8 @@ The generation config takes a `count`, a `generation_instruction`, an
 `environment_context` and a `model_name`. It calls the Vertex AI evaluation SDK,
 so it needs a project and location.
 
-Treat the output as a draft. Generated scenarios drift toward the obvious cases
-and occasionally describe something the agent cannot do at all; read them before
-committing, as you would a captured trace.
+Treat the output as a draft: generated scenarios drift toward the obvious and
+sometimes ask for what the agent cannot do. Read them before committing.
 
 ## Cost
 
@@ -131,7 +124,8 @@ A voice agent runs on a Live API model and hears audio, so its suite has to spea
 `type: llm_audio` keeps the LLM simulator for deciding *what* the user says and
 adds a text-to-speech step for *how* it sounds; `live_model_config` sends the
 run down ADK's live inference path. Both shapes are identical on 2.12.0 and
-2.13.0, and the audio simulator class is still marked experimental.
+2.13.0; through 2.13.0 the audio simulator class is marked experimental (main
+after 2.13.0 graduates it, `1112606c2`).
 
 The same two case kinds apply:
 
@@ -182,32 +176,48 @@ not a Live model. Generate the block rather than typing it:
 **Omit `live_model_config` and the same cases run in text**, through the
 ordinary path, which is a cheap way to debug a plan before paying for audio.
 
+**Which architecture the run exercises.** With `live_model_config` the eval
+drives the agent's `run_live`, so it tests whatever the agent's `model` is:
+a native-audio Live model (`gemini-3.8-live`, GA on AI Studio and Agent
+Platform; `gemini-3.8-live-extended-thinking`, AI Studio, 2.10+, every tool
+non-blocking; `gemini-3.1-flash-live-preview`; `gemini-live-2.5-flash-native-audio`)
+or a cascade, `CascadeLive(model=<text model>, stt=GeminiSTT(), tts=GeminiTTS())`
+(2.13.0+, experimental), where speech-to-text and text-to-speech wrap a text
+model. Without it the run takes `run_async`: a cascade then runs text-only
+through its inner model, a native-audio model is not usable, and streaming tools
+do not stream (`AGT081`; `/adk:agent-create` `live-agents.md`).
+
+**Streaming tools change what to grade.** A voice agent with a streaming tool
+acknowledges the request and narrates progress before the result lands, and a
+barge-in does not cancel the tool. Grade that order ("acknowledges the request
+before giving figures"; "the figures match the final tool update"), not the
+number of updates; leave headroom in `max_allowed_invocations` and
+`timeout_seconds` for narrated turns; and give an interrupting persona a case
+that still expects the result.
+
 **Metrics.** Judge the whole conversation with a rubric on intent rather than
 wording — `rubric_based_multi_turn_trajectory_quality_v1` at around 0.7 is the
 example in Google's live-evaluation post — and add per-turn metrics where a turn
 has a checkable outcome. Speech recognition varies, so exact text matching on a
 spoken turn measures the transcriber as much as the agent.
 
-**Vary the voice and the user.** Several voices and accents (one config per
-voice, or one suite run per voice) and several personas, `NOVICE` among them,
-because a voice agent that only understands one studio voice is untested.
-Keep the turn cap and the timeout tight: a live conversation that loops costs
-TTS, Live API and judge calls on every turn.
+**Vary the voice and the user.** Several voices and accents (one config or run
+per voice) and personas, `NOVICE` among them; a voice agent that only
+understands one studio voice is untested. Keep the cap and timeout tight: a
+looping live conversation pays TTS, Live API and judge calls on every turn.
 
 **Credentials.** The run needs the Live API for the agent's model and TTS for the
 simulator: `cloud_tts` calls Cloud Text-to-Speech in `GOOGLE_CLOUD_PROJECT`
 (ADC, the API enabled); a Gemini TTS id goes through the same Gemini or Vertex
 credentials as any model. `check_env.py` reports what it can see.
 
-**In `adk web`**, the eval run dialog has a **Standard | Live** toggle, with the
-input modality, voice and language for the simulated user; the result shows a
-transcript rebuilt from the audio, each turn with a playable clip. Listen to a
-few before trusting a score.
+**In `adk web`**, the eval dialog's **Standard | Live** toggle sets modality,
+voice and language; results show a transcript rebuilt from the audio with a clip
+per turn. Listen to a few before trusting a score.
 
-**Where it runs.** Google's post recommends live evals in CI to catch
-regressions before release. In this plugin's tiers that means the nightly or
-release tier: every turn spends on TTS, the Live API and the judge. A short set of
-fixed conversations can gate a pull request when the budget allows.
+**Where it runs.** Google's post recommends live evals in CI before release; in
+this plugin's tiers, nightly or release (every turn spends on TTS, the Live API
+and the judge). A few fixed conversations can gate a PR when budget allows.
 
 ## When a simulated suite goes red
 
@@ -231,4 +241,10 @@ Live toggle and the CI recommendation are paraphrased from Stephen Allen, "How t
 Evaluate Live & Voice Agents in ADK", Google Developers Blog, 2026-08-24,
 https://developers.googleblog.com/how-to-evaluate-live-voice-agents-in-adk/ (its
 example uses a Gemini TTS model, the "Kore" voice and a cap of 10; those are
-choices, not ADK defaults).
+choices, not ADK defaults). Architectures and model ids: `adk-docs:
+docs/live/models.md`, `docs/live/architectures/{index,cascade}.md` (`49c928f1e`);
+`evaluation/evaluation_generator.py` (`run_live` under `live_model_config`, read
+on 2.13.0). Streaming tools and barge-in: Allen and Sato, "Step by Step guide:
+Build a Voice Agent That Never Goes Silent using ADK", Google Developers Blog,
+2026-10-19,
+https://developers.googleblog.com/step-by-step-guide-build-a-voice-agent-that-never-goes-silent-using-adk/.

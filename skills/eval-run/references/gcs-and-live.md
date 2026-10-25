@@ -7,8 +7,9 @@ detail behind both, plus the live-model configuration that user simulation uses.
 
 ## `--eval_storage_uri gs://<bucket>`
 
-Accepted by `adk web`, `adk eval`, and all three `adk eval_set` subcommands
-(`create`, `add_eval_case`, `generate_eval_cases`). When set, ADK swaps its
+Through 2.13.0 `gs://` is the only scheme. Accepted by `adk web`, `adk eval`,
+and all three `adk eval_set` subcommands (`create`, `add_eval_case`,
+`generate_eval_cases`). When set, ADK swaps its
 local managers for the GCS ones, and **both** halves move:
 
 | Without it | With it |
@@ -61,6 +62,17 @@ results at a bucket is a coherent setup, and usually the right first step.
   code: `adk eval` returns 0 with it through 2.12.0 exactly as it does without
   it, and 1 on a failure from 2.13.0 either way.
 
+### Coming after 2.13.0 (unreleased main)
+
+Main (`ff66b1f17`) adds a local store: `--eval_storage_uri file:///abs/path`,
+and an `ADK_EVAL_STORAGE_URI` variable (`gs://` or `file://`) used when the flag
+is omitted; precedence is flag, then variable, then `agents_dir`. The directory
+is created, sets go to `<dir>/<app>/<set>.evalset.json` and results to
+`<dir>/<app>/.adk/eval_history/`, and nothing already under `agents_dir` is
+migrated. It exists for agents shipped in a read-only directory. On 2.13.0 a
+`file://` URI raises `ValueError: Unsupported evals storage URI` and the
+variable is ignored, so keep `gs://` (or the default) until a release has it.
+
 ## Live mode
 
 Three different things get called "live", and only two exist today.
@@ -105,7 +117,8 @@ recording to be refreshed deliberately, which is a record of what changed.
 Sources: `adk-python/src/google/adk/cli/cli_tools_click.py` (`--eval_storage_uri`
 on `web`, `eval` and `eval_set`; `EVAL_SET_FILE_PATH_OR_ID` semantics);
 `adk-python/src/google/adk/evaluation/gcs_eval_sets_manager.py` and
-`gcs_eval_set_results_manager.py`; `adk-python/src/google/adk/cli/conformance/
+`gcs_eval_set_results_manager.py`; `cli/utils/_eval_storage.py` (main,
+`ff66b1f17`, post-tag at `dfd534a88`); `adk-python/src/google/adk/cli/conformance/
 cli_test.py` (replay vs live, streaming modes);
 `adk-docs/docs/evaluate/index.md` (running evaluations, conformance reports).
 Background reading: the LinkedIn Learning course "Evaluating AI Agents with

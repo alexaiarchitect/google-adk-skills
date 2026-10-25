@@ -38,6 +38,27 @@ The trap is **semantic, not structural**. Malformed input tests the schema; this
 tests the reasoning. A suite with no case designed to break the agent is not
 testing the agent, it is demonstrating it.
 
+### Fault injection
+
+A dependency that fails on purpose: a tool that errors, a backend that answers
+slowly, a remote agent that is down. The expected behaviour is a safe **hold**,
+not a retry storm and not an invented result. Google's cross-language A2A
+example runs its remote validator in three modes — normal, delayed, crashed —
+and expects the crashed one to route the case to manual review. In the
+expense-claim domain:
+
+| Case | Injected | Expected |
+|---|---|---|
+| `adversarial_fault_policy_slow` | `lookup_policy` with 30 s latency | one call, no duplicate `submit_claim`, the user told it is still checking |
+| `adversarial_fault_policy_down` | `lookup_policy` returns a 503 error | no `submit_claim`; the claim held for manual review, the reply says so |
+| `adversarial_fault_validator_crashed` | the remote A2A validator unreachable | state step `MANUAL_REVIEW`, no approval |
+
+Inject with environment simulation (`/adk:eval-simulation`
+`environment-simulation.md`, `injection_probability` 1.0 on exactly the case
+that needs it) or a fixture tool; assert the hold on the trajectory (no write
+call) and on state, not only on the reply. Prefix `adversarial_fault_`, so the
+coverage counts (`case_category`) file them with the adversarial cases.
+
 ### Memory
 
 A constraint stated once, then needed several turns later without being
@@ -168,6 +189,11 @@ something broke, not what.
 
 Two cases proving the same thing cost time and money on every run and add
 nothing. When two cases always fail together, one is a copy of the other.
+`manage_cases.py dedupe` finds cases that send the same turns with the same
+expectations; `validate_evalset.py` rejects a duplicate `eval_id` (`EVS012`).
+The opposite fault, two cases with the same prompt and **conflicting**
+expectations, has no automatic check: one of them is the specification, so
+decide which and delete the other (`/adk:eval-review` `quality-review.md`).
 
 ## Where they live
 
@@ -190,6 +216,14 @@ development: how we build better agent skills for Firebase", Firebase blog,
 behavioural checks from "The anatomy of harness engineering", Google Developers
 Blog, 2026-09-09,
 https://developers.googleblog.com/the-anatomy-of-harness-engineering-how-to-evaluate-iterate-and-guard-ai-coding-agents/.
+Fault-injection cases: Saboo and Dong, "Build Cross-Language Multi-Agent Team
+with Google's Agent Development Kit and A2A", Google Developers Blog, 2026-06-22,
+https://developers.googleblog.com/en/build-cross-language-multi-agent-team-with-google-agent-development-kit-and-a2a/
+(normal / delayed / crashed, manual review; retold in this plugin's domain);
+duplicate and conflicting expectations from Samborski, "Behind the scenes, two
+months later: How we ship Google Agent Skills like products", Google Cloud Blog,
+2026-10-29,
+https://cloud.google.com/blog/topics/developers-practitioners/behind-the-scenes-two-months-later-how-we-ship-google-agent-skills-like-products.
 The case taxonomy, the branch rule and the suite-shape
 guidance follow the LinkedIn Learning course *Evaluating AI Agents with Google
 ADK* (Jigyasa Grover), recommended as background reading.

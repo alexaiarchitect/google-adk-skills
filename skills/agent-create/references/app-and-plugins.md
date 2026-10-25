@@ -72,10 +72,11 @@ and `ToolResultClassification` (read in the installed 2.13.0 wheel).
 - **Stable from 2.13**: tool confirmation (`require_confirmation`), tool config,
   authenticated function tools, progressive SSE streaming, JSON-schema function
   declarations, the `AGENT_CONFIG` flag and six more. Their `[EXPERIMENTAL]
-  feature ... is enabled.` warnings are gone; the YAML loader still warns.
-- **`ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1`** silences the remaining
-  experimental warnings (decorator ones on 2.9.2 already, feature-registry ones
-  from 2.13); `/adk:adk` `check_env.py` knows it.
+  feature ... is enabled.` warnings are gone; the YAML loader still warns
+  through 2.13.0 (main after 2.13.0 drops that one too, below).
+- **`ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1`** silences the experimental
+  warnings that remain through 2.13.0 (decorator ones on 2.9.2 already,
+  feature-registry ones from 2.13); `/adk:adk` `check_env.py` knows it.
 - **`pip install "google-adk[otel]"`** pulls the OTLP exporter and GenAI/gRPC/httpx
   instrumentation; without it a configured exporter now degrades to a warning.
 - **`ForceEscalationPlugin()`** (`google.adk.plugins`) forces `ModelConsultTool`
@@ -85,6 +86,24 @@ and `ToolResultClassification` (read in the installed 2.13.0 wheel).
 - **Duplicate agent names** anywhere in the tree are logged (siblings before
   2.13; cousins and an agent reused below itself from 2.13); `find_agent()`
   returns the first depth-first match. `AGT015` reports the whole tree.
+
+### Coming after 2.13.0 (unreleased main)
+
+Post-tag at `adk-python` `dfd534a88`; nothing here is in a release:
+
+- **No more `[EXPERIMENTAL]` on App features** (`c54b253eb`): through 2.13.0
+  `App(resumability_config=...)`, `EventsCompactionConfig`, context caching
+  (the warning comes from `GeminiContextCacheManager`; `ContextCacheConfig`
+  never warned), the credential services behind tool auth and the YAML loader
+  all warn; main graduates them.
+- **`google.adk.plugins` exports every shipped plugin** (`4496bef70`), incl.
+  `GlobalInstructionPlugin` and `BigQueryAgentAnalyticsPlugin`; the submodule
+  paths above work on every version, so keep them while you support 2.13.0.
+- **Which hook is running** (`2084efbe1`): contexts carry `callback_info`
+  (`CallbackInfo(type=CallbackType.BEFORE_TOOL)` and so on), so one function
+  can serve several hooks.
+- **`InMemorySessionService.create_session` copies `state`** (`cec52fc00`): a
+  test that mutated the dict it passed and expected the session to follow breaks.
 
 ### Tool-call integrity (2.11)
 
@@ -98,10 +117,8 @@ before the plugin was installed. Register it **first** in `plugins=[...]`.
 A failed check surfaces as a `RuntimeError` whose `__cause__` is
 `ToolCallIntegrityError`. Tools run as workflow nodes are not covered.
 
-An eval case starts a fresh session, so the plugin signs and verifies its own
-calls and stays out of the way. Events restored through the create-session API
-or `adk run --resume` are marked restored: not verified, and their calls are
-never executed.
+An eval case starts a fresh session, so the plugin stays out of the way; events
+restored via the create-session API or `adk run --resume` are never executed.
 
 ### Two other 2.11 additions, in one line each
 
@@ -147,9 +164,7 @@ text, and a rubric that the agent did not act on it (`/adk:eval-create`
 
 **It needs an extra.** On a plain `google-adk[eval]` install the import raises
 `ImportError: Model Armor support requires google-cloud-modelarmor. Install it
-with: pip install 'google-adk[gcp]'.` The plugin has shipped since 2.9.2 — what
-changed in this upstream sync is only that ADK's docs now list it among the
-built-ins.
+with: pip install 'google-adk[gcp]'.` (shipped since 2.9.2).
 
 ## Where a guardrail belongs
 
@@ -173,6 +188,15 @@ prompt, an out-of-bounds update, an allowed one — and the agent end to end wit
 the policy-contract behaviour from `gen_test_eval.py --behavioral`
 (`/adk:eval-create` `behavioral-tests.md`).
 
+**Governed change.** When a pipeline can change the agent itself (generated
+tools, rewritten instructions, a new sub-agent), the idea moves up a level.
+Google's reference architecture for self-evolving agents chains gates: screen
+inputs, sandbox generated code, sign artefacts and refuse unsigned ones, enforce
+policy as code, require human approval for structural changes, keep a
+tamper-evident log, and replay candidates offline and in a shadow environment
+before production. Here: a structural change is a new baseline, gated by
+`/adk:eval-ci` and rolled out per its `shadow-rollout.md`.
+
 ## Callback discipline
 
 - One purpose per callback. They run on every invocation, so cost shows up.
@@ -185,35 +209,11 @@ the policy-contract behaviour from `gen_test_eval.py --behavioral`
 
 ## Workflows
 
-For orchestration, ADK 2.x uses `google.adk.workflow.Workflow`: a graph of nodes
-with explicit edges, routing, fan-out with `JoinNode` fan-in, retries and
-human-in-the-loop pauses. `SequentialAgent`, `ParallelAgent` and `LoopAgent` are
-superseded, and remain only for the case where an `LlmAgent` must be able to
-transfer into the orchestrated block.
-
-Two rules that bite when evaluating a graph, and both raise rather than degrade
-quietly:
-
-- **At most one output per node execution.** The second assignment to
-  `ctx.output` raises `ValueError("Output already set. A node can produce at most
-  one output.")`. Output and interrupt are mutually exclusive too.
-- **At most one terminal output per workflow.** If several terminal nodes (nodes
-  with no outgoing edge) produce output, finalization raises
-  `WorkflowConfigurationError("Workflow <name>: multiple terminal nodes produced
-  output (N). A workflow must have at most one terminal output.")`. Route to a
-  single terminal node, or join first.
-
-Plus: everything in `event.output` must be JSON-serializable.
-
-**Confirmation on a function node (2.12).** `@node(require_confirmation=True)`
-(or a predicate `callable(...) -> bool`), `node(...)`, `build_node(...)` and
-`FunctionNode(require_confirmation=...)` pause the node for a yes/no before the
-function runs, the same contract `FunctionTool(require_confirmation=...)` has:
-approval runs it once; rejection skips it and emits `{"error": "This tool call
-is rejected."}`. `@node` defaults `rerun_on_resume=True` when confirmation is
-set; `FunctionNode` raises `WorkflowConfigurationError` if you pass
-`rerun_on_resume=False` with it. On 2.9–2.11 the keyword does not exist. Eval
-both branches: one case approves, one rejects and expects no side effect.
+Orchestration in 2.x is `google.adk.workflow.Workflow`, a node graph that
+supersedes `SequentialAgent`/`ParallelAgent`/`LoopAgent`. Its two raising rules
+(one output per node execution, one terminal output per workflow), node
+confirmation (2.12) and remote A2A steps are in
+[workflow-graphs.md](workflow-graphs.md).
 
 ## Skills and context
 
@@ -233,17 +233,17 @@ Sources: `adk-python: apps/app.py`, `agents/llm_agent.py`, `plugins/__init__.py`
 `runners.py` (`abort_signal`), the three read on the installed 2.11.0 wheel and
 confirmed absent from 2.9.2,
 `integrations/model_armor/` (`_plugin.py`, `_config.py`, `__init__.py`'s
-`__all__` and its import error), `agents/context.py`
-(the output setter), `workflow/_workflow.py` (terminal-output finalization),
-`workflow/_errors.py`, `workflow/_function_node.py` and `workflow/_node.py`
-(`require_confirmation`, commit `988fd1a`, in `v2.12.0`),
-`integrations/model_armor/_config.py` (`tool_output_template_name`, commit
+`__all__` and its import error), `integrations/model_armor/_config.py` (`tool_output_template_name`, commit
 `fdda17c`, in `v2.12.0`; both read on the installed 2.12.0 wheel and absent from
 2.11.0); `adk-docs: docs/apps/index.md`, `docs/callbacks/*`,
-`docs/plugins/index.md`, `docs/2.0/index.md`, `docs/graphs/index.md`,
-`docs/safety/index.md`. 2.13: `features/_feature_registry.py` (`ea298d4`),
+`docs/plugins/index.md`, `docs/2.0/index.md`, `docs/safety/index.md`. 2.13: `features/_feature_registry.py` (`ea298d4`),
 `utils/feature_decorator.py`, `tools/model_consult/_force_escalation_plugin.py`
 (`a84d978`), `agents/base_agent.py` (`6031bb1`), the `[otel]` extra in the 2.13.0
-wheel's `METADATA`. Policies as contracts: Saboo and Dong, "Build zero-trust AI
+wheel's `METADATA`. Main after 2.13.0 (`dfd534a88`): `c54b253eb`, `4496bef70`,
+`2084efbe1` (`agents/_callback_metadata.py`), `cec52fc00`. Governed change:
+Nawalgaria, "Architecting Governed, Self-Evolving AI Agents on Google Cloud",
+Google Developers Blog, 2026-10-22,
+https://developers.googleblog.com/architecting-governed-self-evolving-ai-agents-on-gemini-agent-platform/.
+Policies as contracts: Saboo and Dong, "Build zero-trust AI
 agents with Google's Agent Development Kit", Google Developers Blog, 2026-08-17,
 https://developers.googleblog.com/build-zero-trust-ai-agents-with-googles-agent-development-kit/.

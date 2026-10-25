@@ -98,7 +98,7 @@ above) is organised in three layers, and each layer evaluates differently:
 
 | Layer | Holds | Evaluation |
 |---|---|---|
-| `core/` | reference patterns, one project per recipe (`core/python/<recipe>/`) | ADK evalsets under `tests/eval/evalsets/`, run with `adk eval` |
+| `core/` | reference patterns, one project per recipe (`core/python/<recipe>/`) | varies: ADK evalsets under `tests/eval/evalsets/` (`adk eval`), agents-cli datasets under `tests/eval/datasets/`, or none (a trace grader) |
 | `plugins/` | installable vertical skills: `plugins/<plugin>/plugin.json` plus `skills/<skill>/{SKILL.md, README.md, EVAL.yaml, scripts/, references/, assets/}` (Agent Plugins v1.0.0) | one `EVAL.yaml` per skill: judge rubrics plus deterministic assertions |
 | `contrib/` | deployable services in several languages | runnability tests; evals vary by recipe |
 
@@ -121,20 +121,44 @@ assertion types per skill.
 this plugin runs one, because the recipes repository defines no runner for them
 (`/adk:eval-create` `managing-evalsets.md` has the shape).
 
-**Horizon as the worked example.** `core/python/long-horizon-harness` is the
-recipes' long-horizon harness and its most complete eval suite: eighteen
-evalsets under `tests/eval/evalsets/` (78 cases at `05811bba`), each a behaviour
-(clarify before acting, halt on a guardrail, recall memory, route to the right
-delegate, resist exfiltration), graded by one metric,
-`rubric_based_final_response_quality_v1` at 0.8 with per-case rubrics and no
-trajectory grader. Its `AGENTS.md` keeps the line this plugin draws too: pytest
-for code correctness, evalsets for model behaviour. It runs them with
-`uv run adk eval tests/eval/horizon_eval tests/eval/evalsets/<name>.evalset.json
---config_file_path tests/eval/eval_config.json`, where `horizon_eval/` is a
-two-line shim package because `horizon/__init__.py` deliberately does not import
-`agent`. (Google's tour of the repository describes running the suite with
-`uv run pytest tests/eval`; at `05811bba` there is no pytest module under
-`tests/eval/`, so use the `adk eval` command.)
+**Horizon as the worked example.** `core/python/long-horizon-harness` has the
+recipes' most complete suite, and since `af088392` it runs on **two runners**,
+split by whether anything before the graded turn had to run. Two replay suites
+stay ADK evalsets for `adk eval` (`tests/eval/evalsets/`: `memory_recall`, 8
+cases, because recall only means something across a session boundary; and
+`daily_news_bot_journey`, 1 case, whose first turn creates a row the second
+edits), run with `uv run adk eval tests/eval/horizon_eval
+tests/eval/evalsets/<name>.evalset.json --config_file_path
+tests/eval/eval_config.json` — `horizon_eval/` is a two-line shim because
+`horizon/__init__.py` deliberately does not import `agent`. The other 69 cases
+moved to `agents-cli eval` datasets (below). Its `AGENTS.md` keeps the line this
+plugin draws too: pytest for code correctness, evals for model behaviour.
+
+**The agents-cli dataset layout, a neighbour.** `tests/eval/datasets/*.json`
+(Agent Platform `EvaluationDataset` cases: `eval_case_id`, `prompt`, per-case
+`rubric_groups`) and `tests/eval/eval_config.yaml` (`metrics_to_run`, plus
+`custom_metrics` entries with `metric_spec_parameters` or a
+`custom_function_file` for a custom judge) are read by `agents-cli eval
+run|generate|grade`, not by `adk eval`. `eval grade` reports scores only, so the
+recipe applies its 0.8 pass threshold afterwards with `scripts/eval_gate.py`.
+`discover.py` lists the datasets as `agents_cli_datasets` with a note that
+they are not ADK evalsets, and the YAML config under `layout.foreign_configs`
+(`validate_config.py` says `CFG002`, "not an ADK eval config"); neither is read
+or validated; `/adk:eval-analyze` `improvement-loop.md` maps that
+loop onto this plugin's scripts.
+
+**Not every `core/` recipe has evalsets.** `core/python/ambient-quality-agent`
+(AQuA, v0.2.0) is a src-layout agents-cli project (`agents-cli-manifest.yaml`
+names `agent_directory: src/ambient_quality_agent`; `google-adk>=2.12.0`) that
+runs beside a production agent and grades its traces from BigQuery or Cloud
+Logging on a schedule. It has no `*.evalset.json`, no `test_config.json` and
+no `google.adk.evaluation` import. `discover.py` reports layout style **`src`**:
+when the only loadable child is `src/`, the agent package is the one
+`agents-cli-manifest.yaml` names (`agent_directory: src/<pkg>`), else the single
+`src/<pkg>/agent.py`; `adk` commands then take `src/` as the agents dir and
+`<pkg>` as the app name. For AQuA that is `ambient_quality_agent`, while its
+`App` is named `aqa`, so discovery also notes the mismatch (`ENV013`, info). No eval
+files is correct here, not a gap.
 
 ## Where eval files must not go
 
@@ -184,8 +208,9 @@ also what the results file is named after. When the module exports
 ## YAML config agents
 
 `root_agent.yaml` is still loadable. 2.13.0 promoted the `AGENT_CONFIG` feature
-flag to stable, so its "feature is enabled" warning is gone — but the loader
-(`AgentLoader._load_from_yaml_config`) still prints `[EXPERIMENTAL]`, the docs
+flag to stable, so its "feature is enabled" warning is gone — but through 2.13.0
+the loader (`AgentLoader._load_from_yaml_config`) still prints `[EXPERIMENTAL]`
+(main after 2.13.0 drops that decorator, `c54b253eb`), the docs
 still label Agent Config experimental, and the config classes behind it
 (`AgentConfig`, `LlmAgentConfig`, ...) are marked `@deprecated` in the library.
 `ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1` silences the loader warning. Treat
@@ -210,6 +235,10 @@ The three layers:
 Ippolito and Saadati, "Three layers, one repo: a tour of google/adk-recipes",
 Google Developers Blog, 2026-10-15,
 https://developers.googleblog.com/three-layers-one-repo-a-tour-of-googleadk-recipes/
-(paraphrased); checked against `adk-recipes` `05811bba`
+(paraphrased); checked against `adk-recipes` `665f7b2a1`
 (`docs/recipe-handbook/plugins.md`, `plugins/retail/`,
-`core/python/long-horizon-harness/{AGENTS.md,tests/eval/}`).
+`core/python/long-horizon-harness/{AGENTS.md,tests/eval/,scripts/eval_gate.py}`
+after `af088392`, `core/python/ambient-quality-agent/{README.md,pyproject.toml,agents-cli-manifest.yaml}`).
+The dataset and config split: Ippolito and Secchi, "Hill-Climbing Agent Quality
+with Agents CLI Evaluation", Google Developers Blog, 2026-10-28,
+https://developers.googleblog.com/hill-climbing-agent-quality-with-agents-cli-evaluation/.

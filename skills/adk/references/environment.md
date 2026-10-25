@@ -70,8 +70,9 @@ reports it properly; a script that imports the module may not.
 2.13 adds an `[otel]` extra (OTLP exporter plus GenAI, gRPC and httpx
 instrumentation) for exporting traces. Two environment variables worth knowing
 on 2.13: `ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1` silences the
-`[EXPERIMENTAL]` warnings that still print for YAML agents and environment
-simulation, and `ADK_TELEMETRY_SCHEMA_VERSION_OPT_IN=otel_semconv_1_36` restores
+`[EXPERIMENTAL]` warnings that still print through 2.13.0 (YAML agents,
+environment simulation, user simulation, rubric and judge metrics, resumability,
+compaction, context caching; main after 2.13.0 graduates all of them), and `ADK_TELEMETRY_SCHEMA_VERSION_OPT_IN=otel_semconv_1_36` restores
 the pre-2.13 span names (`/adk:agent-debug` `evidence.md`). `check_env.py`
 reports the first.
 
@@ -108,6 +109,16 @@ gs://bucket/prefix` moves eval sets and results to Cloud Storage instead — use
 when CI and humans need to read the same history, and it needs the same ADC as
 any other GCS access.
 
+**Coming after 2.13.0 (unreleased main).** `--eval_storage_uri file:///abs/path`
+and an `ADK_EVAL_STORAGE_URI` variable (flag wins, then the variable, then
+`agents_dir`) keep evals outside a read-only agents directory; on 2.13.0 the
+`file://` form raises `ValueError: Unsupported evals storage URI` and the
+variable is ignored, so `check_env.py` does not treat it as a knob yet. `adk
+deploy` gains `--python_version` (all four targets, default 3.11) and
+`--extra_packages` that pip-installs wheels, sdists and `pyproject.toml`
+projects (`bd77f3f2c`, `e3d0ec926`); `/adk:eval-run` `cli-reference.md` has
+the detail.
+
 ---
 
 Sources: `adk-python: cli/utils/envs.py`, `evaluation/vertex_ai_eval_facade.py`
@@ -115,6 +126,7 @@ Sources: `adk-python: cli/utils/envs.py`, `evaluation/vertex_ai_eval_facade.py`
 `evaluation/__init__.py`, `evaluation/eval_metrics.py` (`JudgeModelOptions`),
 `cli/cli_create.py`, `cli/utils/evals.py`, `pyproject.toml` (`[eval]` extra; the
 `[otel]` extra read in the 2.13.0 wheel's `METADATA`), `utils/env_utils.py`,
-`telemetry/_schema_version.py` (2.13.0);
+`telemetry/_schema_version.py` (2.13.0); `cli/utils/_eval_storage.py`,
+`cli/cli_deploy.py` on main `dfd534a88` (post-tag);
 `adk-docs: docs/evaluate/criteria.md`, `docs/get-started/*`;
 `adk-recipes: AGENTS.md` (model deprecations), recipe `.env.example` files.

@@ -8,7 +8,7 @@ result has to block something.
 
 ```python
 await AgentEvaluator.evaluate(
-    agent_module="app.agent",            # an importable module, not a path
+    agent_module="app.agent",            # an importable module, not a path (through 2.13.0)
     eval_dataset_file_path_or_dir="tests/eval/data",
     num_runs=2,
     agent_name=None,                     # evaluate a named sub-agent
@@ -78,6 +78,15 @@ by any evaluator), per-session compaction set by a plugin's
 `before_run_callback`, and prompt-cache creation tokens on `LlmResponse`.
 Released versions drop `multi_run_config` silently, so `pass_at_k.py` and
 `--runs` remain the way to batch today.
+
+**An agent built at runtime** (`ce92e9247`): on main, `evaluate` and
+`evaluate_eval_set` accept an agent object (any `BaseNode`, a `Workflow`) or an
+`App` through the same `agent_module` parameter — there is no `agent=` keyword.
+An `App` contributes its `root_agent` plus its plugins, cache and resumability
+config; selecting a sub-agent by `agent_name` needs a `BaseAgent` root (else a
+`TypeError`). Through 2.13.0 the parameter takes only a module path: an object
+fails with `ModuleNotFoundError` (its repr is imported as a module name), and
+`agent=` with `TypeError: ... unexpected keyword argument 'agent'` (measured).
 
 ## A working test module
 
@@ -151,4 +160,5 @@ and absent from 2.9.2),
 Compared across installed 2.9.2, 2.10.0, 2.11.0 and 2.12.0 wheels; the `[eval]`
 pins read from each wheel's `METADATA` (2.13.0's compared with 2.12.0's). The
 2.13.0 changes are commits `5bf7f12`, `c12392e` and `cb48b91`, in `v2.13.0`;
-multi-run (`7f3517e`) and the matcher (`ed76f94`) are post-tag at `12c7bed76`.
+multi-run (`7f3517e`) and the matcher (`ed76f94`) are post-tag at `12c7bed76`,
+the runtime-agent signature (`ce92e9247`) at `dfd534a88`.

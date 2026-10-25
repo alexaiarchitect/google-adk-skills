@@ -6,7 +6,9 @@ outside the metric's range (a threshold below the minimum can never fail), a
 criterion field ADK accepts and ignores, a judge model left to a deprecated
 default, a Vertex-only metric with no project configured, rubrics that ask a
 judge for a 1-5 rating, and user simulation combined with a metric that needs a
-fixed reference.
+fixed reference. Cross-checks against the agent: a rubric about actions where
+no metric grades the trajectory (CFG075), and the multi-turn trajectory judge
+on an agent with a built-in tool, which crashes through ADK 2.13.0 (CFG076).
 
     validate_config.py <config.json> [--agent-dir DIR] [--format json|md]
 
@@ -26,7 +28,9 @@ from adk_skills.eval_config import load_config, validate_config  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
 from adk_skills.metrics import cost_tier  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport  # noqa: E402
-from adk_skills.tools_ast import agent_model_ids, extract_module  # noqa: E402
+from adk_skills.tools_ast import (  # noqa: E402
+    agent_model_ids, builtin_model_tools, extract_module,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -61,18 +65,21 @@ def main(argv: list[str] | None = None) -> int:
 
     agent_dir = args.agent_dir or layout.agent_dir
     known_tools = None
+    builtin_tools = None
     facts = None
     if agent_dir and Path(agent_dir).exists():
         facts = extract_module(agent_dir)
         known_tools = facts.bound_tool_names or None
+        builtin_tools = builtin_model_tools(facts) or None
 
     backend = None if args.no_backend else detect_backend(agent_dir or target.parent)
     agent_models = (agent_model_ids(facts, backend.model_name if backend else None)
                     if facts is not None else None)
 
-    # Which ADK will run this config decides one note only (CFG071): the four
-    # efficiency metrics exist from 2.10 on. Every error is version-independent,
-    # so a failed probe costs nothing but that note.
+    # Which ADK will run this config decides two findings only: CFG071 (the four
+    # efficiency metrics exist from 2.10 on) and CFG076 (the multi-turn
+    # trajectory judge crashes on built-in tools through 2.13.0; an unprobed
+    # runner is taken to be the 2.13 target). Every error is version-independent.
     adk_version = args.adk_version
     if adk_version is None and not args.no_probe:
         runner = resolve_runner(agent_dir or layout.agent_dir, layout.project_root)
@@ -92,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     }
     validate_config(loaded, report=report, backend=backend, agent_dir=agent_dir,
                     known_tools=known_tools, adk_version=adk_version,
-                    agent_models=agent_models)
+                    agent_models=agent_models, builtin_tools=builtin_tools)
 
     print(report.render(args.format))
     if report.has_errors():

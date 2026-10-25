@@ -451,7 +451,8 @@ def test_the_yaml_agent_message_is_version_aware(run_script, agent_dir):
     [finding] = [f for f in findings if f["id"] == "AGT050"]
     assert finding["message"] == (
         "this is a YAML config agent: the feature flag is stable from 2.13; the YAML loader "
-        "still prints an [EXPERIMENTAL] warning and the config classes are deprecated")
+        "still prints an [EXPERIMENTAL] warning through 2.13.0 (main after 2.13.0 drops it) "
+        "and the config classes are deprecated")
 
 
 # -- environment knobs ---------------------------------------------------------------

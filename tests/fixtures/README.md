@@ -26,6 +26,12 @@ this plugin's references in its own words.
 | `evalsets/long_conversation.evalset.json` | one six-invocation case, the shape AGT077 looks for |
 | `registry/frozen_suite/eval_registry.json` | a frozen `golden` suite over `happy.evalset.json` and an unfrozen one over `edge.evalset.json`, laid out for a copy of `agents/recipes_good` (EVS120) |
 | `plugins/retail-like/` | an Agent-Plugins layer in the expense domain with the recipes' shapes: `plugin.json`, `skills/product-search/{SKILL.md, EVAL.yaml}` (two cases, four rubric lines, four assertions; clean under EVY001-010) |
+| `agents/live_agent` | a streaming tool done right on a live model: `os.getenv("MODEL_NAME", "gemini-3.8-live")`, `track_claim_progress` is an `async def ... -> AsyncGenerator[str, None]` that yields `PROGRESS:` lines then `DONE:`, says "Call this ONCE per claim" and keeps a module-level latch, `stop_streaming(function_name: str)` is bound, and `test_config.json` sets `live_model_config`. Lint clean apart from AGT014; loads on ADK 2.9.2 and 2.13.0 |
+| `agents/live_agent_broken` | the same tracker with two `yield`s on `gemini-flash-latest` (AGT081 warn: under `run_async` 2.12+ aborts on the second `yield`, 2.9.2 never runs the body) |
+| `agents/search_agent` | a per-diem lookup agent with the built-in `google_search` and a `test_config.json` grading it with `rubric_based_multi_turn_trajectory_quality_v1` (CFG076: that judge raises `TypeError` on built-in tools through 2.13.0). Loads on ADK 2.9.2 and 2.13.0 |
+| `eval_configs/action_rubric_reply_judge.json` | an action rubric ("calls `check_cost_centre_funds` before it calls `submit_claim`") under `rubric_based_final_response_quality_v1` with no trajectory metric (CFG075) |
+| `eval_configs/compound_rubric.json` | one rubric holding two expectations joined by a single "and" (RUB006) |
+| `projects/src_layout` | an agents-cli project in a src layout: `src/__init__.py` re-exports `root_agent`, `agents-cli-manifest.yaml` names `src/claims_agent`, the App is named "claims", and the cases are an agents-cli dataset under `tests/eval/datasets/` with `tests/eval/eval_config.yaml` (layout style `src`, dataset note, not ADK evalsets) |
 | `agents/yaml_agent` | `root_agent.yaml`, the deprecated config layout |
 | `evalsets/` | valid snake_case, valid camelCase, legacy list format, scenario, and broken variants |
 | `eval_configs/` | one per criterion family, plus invalid ones |

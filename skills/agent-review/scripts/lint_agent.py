@@ -34,6 +34,10 @@ Ten dimensions:
     writes (AGT080: ADK raises KeyError when it builds the instruction); agent
     names shared anywhere in the tree (AGT015: ADK 2.13 warns for siblings,
     cousins and ancestor/descendant clashes)
+14. streaming tools — an `async def` tool with `yield` reached outside
+    `run_live` (AGT081): warn on a text model (2.12+ aborts on the second
+    `yield`, 2.9.2 never runs the body), info on a live model whose evals have
+    no `live_model_config`
 
 Report only. It never edits.
 
@@ -51,13 +55,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 
 from adk_skills.coverage import branch_count, extract_sop_rules  # noqa: E402
-from adk_skills.env import classify_model_id, detect_backend, dotenv_flag  # noqa: E402
+from adk_skills.env import classify_model_id, detect_backend, dotenv_flag, dotenv_value  # noqa: E402
+from adk_skills.eval_config import load_config  # noqa: E402
 from adk_skills.evalset import load_evalset  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport  # noqa: E402
 from adk_skills.tools_ast import (  # noqa: E402
     LLM_AGENT_CALLS, cache_suite_findings, compaction_suite_findings, extract_module,
-    skill_lifecycle_findings, state_placeholder_findings,
+    skill_lifecycle_findings, state_placeholder_findings, streaming_tool_findings,
 )
 
 
@@ -109,13 +114,13 @@ def main(argv: list[str] | None = None) -> int:
     if layout.style == "yaml":
         report.add("AGT050", "warn", "agent",
                    "this is a YAML config agent: the feature flag is stable from 2.13; the "
-                   "YAML loader still prints an [EXPERIMENTAL] warning and the config classes "
-                   "are deprecated",
+                   "YAML loader still prints an [EXPERIMENTAL] warning through 2.13.0 (main "
+                   "after 2.13.0 drops it) and the config classes are deprecated",
                    path=layout.agent_module_file,
                    fix="migrate to a Python agent; `adk create` still offers YAML, but the "
                        "config classes behind it are deprecated (AgentConfig, LlmAgentConfig). "
                        "ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1 silences the loader "
-                       "warning",
+                       "warning on releases that print it",
                    source="adk-python: agents/config_agent_utils.py")
         report.discovered = {"layout": layout.style, "agent_dir": layout.agent_dir}
         print(report.render(args.format))
@@ -179,6 +184,11 @@ def main(argv: list[str] | None = None) -> int:
     report.extend(skill_lifecycle_findings(
         facts, env_enabled=dotenv_flag(layout.agent_dir, "ADK_ENABLE_SKILL_LIFECYCLE"),
         adk_version=args.adk_version))
+
+    # 14. streaming tools: an async generator streams only under run_live
+    configs = [load_config(path).doc for path in layout.configs]
+    report.extend(streaming_tool_findings(
+        facts, configs, env_model=dotenv_value(layout.agent_dir, "MODEL_NAME")))
 
     if not layout.evalsets:
         report.add_gap("GAP-EVALSET", "No evalset",

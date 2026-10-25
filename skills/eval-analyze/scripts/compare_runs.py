@@ -12,7 +12,14 @@ two runs side by side:
   of the prompt (prompt minus cached: what is billed at the full input rate),
   the cache-hit ratio (`cached_tokens / prompt_tokens`), mean seconds, tool
   calls and model calls per invocation, each with its delta;
+* **metric means**: each scored metric's mean, baseline and candidate, over
+  the cases both runs scored on it, on the metric's own scale;
 * a one-line **verdict**.
+
+Read the per-case table before trusting a mean. Two different changes can land
+on the same mean with different cases failing, and a mean can hold steady while
+one important case breaks; the flips say which cases moved, the mean only says
+by how much on average.
 
 A run from ADK 2.9 has no efficiency metrics, and a model may not report cached
 tokens; those figures read "n/a", never 0, and the pass/fail comparison still
@@ -30,7 +37,7 @@ passed (failed when any run failed).
     compare_runs.py <baseline> <candidate> [--latest] [--evalset ID] [--json]
                     [--min-pass-rate P] [--max-regressions N]
                     [--max-mean-prompt-tokens T] [--max-mean-seconds S]
-                    [--max-mean-tool-calls C]
+                    [--max-mean-tool-calls C] [--max-mean-drop D]
 
 **Merge gates.** Two rules make a comparison a CI gate: a global pass threshold
 on the candidate (`--min-pass-rate 0.95`) and no regressions on the cases both
@@ -43,8 +50,15 @@ seconds or tool calls per invocation exceed the limit. A figure the run did not
 report ("n/a": ADK 2.9, or a model with no usage data) never fails a budget; it
 is listed as unchecked.
 
+**Drift alert.** `--max-mean-drop D` fails the comparison when any scored
+metric's mean over the shared cases falls by more than D on that metric's own
+scale (0.05 on a 0-1 judge score is five points; on a 1-5 custom judge it is a
+twentieth of a point). It is meant for a scheduled run against a fixed
+baseline: alert on a drop, not on a low absolute. Off by default.
+
 Exit codes: 0 every gate holds, 1 a gate failed (a regression, the pass rate
-below the floor, or a budget exceeded), 2 nothing to compare.
+below the floor, a budget exceeded, or a metric mean that fell by more than
+`--max-mean-drop`), 2 nothing to compare.
 """
 
 from __future__ import annotations
@@ -60,8 +74,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 from adk_skills.layout import detect_layout  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE  # noqa: E402
 from adk_skills.results import (  # noqa: E402
-    CaseResult, RunResult, find_result_files, latest_per_evalset, parse_result,
-    result_identity,
+    CaseResult, RunResult, case_metric_scores, find_result_files, latest_per_evalset,
+    parse_result, result_identity, shared_metric_means,
 )
 
 #: Figures compared per invocation, with the efficiency metric each comes from.
@@ -203,6 +217,8 @@ def side_stats(runs: list[RunResult]) -> dict[str, Any]:
                            for key in [_case_key(group[0], duplicated)]},
         "figures": figures,
         "statuses": statuses,
+        "metric_scores": {_case_key(group[0], duplicated): case_metric_scores(group)
+                          for group in groups},
     }
 
 
@@ -245,6 +261,8 @@ def compare(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, An
     regressed = [f for f in flips if f["change"] == "regressed"]
     return {
         "deltas": deltas,
+        "metric_means": shared_metric_means(baseline.get("metric_scores", {}),
+                                            candidate.get("metric_scores", {})),
         "flips": flips,
         "added_cases": added,
         "removed_cases": removed,
@@ -267,6 +285,7 @@ def evaluate_gates(
     candidate: dict[str, Any], result: dict[str, Any], *,
     min_pass_rate: float | None = None, max_regressions: int = 0,
     budgets: dict[str, float | None] | None = None,
+    max_mean_drop: float | None = None,
 ) -> list[dict[str, Any]]:
     """One row per gate: what it checks, the limit, the value, and whether it holds.
 
@@ -296,6 +315,15 @@ def evaluate_gates(
             "gate": flag, "limit": limit, "value": value, "figure": figure,
             "checked": value is not None,
             "passed": value is None or value <= limit,
+        })
+    if max_mean_drop is not None:
+        means = result.get("metric_means") or {}
+        dropped = {name: row for name, row in means.items() if -row["delta"] > max_mean_drop}
+        worst = min((row["delta"] for row in means.values()), default=None)
+        gates.append({
+            "gate": "max_mean_drop", "limit": max_mean_drop, "value": worst,
+            "metrics": sorted(dropped), "checked": bool(means),
+            "passed": not dropped,
         })
     return gates
 
@@ -350,6 +378,13 @@ def _gate_line(gate: dict[str, Any]) -> str:
             gate["limit"] == 0 else ""
         return (f"- {'PASS' if gate['passed'] else 'FAIL'} regressions: {gate['value']} "
                 f"(allowed {gate['limit']}){extra}")
+    if name == "max_mean_drop":
+        if not gate["checked"]:
+            return (f"- PASS metric means: no metric scored on both sides, not checked "
+                    f"(allowed drop {gate['limit']:g})")
+        failing = f"; fell too far: {', '.join(gate['metrics'])}" if gate["metrics"] else ""
+        return (f"- {'PASS' if gate['passed'] else 'FAIL'} metric means: worst delta "
+                f"{gate['value']:+g} (allowed drop {gate['limit']:g}){failing}")
     if name == "min_pass_rate":
         return (f"- {'PASS' if gate['passed'] else 'FAIL'} pass rate {_pct(gate['value'])} "
                 f"(floor {gate['limit']:.1%})")
@@ -385,6 +420,14 @@ def render(baseline: dict[str, Any], candidate: dict[str, Any], result: dict[str
     lines.append("Lower is better for every efficiency figure except the cache-hit ratio. "
                  "\"n/a\" means the run did not report it (ADK 2.9 has no efficiency "
                  "metrics), not zero.")
+    if result.get("metric_means"):
+        lines += ["", "## Metric means (shared cases)", "",
+                  "| metric | cases | baseline | candidate | delta |", "|---|---|---|---|---|"]
+        for name, row in result["metric_means"].items():
+            lines.append(f"| {name} | {row['cases']} | {row['baseline']:g} | "
+                         f"{row['candidate']:g} | {row['delta']:+g} |")
+        lines += ["", "A mean hides which cases moved: read the cases that changed below "
+                      "before trusting it."]
     if result["flips"]:
         lines += ["", "## Cases that changed", ""]
         for flip in result["flips"]:
@@ -429,9 +472,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-mean-tool-calls", type=float, metavar="C",
                         help="fail when the candidate averages more than C tool calls per "
                              "invocation (n/a never fails)")
+    parser.add_argument("--max-mean-drop", type=float, metavar="D",
+                        help="fail when any scored metric's mean over the shared cases falls "
+                             "by more than D on the metric's own scale (e.g. 0.05); off by "
+                             "default")
     args = parser.parse_args(argv)
     if args.min_pass_rate is not None and not 0.0 <= args.min_pass_rate <= 1.0:
         print("error: --min-pass-rate is a fraction between 0 and 1", file=sys.stderr)
+        return EXIT_USAGE
+    if args.max_mean_drop is not None and args.max_mean_drop < 0:
+        print("error: --max-mean-drop cannot be negative", file=sys.stderr)
         return EXIT_USAGE
     if args.max_regressions < 0:
         print("error: --max-regressions cannot be negative", file=sys.stderr)
@@ -456,12 +506,15 @@ def main(argv: list[str] | None = None) -> int:
         budgets={"max_mean_prompt_tokens": args.max_mean_prompt_tokens,
                  "max_mean_seconds": args.max_mean_seconds,
                  "max_mean_tool_calls": args.max_mean_tool_calls},
+        max_mean_drop=args.max_mean_drop,
     )
     result["gates_passed"] = all(gate["passed"] for gate in result["gates"])
     if args.format == "json":
         print(json.dumps({
-            "baseline": {k: v for k, v in baseline.items() if k != "statuses"},
-            "candidate": {k: v for k, v in candidate.items() if k != "statuses"},
+            "baseline": {k: v for k, v in baseline.items()
+                         if k not in ("statuses", "metric_scores")},
+            "candidate": {k: v for k, v in candidate.items()
+                          if k not in ("statuses", "metric_scores")},
             **result,
         }, indent=2))
     else:

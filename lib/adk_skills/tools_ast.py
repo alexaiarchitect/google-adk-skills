@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from . import DEPRECATED_MODELS
-from .env import classify_model_id
+from .env import classify_model_id, is_live_model_id
 from .report import Finding
 from .skills import (
     MAX_INSTRUCTION_LINES, MAX_INSTRUCTION_TOKENS, MIN_DESCRIPTION_CHARS, UNREADABLE,
@@ -274,6 +274,11 @@ class ToolSpec:
     #: Names returned bare (`return POLICY_TEXT`), resolved against module
     #: string constants once every file is read.
     returned_names: list[str] = field(default_factory=list)
+    #: `async def` with `yield` in its own body (or annotated `AsyncGenerator` /
+    #: `AsyncIterator`): a streaming tool, NON_BLOCKING only under `run_live`.
+    is_streaming: bool = False
+    #: `yield` statements in the body, counted statically (a loop counts once).
+    yield_count: int = 0
 
     @property
     def schema_params(self) -> list[ParamSpec]:
@@ -294,6 +299,7 @@ class ToolSpec:
             "has_var_args": self.has_var_args,
             "has_var_kwargs": self.has_var_kwargs,
             "large_return_chars": self.large_return_chars,
+            "is_streaming": self.is_streaming,
         }
 
 
@@ -340,6 +346,12 @@ class AgentSpec:
     #: `include_contents=` as written: "default", "none", the source text of
     #: an expression, or None when unset (ADK's default is "default").
     include_contents: str | None = None
+    #: `model=CascadeLive(...)` (google.adk.live, 2.13): runs under `run_live`
+    #: although the inner model id is a text model.
+    model_is_cascade: bool = False
+    #: A module string constant `model=` names, kept apart from `model` so the
+    #: model-policy rules keep their meaning; used only to tell live from text.
+    model_constant: str | None = None
     lineno: int = 0
     file: str | None = None
 
@@ -1059,7 +1071,25 @@ def _collect_tool(node: ast.FunctionDef | ast.AsyncFunctionDef, models: dict[str
                 spec.blocking_calls.append(dotted)
     if (spec.returns or "").startswith(("dict", "Dict", "typing.Dict")):
         spec.returns_dict = True
+    if spec.is_async:
+        spec.yield_count = _own_yields(node)
+        annotated = re.search(r"\bAsync(?:Generator|Iterator)\b", spec.returns or "")
+        spec.is_streaming = spec.yield_count > 0 or bool(annotated)
     return spec
+
+
+def _own_yields(node: ast.AST) -> int:
+    """`yield` expressions in a function's own body, not in nested functions."""
+    count = 0
+    stack = list(ast.iter_child_nodes(node))
+    while stack:
+        child = stack.pop()
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            continue
+        if isinstance(child, (ast.Yield, ast.YieldFrom)):
+            count += 1
+        stack.extend(ast.iter_child_nodes(child))
+    return count
 
 
 def _resolve_model(
@@ -1265,6 +1295,15 @@ def _collect_agent(
     model_node = _kwarg(call, "model")
     spec.model_expr = _unparse(model_node)
     spec.model, spec.model_from_env = _resolve_model(model_node, env_constants or {})
+    target = model_node
+    if isinstance(target, ast.Name) and facts is not None:
+        target = facts.expr_constants.get(target.id, target)
+        if spec.model is None and target is not model_node:
+            literal = _literal(target)
+            if isinstance(literal, str):
+                spec.model_constant = literal      # `MODEL = "gemini-3.8-live"`
+    spec.model_is_cascade = (isinstance(target, ast.Call)
+                             and _name_of(target.func) == "CascadeLive")
 
     instruction_node = _kwarg(call, "instruction")
     if instruction_node is not None:
@@ -2602,6 +2641,35 @@ def agent_model_ids(facts: ModuleFacts, env_model: str | None = None) -> list[st
     return ids
 
 
+#: Tools Gemini runs itself. Each reaches the request as a `types.Tool` with
+#: no `function_declarations` (google_search, retrieval, code_execution,
+#: url_context ...), which is what the 2.13.0 multi-turn trajectory judge
+#: cannot iterate (CFG076). `exit_loop`, `load_memory` and the other ready-made
+#: objects in OPAQUE_TOOL_NAMES are ordinary function tools and not listed.
+MODEL_BUILTIN_TOOL_NAMES = {
+    "google_search", "built_in_code_execution", "url_context", "enterprise_web_search",
+    "google_maps_grounding",
+}
+MODEL_BUILTIN_TOOL_CALLS = {
+    "GoogleSearchTool", "VertexAiSearchTool", "UrlContextTool", "BuiltInCodeExecutionTool",
+    "EnterpriseWebSearchTool", "GoogleMapsGroundingTool",
+}
+
+
+def builtin_model_tools(facts: ModuleFacts) -> list[str]:
+    """Built-in (model-executed) tools bound to any agent in the project, plus
+    `code_execution` for an agent with `code_executor=BuiltInCodeExecutor()`."""
+    found: set[str] = set()
+    for agent in facts.agents:
+        for name in agent.opaque_tools:
+            if name in MODEL_BUILTIN_TOOL_NAMES or name in MODEL_BUILTIN_TOOL_CALLS:
+                found.add(name)
+    uses_executor = any(name.rsplit(".", 1)[-1] == "BuiltInCodeExecutor" for name in facts.imports)
+    if uses_executor and any("code_executor" in agent.kwargs for agent in facts.agents):
+        found.add("code_execution")
+    return sorted(found)
+
+
 # ---------------------------------------------------------------------------
 # session state keys: who writes them, who reads them (AGT080, EVS075)
 # ---------------------------------------------------------------------------
@@ -2898,6 +2966,101 @@ def _case_requests_more_than_once(case: dict[str, Any]) -> bool:
     return False
 
 
+_SRC_STREAMING = ("adk-python: flows/llm_flows/tools/_agent_tools.py "
+                  "(mark_live_async_tools_non_blocking, run_live only); tools/function_tool.py "
+                  "(_run_generator_as_node, 2.12+); adk-docs: docs/live/tools.md")
+
+
+def _agent_is_live(agent: AgentSpec, facts: ModuleFacts, env_model: str | None,
+                   _seen: frozenset[int] = frozenset()) -> bool | None:
+    """True for a live agent, False for a text one, None when unknowable.
+
+    An agent with no `model=` inherits its parent's, so the parent decides.
+    """
+    if agent.model_is_cascade:
+        return True
+    model = env_model if (agent.model_from_env and env_model) else (agent.model or agent.model_constant)
+    if model:
+        return is_live_model_id(model)
+    if "model" in agent.kwargs or agent.kwargs_unresolved or id(agent) in _seen:
+        return None
+    for parent in facts.agents:
+        if agent.var and agent.var in parent.sub_agents:
+            return _agent_is_live(parent, facts, env_model, _seen | {id(agent)})
+    return None
+
+
+def streaming_tool_findings(facts: ModuleFacts, configs: Iterable[Any] = (), *,
+                            env_model: str | None = None) -> list[Finding]:
+    """AGT081: a streaming tool (async generator) reached outside `run_live`.
+
+    ADK marks an async-generator tool NON_BLOCKING, and streams each `yield` as
+    a partial response, only when the invocation has a live request queue,
+    i.e. under `run_live`. `adk run`, `adk eval` without `live_model_config`
+    and text `adk web` all use `run_async`, where 2.12+ runs the generator as a
+    workflow node (the second `yield` raises `Output already set`) and 2.9.2
+    never iterates it (the model receives the generator object). A text agent
+    gets a warning; a live agent an info, unless an eval config next to it
+    already sets `live_model_config`.
+    """
+    findings: list[Finding] = []
+    live_eval = any(isinstance(doc, dict) and doc.get("live_model_config") is not None
+                    for doc in configs)
+    bound = facts.bound_tool_names
+    for agent in facts.agents:
+        if agent.call not in LLM_AGENT_CALLS:
+            continue
+        streaming = []
+        for name in agent.tools:
+            binding = resolve_tool(facts, name)
+            if binding.status == "defined" and binding.spec is not None and binding.spec.is_streaming:
+                streaming.append(binding.spec)
+        if not streaming:
+            continue
+        live = _agent_is_live(agent, facts, env_model)
+        if live is None:
+            continue
+        who = f"{agent.call} {agent.name!r}" if agent.name else f"{agent.call}({agent.var or 'inline'})"
+        model = ("CascadeLive(...)" if agent.model_is_cascade
+                 else agent.model or agent.model_constant or "inherited")
+        for tool in streaming:
+            yields = f"{tool.yield_count} `yield`" + ("s" if tool.yield_count != 1 else "")
+            if not live:
+                findings.append(Finding(
+                    id="AGT081", severity="warn", area="agent",
+                    message=(
+                        f"{who}: tool {tool.name!r} is a streaming tool (an async generator, "
+                        f"{yields}) on a text model ({model}), so it is only ever reached "
+                        "through `run_async` (`adk run`, `adk eval` without "
+                        "`live_model_config`, text `adk web`); ADK streams an async-generator "
+                        "tool only under `run_live`. On ADK 2.12+ a second `yield` aborts the "
+                        "run (`ValueError: Output already set`); on 2.9.2 the body never runs "
+                        "and the model receives the generator object"),
+                    path=tool.file or agent.file, locator=f"line {tool.lineno}",
+                    fix="for a text agent make the tool a plain `async def` that returns one "
+                        "result; to stream progress, give the agent a Live API model "
+                        "(`gemini-3.8-live`, or `CascadeLive(...)`) and run it with `run_live`",
+                    source=_SRC_STREAMING))
+            elif not live_eval:
+                stop = "" if "stop_streaming" in bound else (
+                    "; also bind a `stop_streaming(function_name: str)` tool so the model "
+                    "can cancel the stream")
+                findings.append(Finding(
+                    id="AGT081", severity="info", area="agent",
+                    message=(
+                        f"{who}: tool {tool.name!r} is a streaming tool on a live model "
+                        f"({model}); it streams only under `run_live`, so evals of this agent "
+                        "need `live_model_config` in the eval config, otherwise `adk eval` "
+                        "runs it through `run_async`, where a second `yield` aborts the run "
+                        "on ADK 2.12+ (`ValueError: Output already set`) and on 2.9.2 the "
+                        "body never runs"),
+                    path=tool.file or agent.file, locator=f"line {tool.lineno}",
+                    fix="set `\"live_model_config\": {}` in the eval config that grades this "
+                        "agent" + stop,
+                    source=_SRC_STREAMING))
+    return findings
+
+
 def cache_suite_findings(
     facts: ModuleFacts, evalset_docs: Iterable[Any], *, path: str | None = None,
 ) -> list[Finding]:
@@ -2977,8 +3140,10 @@ def _tool_findings(tool: ToolSpec, models: dict[str, ModelSpec] | None = None) -
             _SRC_FUNCTION_DOC)
 
     returns_model = _annotation_is_model(tool.returns, models or {})
+    # A streaming tool's annotation is the generator type; its yields are the
+    # partial responses, so "not a dict" says nothing useful about it.
     if not tool.returns_dict and not returns_model and tool.returns \
-            and not tool.returns.startswith(("str", "Str")):
+            and not tool.is_streaming and not tool.returns.startswith(("str", "Str")):
         add("AGT045", "info", f"returns {tool.returns}, not a dict",
             "a dict with a `status` key gives judges and groundedness checks something to read",
             _SRC_FUNCTION_DOC)

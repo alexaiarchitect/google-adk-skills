@@ -311,7 +311,9 @@ class RunResult:
         """Mean of each informational metric across the cases that reported it.
 
         ADK already averages per invocation within a case; this averages those
-        case values, so the figure is per invocation, not per run.
+        case values, so the figure is per invocation, not per run. For
+        `token_usage_v1`, 2.13.0 averages over every invocation; main after
+        2.13.0 leaves no-usage turns out, so the same run reads higher there.
         """
         totals: dict[str, list[float]] = {}
         usage: dict[str, dict[str, float]] = {}
@@ -657,3 +659,43 @@ def group_runs(paths: Iterable[Path | str], *, eval_set_id: str | None = None) -
         runs.append(parse_result(path))
     runs.sort(key=lambda r: (r.timestamp or 0.0, r.path))
     return runs
+
+
+def case_metric_scores(group: Iterable[CaseResult]) -> dict[str, float]:
+    """Each gate metric's score for one case, averaged over the case's runs.
+
+    Informational efficiency metrics and metrics with no numeric score (a case
+    that was not evaluated) are left out.
+    """
+    values: dict[str, list[float]] = {}
+    for case in group:
+        for metric in case.gate_metrics():
+            if isinstance(metric.score, (int, float)) and not isinstance(metric.score, bool):
+                values.setdefault(metric.name, []).append(float(metric.score))
+    return {name: sum(found) / len(found) for name, found in values.items()}
+
+
+def shared_metric_means(
+    baseline: dict[str, dict[str, float]], candidate: dict[str, dict[str, float]],
+) -> dict[str, dict[str, Any]]:
+    """Per metric: the baseline and candidate mean over the cases both runs
+    scored on it, the delta (candidate minus baseline, on the metric's own
+    scale) and how many cases that is.
+
+    Both inputs map a case key to `case_metric_scores`. Restricting to shared
+    cases keeps an added or removed case from moving a mean on its own; a mean
+    still hides which cases moved, so read it next to the per-case flips.
+    """
+    names = sorted({name for scores in (*baseline.values(), *candidate.values())
+                    for name in scores})
+    out: dict[str, dict[str, Any]] = {}
+    for name in names:
+        keys = sorted(key for key in set(baseline) & set(candidate)
+                      if name in baseline[key] and name in candidate[key])
+        if not keys:
+            continue
+        before = sum(baseline[key][name] for key in keys) / len(keys)
+        after = sum(candidate[key][name] for key in keys) / len(keys)
+        out[name] = {"baseline": round(before, 4), "candidate": round(after, 4),
+                     "delta": round(after - before, 4), "cases": len(keys)}
+    return out

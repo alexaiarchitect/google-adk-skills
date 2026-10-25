@@ -1,0 +1,14 @@
+{
+  "criteria": {
+    "rubric_based_multi_turn_trajectory_quality_v1": {
+      "threshold": 0.8,
+      "judge_model_options": {"judge_model": "gemini-flash-latest", "num_samples": 3},
+      "rubrics": [
+        {
+          "rubric_id": "asks_for_missing_city",
+          "rubric_content": {"text_property": "When the employee has not named a city, the agent asks for one before it searches.", "type": "TRAJECTORY_QUALITY"}
+        }
+      ]
+    }
+  }
+}

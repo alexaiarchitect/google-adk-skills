@@ -82,6 +82,18 @@ appended to every eval and reported as informational values — lower is better,
 threshold, no pass or fail. Naming one in `criteria` raises at run time, so this
 plugin refuses it (`CFG070`) and reports the values in their own table.
 
+**A judge grades the question its metric asks.** A rubric that asks whether the
+agent called or checked something, scored by the final-response metric, is
+graded through the final answer rather than as a question about the
+trajectory (`CFG075`, info); a compound rubric grades
+inconsistently (`RUB006`); and through 2.13.0 the multi-turn trajectory judge
+crashes on agents with built-in tools (`CFG076`). Streaming tools only stream
+under `run_live` (`AGT081`). The nightly workflow compares each run with its
+baseline and fails on a drop in any scored metric's mean
+(`compare_runs.py --max-mean-drop`), so drift raises an alert overnight
+instead of surfacing in the next pull request; `lint_workflows.py` notes a
+scheduled run without that step (`CI007`).
+
 ## Requirements
 
 Python 3.10+ for the plugin's own scripts, which are **standard library only** and
@@ -128,7 +140,7 @@ python3 skills/adk/scripts/check_env.py <agent-dir> --config <config>
 ## Beyond the evalset
 
 Pages that fold a Google article into the plugin's own commands (the first five
-added in the 2.13 sync):
+added in the 2.13 sync, the last five in the sync with main after 2.13.0):
 
 | Page | Covers |
 |---|---|
@@ -141,18 +153,27 @@ added in the 2.13 sync):
 | `skills/eval-create/references/behavioral-tests.md` | pytest assertions on discrete actions, one failure mode at a time, batch pass rates (`gen_test_eval.py --behavioral`) |
 | `skills/agent-create/references/skills-and-progressive-disclosure.md` | ADK `SkillToolset` skills: `SKILL.md` limits, L1/L2/L3, lifecycles, 2.12 script artifacts, activation evals |
 | `skills/agent-create/references/context-engineering.md` | the compiled-view model: compaction, `include_contents`, agents as tools, artifacts |
+| `skills/agent-create/references/live-agents.md` (new) | voice agents that never go silent: streaming and non-blocking tools, `stop_streaming`, barge-in, `response_scheduling`, why their evals need `live_model_config` (`AGT081`) |
+| `skills/eval-analyze/references/improvement-loop.md` | hill-climbing: per-case tables over means, a constant judge across model swaps, scheduled runs that alert on a drop, trajectory over summary, live and plan-only runs, golden sets |
+| `skills/eval-criteria/references/rubric-authoring.md` | atomic expectations (`RUB006`), action rubrics need a trajectory view (`CFG075`), built-in tools and the multi-turn judge (`CFG076`) |
+| `skills/eval-ci/references/merge-gates.md` | cheap deterministic gates first, a fresh eval report per PR, expensive suites on demand, the `agents-cli eval` mapping |
+| `skills/agent-create/references/workflow-graphs.md` | remote A2A steps: an explicit step enum, an unreachable remote held for manual review, deterministic validators audited by repetition |
 
 The `adk-recipes` three-layer layout and its plugin-skill `EVAL.yaml` format are
 in `skills/adk/references/layouts.md` and `skills/eval-create/references/managing-evalsets.md`.
 
 ## Layouts
 
-Both are detected automatically:
+All three are detected automatically:
 
 ```
 recipes:  <project>/app/agent.py          + <project>/tests/eval/{eval_config.json,evalsets/}
 flat:     <agent>/agent.py                + <agent>/{*.test.json,test_config.json}
+src:      <project>/src/<pkg>/agent.py    (agents-cli projects; `src/` is the agents dir)
 ```
+
+agents-cli datasets (`tests/eval/datasets/*.json` with `tests/eval/eval_config.yaml`)
+are detected and listed, but not read or validated: they are not ADK evalsets.
 
 The difference that matters: in the flat layout `test_config.json` sits beside the
 evalset, so `adk eval` finds it. In the recipes layout the config must always be
@@ -179,13 +200,17 @@ checked.
 
 The context-caching, eval-engineering, shadow-rollout, merge-gates,
 behavioural-tests, skills, context-engineering, layouts, improvement-loop,
-user-simulation, case-taxonomy, state-and-memory and workflows pages draw on
+user-simulation, case-taxonomy, state-and-memory, workflows, maturity,
+rubric-authoring, live-agents, workflow-graphs and app-and-plugins pages draw on
 Google-authored articles (on context caching in agent harnesses, continuous
 evaluation, eval-driven development at Firebase, moving past the vibe check,
 harness engineering, building ADK agents with skills, context-aware multi-agent
 design, the `adk-recipes` tour, the agent quality flywheel, live and voice
 evaluation, long-running resumable agents, the Agent Platform evaluation GA,
-Agents CLI for any framework, ADK in five languages, and zero-trust agents),
+Agents CLI for any framework, ADK in five languages, zero-trust agents,
+hill-climbing with Agents CLI evaluation, four eval-engineering lessons,
+shipping Agent Skills like products, voice agents that never go silent,
+cross-language A2A teams, and governed self-evolving agents),
 paraphrased and cited by title and URL; the list is in `THIRD_PARTY_NOTICES.md`.
 
 The evaluation practices described here — trajectory over final answer, the case

@@ -138,7 +138,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", required=True,
                         help="ConversationGenerationConfig JSON "
                              "(gen_sim_config.py --kind generate writes one)")
-    parser.add_argument("--storage", help="--eval_storage_uri gs://bucket/prefix")
+    parser.add_argument("--storage",
+                        help="--eval_storage_uri: gs://bucket/prefix on released ADK (through "
+                             "2.13.0); main after 2.13.0 also takes file:///abs/dir and reads "
+                             "ADK_EVAL_STORAGE_URI when the flag is absent")
     parser.add_argument("--timeout", type=float, default=1800.0)
     parser.add_argument("--dry-run", action="store_true",
                         help="validate the config, print the command, and stop")

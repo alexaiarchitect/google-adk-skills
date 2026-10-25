@@ -30,7 +30,7 @@ comes from. Ids are stable.
 | `AGT042` | warn | no `Args:` section | the model fills arguments from this text |
 | `AGT043` | **error** | a parameter with no type annotation | ADK builds the declaration from the hints |
 | `AGT044` | warn | `raise` inside a tool | an exception ends the invocation; a returned `{"status": "error"}` is an observation the model can correct from |
-| `AGT045` | info | returns something that is not a dict or a string | a dict gives judges and groundedness checks something to read |
+| `AGT045` | info | returns something that is not a dict or a string (streaming tools are skipped; see `AGT081`) | a dict gives judges and groundedness checks something to read |
 | `AGT046` | info | a returned dict with no `status` key | makes success and failure explicit |
 | `AGT047` | warn | `time.sleep`, `requests`, `subprocess` in a sync tool | a sync tool is awaited inline, so a blocking call freezes the whole run |
 | `AGT030` | info | a bound tool defined outside the project | its contract could not be read statically |
@@ -42,9 +42,15 @@ comes from. Ids are stable.
 | `AGT013` | **error** | `session.state[...] = ...` on a service-fetched session | not recorded as an event, so not persisted and not replayed |
 | `AGT080` | warn | a `{key}` placeholder in a string `instruction` that nothing writes — no `output_key`, `tool_context.state[...]`, `callback_context.state[...]` or `state_delta` in the agent directory — and no evalset seeds in `session_input.state`; skipped when a write uses a computed key, and for `{artifact.…}` and `{key?}` | building the instruction raises `KeyError: Context variable not found`, so the first turn fails. Write it in a `before_agent_callback`, from a tool or `output_key`, seed it, or make it optional with `{key?}` |
 | `AGT014` | info | no `App` exported | the loader prefers one, and plugins, caching and resumability only reach a run through it |
-| `AGT050` | warn | a `root_agent.yaml` config agent | the config classes are deprecated in 2.x; 2.13 made the `AGENT_CONFIG` flag stable, but the loader still warns `[EXPERIMENTAL]` and the classes stay `@deprecated` |
+| `AGT050` | warn | a `root_agent.yaml` config agent | the config classes are deprecated in 2.x; 2.13 made the `AGENT_CONFIG` flag stable, but through 2.13.0 the loader still warns `[EXPERIMENTAL]` (main after 2.13.0 drops that warning) and the classes stay `@deprecated` |
 | `AGT051` | **error** | nothing loadable exported | `AgentLoader` looks for `app`, then `root_agent`; `adk eval` and `AgentEvaluator` additionally accept `get_agent_async`, so a factory-only module evaluates but will not load in `adk web` / `adk run` |
 | `AGT000` | **error** | the file could not be parsed | |
+
+## Live agents (`AGT081`)
+
+| Id | Severity | Trigger | Why |
+|---|---|---|---|
+| `AGT081` | warn / info | a streaming tool (an `async def` whose body `yield`s, or annotated `AsyncGenerator`/`AsyncIterator`) bound to an `LlmAgent`. **Warn** when the model is a text model; **info** when it is live (`gemini-3.8-live`, a `-live-` or `native-audio` id, `CascadeLive(...)`; a sub-agent inherits its parent's) and no eval config beside the agent sets `live_model_config` | ADK marks async-generator tools `NON_BLOCKING` only under `run_live`. Through `run_async` (`adk run`, `adk eval` without `live_model_config`, text `adk web`) a second `yield` aborts the run on 2.12+ (`ValueError: Output already set`) and on 2.9.2 the body never runs. Fix a text agent with a plain return-once tool; give a live agent's evals `"live_model_config": {}` and bind `stop_streaming` (`/adk:agent-create` `live-agents.md`) |
 
 ## Context caching
 
@@ -130,6 +136,10 @@ Sources: `adk-python: agents/base_agent.py`, `agents/llm_agent.py`,
 missing `{key}`, measured on 2.9.2 and 2.13.0); `agents/base_agent.py`
 (`AGT015`: `validate_sub_agents_unique_names`, tree-wide from `6031bb1`, in
 `v2.13.0`, measured on 2.12.0 and 2.13.0);
+`flows/llm_flows/tools/_agent_tools.py` and `tools/function_tool.py` (`AGT081`:
+`mark_live_async_tools_non_blocking` only under `run_live`; the `run_async`
+outcome measured on 2.9.2, 2.12.0 and 2.13.0);
 `adk-docs: docs/tools-custom/function-tools.md`, `docs/sessions/state.md`,
-`docs/2.0/index.md`, `docs/context/caching.md` (`AGT060`–`AGT063`, `AGT065`–`AGT067`); `adk-recipes: AGENTS.md` (`AGT005`, the model-deprecation
+`docs/2.0/index.md`, `docs/context/caching.md` (`AGT060`–`AGT063`, `AGT065`–`AGT067`),
+`docs/live/tools.md` (`AGT081`); `adk-recipes: AGENTS.md` (`AGT005`, the model-deprecation
 policy — the sole source for it).

@@ -37,7 +37,10 @@ Still missing: any notion of how *often* the agent works. At L2 a case that
 passes four times in five looks identical to one that always passes.
 
 **To leave.** Repeated runs and a reliability read: `/adk:eval-run --runs 5`, then
-`pass_at_k.py`. Add a nightly tier for the judge metrics.
+`pass_at_k.py`. Add a nightly tier for the judge metrics, and make it compare
+with the stored baseline (`compare_runs.py --max-mean-drop`), so a drift between
+commits raises an alert instead of waiting for the next PR to trip over it. A
+schedule without an alert is still L2.
 
 ## L3 — Statistical reliability
 
@@ -52,7 +55,10 @@ Still missing: any connection to production. The suite tests what someone though
 to test.
 
 **To leave.** Feed real failures back: capture the session, add it as a
-`regression_*` case, and let the suite grow from what actually goes wrong.
+`regression_*` case, and let the suite grow from what actually goes wrong. The
+L3 tell is that every eval-affecting PR links a fresh report — a run on its
+latest commit — and acting on a red result is routine; running more evals
+without changing the agent after them does not move a project up.
 
 ## L4 — Continuous observability
 
@@ -123,3 +129,9 @@ https://developers.googleblog.com/evaluating-ai-agents-moving-past-the-vibe-chec
 The L4 picture draws on Martin and Melnyk, "Agent and Model Evaluations in Gemini
 Enterprise Agent Platform are now GA", Google Developers Blog, 2026-07-31,
 https://developers.googleblog.com/agent-and-model-evaluations-in-gemini-enterprise-agent-platform-are-now-ga/.
+The scheduled drift alert and "acting on results" are from Ippolito and Secchi,
+"Hill-Climbing Agent Quality with Agents CLI Evaluation", 2026-10-28,
+https://developers.googleblog.com/hill-climbing-agent-quality-with-agents-cli-evaluation/;
+fresh evidence per PR from Samborski, "Behind the scenes, two months later: How
+we ship Google Agent Skills like products", Google Cloud Blog, 2026-10-29,
+https://cloud.google.com/blog/topics/developers-practitioners/behind-the-scenes-two-months-later-how-we-ship-google-agent-skills-like-products.

@@ -9,7 +9,10 @@ and thorough enough to trust for a release:
   pipeline, a wrong argument.
 * **Nightly tier** — judge metrics, groundedness, safety, and repeated runs for
   pass@k. Costs model calls per invocation per sample, so it runs on a schedule
-  with a reliability report in the job summary.
+  with a reliability report in the job summary, and a drift step
+  (`compare_runs.py --max-mean-drop 0.05` against result files committed under
+  `--baseline-dir`) that fails when a metric's mean falls: alert on a drop, not
+  on a low absolute. The step is skipped until a baseline is committed.
 
 Both gate on the wrapper script rather than bare `adk eval`, which exits 0 on
 every version through 2.12.0 and exits 1 on a failure from 2.13.0; the wrapper
@@ -17,7 +20,8 @@ reads the result files and gates (`--min-pass-rate`), so its exit code is the
 one to use.
 
     gen_workflows.py <repo-root> --tier pr|nightly|both [--auth wif|api_key]
-                     [--agent-dir app] [--python 3.12] [--dry-run]
+                     [--agent-dir app] [--python 3.12] [--baseline-dir DIR]
+                     [--dry-run]
 
 Exit codes: 0 written (warnings are reported, not fatal), 2 usage error.
 """
@@ -66,6 +70,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pr-config", help="deterministic config (detected when omitted)")
     parser.add_argument("--nightly-config", help="judged config (defaults to eval_config.nightly.json)")
     parser.add_argument("--python", default="3.12")
+    parser.add_argument("--baseline-dir", default="eval_baseline",
+                        help="repo-relative directory of committed baseline result files the "
+                             "nightly drift step compares against (default eval_baseline)")
     parser.add_argument("--branch", default="main")
     parser.add_argument("--cron", default="0 3 * * *")
     parser.add_argument("--conformance", action="store_true", help="also a conformance replay job")
@@ -134,6 +141,7 @@ def main(argv: list[str] | None = None) -> int:
         "AGENT_DIR": agent_dir,
         "PR_CONFIG": pr_config,
         "NIGHTLY_CONFIG": nightly_config,
+        "BASELINE_DIR": args.baseline_dir,
         "PYTHON_VERSION": args.python,
         "ADK_VERSION": ADK_TARGET,
         "MODEL_NAME": DEFAULT_MODEL,
@@ -177,6 +185,9 @@ def main(argv: list[str] | None = None) -> int:
         setup.append("set the GOOGLE_API_KEY repository secret "
                      "(it cannot serve safety_v1 or the multi_turn_* metrics)")
     setup.append("optionally set the MODEL_NAME repository variable to override the default")
+    if args.tier in ("nightly", "both"):
+        setup.append(f"commit a good night's result files under {args.baseline_dir}/ (from the "
+                     "eval-history-nightly artifact); the drift step stays skipped until then")
 
     written = [] if args.dry_run else plan.apply()
 

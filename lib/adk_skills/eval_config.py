@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from . import DEPRECATED_MODELS
-from .env import BackendInfo, classify_model_id, version_at_least
+from .env import BackendInfo, classify_model_id, is_live_model_id, version_at_least
 from .evalset import key_style, normalize_keys
 from .metrics import (
     INFORMATIONAL_METRICS,
@@ -82,8 +82,9 @@ SIMULATOR_KEYS = {
                             "custom_instructions", "include_function_calls", "audio_model",
                             "audio_model_configuration", "include_text_with_audio"}),
 }
-#: Model ids that run on the Live API.
-LIVE_MODEL_MARKERS = ("-live-", "native-audio")
+#: Model ids that run on the Live API: `gemini-3.8-live`,
+#: `gemini-live-2.5-flash-native-audio`, `gemini-3.1-flash-live-preview`.
+LIVE_MODEL_MARKERS = ("-live-", "-live", "native-audio")
 _SRC_SIM_AUDIO = "adk-python: evaluation/simulation/_llm_audio_user_simulator.py"
 
 BASE_CRITERION_FIELDS = frozenset({"threshold", "include_intermediate_responses_in_final"})
@@ -215,6 +216,7 @@ def validate_config(
     known_tools: set[str] | None = None,
     adk_version: str | None = None,
     agent_models: list[str] | None = None,
+    builtin_tools: list[str] | None = None,
 ) -> GapReport:
     """Check a config against the metric catalog, the criterion schemas and the
     backend that has to serve it.
@@ -223,6 +225,8 @@ def validate_config(
     when one was probed. It only changes the informational note about the
     always-on efficiency metrics: every error here holds on both 2.9 and 2.10.
     `agent_models` are the agent's model ids when known, for SIM033.
+    `builtin_tools` are the agent's built-in tools (`google_search`,
+    `VertexAiSearchTool`, code execution ...) when known, for CFG076.
     """
     report = report or GapReport(subject=loaded.path, skill="eval-criteria")
     path = loaded.path
@@ -305,6 +309,9 @@ def validate_config(
         )
 
     _note_efficiency_metrics(criteria, report, path, adk_version=adk_version)
+    _check_trajectory_blind_rubrics(criteria, custom_metrics, report, path)
+    _check_trajectory_judge_builtins(criteria, report, path, builtin_tools=builtin_tools,
+                                     adk_version=adk_version)
 
     _validate_custom_metrics(custom_metrics, criteria, report, path, agent_dir=agent_dir)
 
@@ -353,6 +360,155 @@ def _note_efficiency_metrics(
             + (" and take the named one out of `criteria`" if already else ""),
         source="adk-python: evaluation/eval_config.py (get_eval_metrics_from_config)",
     )
+
+
+#: Metrics whose judge sees the tool calls, not only the final reply.
+TRAJECTORY_AWARE_METRICS = frozenset({
+    "tool_trajectory_avg_score", "rubric_based_tool_use_quality_v1",
+    "rubric_based_multi_turn_trajectory_quality_v1",
+})
+#: Rubric metrics whose judge reads only the final response.
+FINAL_RESPONSE_RUBRIC_METRICS = frozenset({"rubric_based_final_response_quality_v1"})
+#: Rubric wording that asks about an action the agent took. "call" counts only
+#: as a verb: "ends the call" and "every call to" are nouns.
+_ACTION_VERB = re.compile(
+    r"(?<!\bthe )(?<!\ba )(?<!\ban )(?<!\bthis )(?<!\beach )(?<!\bevery )(?<!\bany )"
+    r"(?<!\bone )(?<!\bno )(?<!\btool )(?<!\bfirst )(?<!\bsecond )(?<!\blast )"
+    r"\b(?:runs?|ran|calls?|called|invokes?|invoked|executes?|executed)\b",
+    re.I,
+)
+#: Passive "be called" names something ("must not be called fabrication"); it
+#: is an action only with a tool in view just before it.
+_PASSIVE_CALLED = re.compile(r"\b(?:be|is|are|was|were|been|being)\s+called\b", re.I)
+_TOOLISH = re.compile(r"`[^`]+`|\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b|\btools?\b", re.I)
+_OTHER_ACTORS = frozenset({"model", "user", "caller", "simulator", "judge", "employee",
+                           "claimant", "customer"})
+_ACTION_PHRASES = (
+    re.compile(r"\buse[sd]?\s+(?:the\s+)?(?:\S+\s+){0,4}?tool\b", re.I),
+    re.compile(r"\bcheck(?:s|ed)?\b.{1,80}?\bbefore\b", re.I),
+)
+_SRC_TRAJECTORY_JUDGE = ("adk-python: evaluation/rubric_based_final_response_quality_v1.py "
+                         "(\"Judge Consistency with the Evidence\": the property is "
+                         "checked against <final_answer>)")
+
+
+def asks_about_actions(text: str) -> bool:
+    """Does a rubric ask whether the agent ran, called or used something?"""
+    if any(p.search(text) for p in _ACTION_PHRASES):
+        return True
+    for match in _ACTION_VERB.finditer(text):
+        before = text[:match.start()].split()
+        if before and before[-1].lower().strip(",.;:'\"") in _OTHER_ACTORS:
+            continue                       # "before the model ran": not the agent's action
+        passive = _PASSIVE_CALLED.search(text, max(0, match.start() - 8), match.end())
+        if passive and passive.end() == match.end():
+            if not _TOOLISH.search(text[max(0, match.start() - 50):match.start()]):
+                continue
+        return True
+    return False
+
+
+def _has_trajectory_metric(criteria: dict[str, Any], custom_metrics: Any) -> bool:
+    names = set(criteria)
+    if isinstance(custom_metrics, dict):
+        names |= set(custom_metrics)
+    return any(name in TRAJECTORY_AWARE_METRICS or "trajectory" in name.lower()
+               or "tool" in name.lower() for name in names)
+
+
+def _check_trajectory_blind_rubrics(
+    criteria: dict[str, Any], custom_metrics: Any, report: GapReport, path: str,
+) -> None:
+    """CFG075: a rubric about actions under the final-response judge.
+
+    `rubric_based_final_response_quality_v1` shows its judge the tool calls
+    (`<response_steps>`) only as evidence for one question: is the final answer
+    consistent with them. A property about what the agent did is then graded
+    through the answer, so a run that did the work without saying so can fail
+    and one that claims it can pass. `rubric_based_tool_use_quality_v1` asks the
+    judge about the tool use itself. Info, not warn: the calls are in the prompt
+    (2.9.2 and 2.13.0), so the verdict is often right, just not by design.
+    """
+    if _has_trajectory_metric(criteria, custom_metrics):
+        return
+    for name in sorted(FINAL_RESPONSE_RUBRIC_METRICS & set(criteria)):
+        value = criteria[name]
+        rubrics = value.get("rubrics") if isinstance(value, dict) else None
+        if not isinstance(rubrics, list):
+            continue
+        for index, rubric in enumerate(rubrics):
+            content = rubric.get("rubric_content") if isinstance(rubric, dict) else None
+            text = content.get("text_property") if isinstance(content, dict) else None
+            if not isinstance(text, str) or not asks_about_actions(text):
+                continue
+            rubric_id = rubric.get("rubric_id") or index
+            report.add(
+                "CFG075", "info", "config",
+                f"rubric {rubric_id!r} under {name} asks about an action, and no metric in "
+                "this config grades the trajectory: the final-response judge grades the "
+                "final answer and reads the tool calls only as evidence for it; move this "
+                "rubric under `rubric_based_tool_use_quality_v1` or add a trajectory metric",
+                path=path, locator=f"criteria.{name}.rubrics[{index}]",
+                fix="keep reply rubrics about the reply; grade what the agent did where the "
+                    "judge is asked about tool use (rubric_based_tool_use_quality_v1) or "
+                    "against an expected trajectory (tool_trajectory_avg_score)",
+                source=_SRC_TRAJECTORY_JUDGE,
+            )
+
+
+MULTI_TURN_TRAJECTORY_METRIC = "rubric_based_multi_turn_trajectory_quality_v1"
+#: The last release whose multi-turn trajectory judge crashes on a built-in tool.
+TRAJECTORY_BUILTIN_CRASH_THROUGH = "2.13"
+_SRC_TRAJECTORY_BUILTIN = (
+    "adk-python v2.13.0: evaluation/rubric_based_multi_turn_trajectory_evaluator.py "
+    "(`for func in tool.function_declarations`); fixed on main by 047815043")
+
+
+def _check_trajectory_judge_builtins(
+    criteria: dict[str, Any], report: GapReport, path: str, *,
+    builtin_tools: list[str] | None, adk_version: str | None,
+) -> None:
+    """CFG076: the multi-turn trajectory judge and a built-in tool, through 2.13.0.
+
+    A built-in tool (`google_search`, code execution, Vertex AI Search ...) is a
+    `types.Tool` with no `function_declarations`. On 2.13.0 the judge iterates
+    that None while it builds its prompt and raises before scoring. Main after
+    2.13.0 lists such tools as `- <name> (built-in)`.
+    """
+    if MULTI_TURN_TRAJECTORY_METRIC not in criteria or not builtin_tools:
+        return
+    names = ", ".join(sorted(set(builtin_tools)))
+    newer = (adk_version is not None and _parsable(adk_version)
+             and version_at_least(adk_version, "2.13.1"))
+    unknown = adk_version is not None and not _parsable(adk_version)
+    if newer or unknown:
+        report.add(
+            "CFG076", "info", "config",
+            f"{MULTI_TURN_TRAJECTORY_METRIC} with built-in tool(s) {names}: on ADK 2.13.0 and "
+            "earlier this judge raises TypeError: 'NoneType' object is not iterable while it "
+            f"builds its prompt; runner {adk_version} is newer than any release this plugin "
+            "has measured, so check that it lists built-in tools",
+            path=path, locator=f"criteria.{MULTI_TURN_TRAJECTORY_METRIC}",
+            fix="main after 2.13.0 lists built-ins as `(built-in)`; on a released version "
+                "use rubric_based_tool_use_quality_v1 for this agent",
+            source=_SRC_TRAJECTORY_BUILTIN,
+        )
+        return
+    report.add(
+        "CFG076", "warn", "config",
+        f"{MULTI_TURN_TRAJECTORY_METRIC} with built-in tool(s) {names}: on ADK 2.13.0 and "
+        "earlier the judge raises TypeError: 'NoneType' object is not iterable while it "
+        "builds its prompt, before any score; fixed on main after 2.13.0",
+        path=path, locator=f"criteria.{MULTI_TURN_TRAJECTORY_METRIC}",
+        fix="grade the trajectory with rubric_based_tool_use_quality_v1 or "
+            "tool_trajectory_avg_score until a release lists built-in tools, or evaluate a "
+            "variant of the agent without the built-in tool",
+        source=_SRC_TRAJECTORY_BUILTIN,
+    )
+
+
+def _parsable(version: str) -> bool:
+    return bool(re.match(r"^\d+\.\d+(?:\.\d+)?$", str(version).strip()))
 
 
 def _validate_criterion(
@@ -926,8 +1082,9 @@ def _validate_multi_run(config: Any, criteria: Any, report: GapReport, path: str
 
 
 def looks_live(model: str | None) -> bool:
-    """Does a model id name a Live API model (`gemini-*-live-*`, `*native-audio*`)?"""
-    return bool(model) and any(marker in str(model) for marker in LIVE_MODEL_MARKERS)
+    """Does a model id name a Live API model (`gemini-*-live-*`, `gemini-3.8-live`,
+    `*native-audio*`)?"""
+    return is_live_model_id(model)
 
 
 def validate_live_and_audio(doc: dict[str, Any], report: GapReport, path: str, *,
@@ -953,7 +1110,7 @@ def validate_live_and_audio(doc: dict[str, Any], report: GapReport, path: str, *
                 "SIM033", "warn", "simulation",
                 "`live_model_config` is set, so `adk eval` runs inference over the Live API, "
                 f"but the agent's model ({', '.join(sorted(set(models)))}) does not look like "
-                "a live model (no `-live-` or `native-audio` in the id)",
+                "a live model (no `live` or `native-audio` in the id)",
                 path=path, locator="live_model_config",
                 fix="point the agent at a Live API model for these cases, or drop "
                     "`live_model_config` to run the same cases in text",

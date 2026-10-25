@@ -134,7 +134,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cases", help="comma-separated eval ids to run")
     parser.add_argument("--runs", type=int, default=1, help="repeat the whole set N times, for pass@k")
     parser.add_argument("--detailed", action="store_true", help="pass --print_detailed_results")
-    parser.add_argument("--storage", help="--eval_storage_uri gs://bucket/prefix")
+    parser.add_argument("--storage",
+                        help="--eval_storage_uri: gs://bucket/prefix on released ADK (through "
+                             "2.13.0); main after 2.13.0 also takes file:///abs/dir and reads "
+                             "ADK_EVAL_STORAGE_URI when the flag is absent")
     parser.add_argument("--not-evaluated", choices=("fail", "warn"), default="fail",
                         help="how to treat cases that were never scored (default: fail)")
     parser.add_argument("--timeout", type=float, default=1800.0)

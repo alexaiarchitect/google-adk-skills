@@ -7,7 +7,9 @@
 ```
 
 `adk create` gitignores `.adk/`. With `--eval_storage_uri gs://...` the same
-content goes to Cloud Storage instead. Unchanged on 2.10 through 2.13: the history still lands
+content goes to Cloud Storage instead (`gs://` only through 2.13.0; main after
+2.13.0 also takes `file://` and `ADK_EVAL_STORAGE_URI`, writing the same
+`<app>/.adk/eval_history/` tree under that directory). Unchanged on 2.10 through 2.13: the history still lands
 inside the **agent module** directory, not at the project root, so a recipes
 layout writes to `<project>/app/.adk/eval_history/`.
 
@@ -175,6 +177,21 @@ argument matcher not yet used by any evaluator, and lets a plugin set compaction
 per session. Released versions drop `multi_run_config` silently, so `pass_at_k.py`
 and `run_evals.py --runs` remain the way to batch today.
 
+Three scores move on main without a shape change, so a baseline recorded on
+2.13.0 and a candidate on main can differ for no behavioural reason:
+
+- **`token_usage_v1`** (`5e52b21a8`): through 2.13.0 each count is averaged over
+  every invocation, so a turn that reported no usage pulls the mean down; main
+  averages only invocations that reported input or output tokens.
+- **`response_match_score`** (`571670d9f`): main ignores thought parts when
+  computing ROUGE-1; 2.13.0 joins every text part, thoughts included, so a
+  thinking model scores lower than its visible answer deserves.
+- **`final_response_match_v2`** (`4c66a0091`): through 2.13.0 any judge label
+  other than `true`/`invalid` counts as VALID; main maps `almost` and
+  `partially…` to INVALID and an unknown label to NOT_FOUND.
+
+Pin both runs to one ADK version before reading a delta on these metrics.
+
 ## Deprecated fields
 
 `eval_set_file` (use `eval_set_id`) and `eval_metric_results` (use
@@ -198,4 +215,6 @@ read off the evaluators driven over a synthetic invocation. The 2.13.0 shapes
 measured on the installed 2.13.0 wheel with a deterministic fake model; the
 rubric-verdict rows (`bc220d2`) were read in source, not measured, because they
 need Vertex credentials. `repetition_index` is `evaluation/eval_result.py` on main
-`12c7bed76`, post-tag.
+`12c7bed76`, post-tag; the three score changes are post-tag at `dfd534a88`
+(2.13.0 behaviour read in the installed wheel's `_efficiency_evaluators.py`,
+`response_evaluator.py` and `final_response_match_v2.py`).

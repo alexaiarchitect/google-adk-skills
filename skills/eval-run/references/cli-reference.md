@@ -11,14 +11,10 @@ adk eval AGENT_MODULE_FILE_PATH [EVAL_SET_FILE_PATH_OR_ID ...]
          [--log_level debug|info|warning|error|critical]
 ```
 
-That is the whole list, and the **options are identical on 2.9.2, 2.10.0, 2.11.0,
-2.12.0 and 2.13.0**: no eval or conformance flag was added, renamed or removed in
-2.10 through 2.13 (2.13.0's `--help` for `eval`, `run`, `web`, `conformance` and
-`eval_set` matches 2.12.0's). The only `--help` changes in 2.12.0 are docstring fixes (commit
-`d56a994`): `adk eval` now says `AGENT_MODULE_FILE_PATH` is the agent *folder*,
-and `adk conformance record` finally names `spec.yaml` instead of `input.yaml` /
-`test.yaml` and documents its streaming-mode argument. `adk eval_set` and its
-sub-commands are byte-for-byte unchanged.
+That is the whole list, and the **options are identical on 2.9.2 through
+2.13.0** (`--help` for `eval`, `run`, `web`, `conformance`, `eval_set`). 2.12.0
+changed docstrings only (`d56a994`): `AGENT_MODULE_FILE_PATH` is the agent
+*folder*, and `adk conformance record` names `spec.yaml`.
 
 | Argument | Notes |
 |---|---|
@@ -26,7 +22,7 @@ sub-commands are byte-for-byte unchanged.
 | eval set paths | one or more; append `:id1,id2` to run selected cases |
 | `--config_file_path` | required unless `test_config.json` sits beside a single evalset |
 | `--print_detailed_results` | per-case detail, including actual versus expected |
-| `--eval_storage_uri` | store eval sets and results in GCS instead of `.adk/eval_history/` |
+| `--eval_storage_uri` | store eval sets and results in GCS instead of `.adk/eval_history/`; `gs://` only through 2.13.0 (main after 2.13.0 also takes `file://`, below) |
 | `--enable_features` / `--disable_features` | comma-separated experimental feature names, an alternative to the environment variables |
 
 ### What it does not have
@@ -36,7 +32,8 @@ sub-commands are byte-for-byte unchanged.
   2.12.0). From 2.13.0 it exits 1 when a case fails or no case ran, and
   `NOT_EVALUATED` counts as failed (measured on 2.13.0). Either way it cannot
   gate on a pass rate, on regressions against a baseline, or on a budget; see
-  "In 2.13.0" below.
+  "In 2.13.0" below. The printed summary puts everything not `PASSED`, including
+  `NOT_EVALUATED`, in the failed column; only the result files tell them apart.
 - **No `--num_runs` on any release.** Repetition is either
   `AgentEvaluator(num_runs=...)`, which averages, or running the command again,
   which is what `run_evals.py --runs N` does. Main after 2.13.0 adds the flag
@@ -45,11 +42,6 @@ sub-commands are byte-for-byte unchanged.
   `EvaluateConfig.parallelism` exist, but only on the programmatic path. On 2.10+ a
   value below 1 raises ``ValueError: `parallelism` must be at least 1, got N.``
   where 2.9.2 built a semaphore of 0 and hung forever.
-
-### And one more thing about the summary
-
-Anything not `PASSED` lands in the failed column, so `NOT_EVALUATED` reads as a
-failure there. The result files distinguish them; the printed summary does not.
 
 ## Config discovery
 
@@ -113,10 +105,9 @@ so seed state with `--state`, an evalset's `session_input`, or the dev UI. This 
 one whose version it cannot read. The 2.11.0 `adk run` help change was service-URI wording only
 (Agent Platform auto-detection, a `sqlite:///` memory-service URI).
 
-`--print_detailed_results` output is easier to read on 2.12.0 (commit `69c58ea`):
-the per-invocation details print as readable text instead of a dumped object.
-The judge requests also run with automatic function calling disabled (`cc339e0`),
-and eval session ids are generated in a form Agent Engine accepts (`4368d68`).
+On 2.12.0 `--print_detailed_results` prints readable text (`69c58ea`), judge
+requests run without automatic function calling (`cc339e0`), and eval session
+ids suit Agent Engine (`4368d68`).
 
 ### In 2.13.0
 
@@ -146,7 +137,7 @@ single process exit cannot express. Bare `adk eval` on a 2.13+ pin is a
 
 ### Coming after 2.13.0 (unreleased main)
 
-Not in any release yet (checked against `adk-python` `12c7bed76`):
+Not in any release yet (checked against `adk-python` `dfd534a88`):
 
 - **`adk eval --num_runs N` and `EvalConfig.multi_run_config`** (`7f3517e`):
   `num_runs`; `cross_run_scoring` (`mean_over_invocations` by default, or
@@ -164,6 +155,20 @@ Not in any release yet (checked against `adk-python` `12c7bed76`):
 - **Per-session compaction** (`9331638`): a plugin's `before_run_callback` can set
   the compaction config for one session.
 - **Prompt-cache creation tokens** on `LlmResponse` (`b89dda4`).
+- **Eval files outside `agents_dir`** (`ff66b1f17`): `--eval_storage_uri` (on
+  `adk eval`, the `eval_set` sub-commands, `adk web` and `api_server`) accepts
+  `file:///abs/path` besides `gs://`; when it is omitted, `ADK_EVAL_STORAGE_URI`
+  is used, and only then `agents_dir`. The path must be absolute and local; the
+  directory is created; sets land in `<dir>/<app>/<set>.evalset.json`, results in
+  `<dir>/<app>/.adk/eval_history/`; existing files are not migrated; `adk
+  optimize` honours the variable too. The use case is a read-only agents
+  directory (a container image). On 2.13.0 a `file://` URI stops with
+  `ValueError: Unsupported evals storage URI` before inference, and the variable
+  is silently ignored.
+- **Deploy** (`bd77f3f2c`, `e3d0ec926`): `--python_version` on all four `adk
+  deploy` targets (default 3.11; `agent_engine` falls back to
+  `.agent_engine_config.json`), and `--extra_packages` pip-installs wheels,
+  sdists and `pyproject.toml` projects instead of only copying them to `/app`.
 
 Released versions drop `multi_run_config` silently (the config model ignores
 unknown keys; measured on 2.9.2, 2.12.0 and 2.13.0), so `pass_at_k.py` and
@@ -190,15 +195,15 @@ sorts these must not assume an integer — and the extra dot means a naive
 second. Case management in this plugin sorts on the parsed float.
 
 With `--eval_storage_uri gs://...` the same content goes to Cloud Storage, which
-is how CI and humans end up reading the same history.
+is how CI and humans end up reading the same history (a local `file://` store
+is main-only, above).
 
 ## Deploy, briefly
 
 `adk deploy cloud_run --with_cloud_run_sandbox` (present since 2.12.0; only the
 docs entry is new) enables the Cloud Run sandbox for code execution, off by
-default; ADK then deploys with `gcloud beta run deploy --sandbox-launcher`.
-Deployment is outside this plugin; what matters here is that the evals run
-against the same agent directory before it ships.
+default (`gcloud beta run deploy --sandbox-launcher`). Deployment is outside
+this plugin; the evals run against the same agent directory before it ships.
 
 ## Neighbours: `agents-cli eval`
 
@@ -227,13 +232,15 @@ Sources: `adk-python: cli/cli_tools_click.py`, `cli/cli_eval.py`, `cli/cli.py`,
 `evaluation/eval_config.py`, `evaluation/local_eval_set_results_manager.py`,
 `evaluation/_eval_set_results_manager_utils.py` (`create_eval_set_result`),
 `cli/utils/evals.py`, `evaluation/local_eval_service.py`
-(`_parallelism_semaphore`, the 2.10 guard); `adk-docs: docs/evaluate/index.md`.
+(`_parallelism_semaphore`, the 2.10 guard), `cli/utils/_eval_storage.py` (main);
+`adk-docs: docs/evaluate/index.md`.
 Every flag list above was diffed between the installed 2.9.2, 2.10.0, 2.11.0 and
 2.12.0 wheels' `--help` output; `--state_file` is `adk-python` commit `c390266`
 (in `v2.12.0`); the bare `adk eval` exit code was measured as 0 on 2.12.0 with a
 failing case and as 1 on 2.13.0 (`c2ff634`, in `v2.13.0`); `initial_state.json` is
 `3c8c63e`, in `v2.13.0` (`cli/dev_server.py`); the multi-run, matcher, compaction
-and cache-token items were classified post-tag against `v2.13.0` at `12c7bed76`;
+and cache-token items were classified post-tag against `v2.13.0` at `12c7bed76`,
+the storage and deploy items at `dfd534a88` (`file://` measured on 2.13.0);
 `adk-docs: docs/deploy/cloud-run.md` (`cc53b6c14`). Neighbours: "Powering the
 Agent Development Lifecycle with any framework, from ADK to LangChain and beyond"
 (https://developers.googleblog.com/powering-the-agent-development-lifecycle-with-any-framework-from-adk-to-langchain-and-beyond/),

@@ -122,7 +122,10 @@ adaptive ones — is in [improvement-loop.md](references/improvement-loop.md).
 
 As a merge gate it takes the two rules and the budgets: `--min-pass-rate 0.95
 --max-regressions 0`, plus `--max-mean-prompt-tokens N`, `--max-mean-seconds S`,
-`--max-mean-tool-calls N` (a figure reported as `n/a` never fails a budget).
+`--max-mean-tool-calls N` (a figure reported as `n/a` never fails a budget), and
+for a scheduled run `--max-mean-drop D`, which fails when any scored metric's
+mean over the shared cases falls by more than `D` (alert on a drop, not a low
+absolute).
 With `--json` the output gains `gates` (each gate, its limit and value) and
 `gates_passed`. Which to set and why:
 [`../eval-ci/references/merge-gates.md`](../eval-ci/references/merge-gates.md).
@@ -148,6 +151,9 @@ How many runs: 5 separates "usually works" from "often fails" but not 95% from
 ## Decision rules
 
 - **Read the first divergence, not the last symptom.**
+- **Read the per-case table before the mean.** Two unrelated changes can move
+  a mean by the same amount and break different cases; keep the judge model
+  fixed across a model swap, or the delta measures both.
 - **A flaky case and a broken case need different fixes.** Before triaging,
   establish which it is: `/adk:eval-run --runs 5`.
 - **Never average away the variance.** `AgentEvaluator(num_runs=N)` does exactly
@@ -173,7 +179,7 @@ How many runs: 5 separates "usually works" from "often fails" but not 95% from
 |---|---|---|
 | `scripts/summarize_results.py <path> [--dir D] [--latest] [--eval-id ID] [--json]` | per-case diagnosis, plus an "Efficiency (informational, lower is better)" table with the token breakdown, a `cached` column, a per-case "Cache-hit ratio" line and a run-level "Context cache served X%" when reported; JSON carries `case["efficiency"]`, `run["efficiency"]`, `cases[].cache` and `run.cache_hit_ratio`. On result files from ADK 2.13+ it also shows the model / tool / framework split of `invocation_duration_v1` (`details.duration_details`) and the judge's explanation (the `rubric_id` "explanation" entry, shown as the metric's rationale and `rubric_explanations`, never counted as a verdict) | 0 passed, 1 failures, 3 only never-scored, 2 nothing to read |
 | `scripts/pass_at_k.py [--dir D] [--evalset ID] [--last N] [--k 1,3,5]` | reliability across runs | 0 all reliable, 1 not, 2 nothing to read |
-| `scripts/compare_runs.py <baseline> <candidate> [--latest] [--evalset ID] [--min-pass-rate P] [--max-regressions N] [--max-mean-prompt-tokens N] [--max-mean-seconds S] [--max-mean-tool-calls N] [--json]` | before/after table: pass rate, verdict flips, added/removed cases, per-invocation prompt / cached / uncached-prompt / output tokens, cache-hit ratio, seconds, tool and model calls, with deltas; verdict `REGRESSION` / `IMPROVED` / `NO REGRESSION`; missing figures read `n/a` | 0 no regression, 1 pass rate dropped, more than `--max-regressions` cases (default 0) flipped to failed, the candidate below `--min-pass-rate`, or a budget exceeded; 2 nothing to compare (or a directory holding several runs without `--latest`) |
+| `scripts/compare_runs.py <baseline> <candidate> [--latest] [--evalset ID] [--min-pass-rate P] [--max-regressions N] [--max-mean-prompt-tokens N] [--max-mean-seconds S] [--max-mean-tool-calls N] [--max-mean-drop D] [--json]` | before/after table, plus "Metric means (shared cases)" (json: `metric_means`): pass rate, verdict flips, added/removed cases, per-invocation prompt / cached / uncached-prompt / output tokens, cache-hit ratio, seconds, tool and model calls, with deltas; verdict `REGRESSION` / `IMPROVED` / `NO REGRESSION`; missing figures read `n/a` | 0 no regression, 1 pass rate dropped, more than `--max-regressions` cases (default 0) flipped to failed, the candidate below `--min-pass-rate`, a budget exceeded, or a scored metric's mean over shared cases fell by more than `--max-mean-drop` on its own scale; 2 nothing to compare (or a directory holding several runs without `--latest`) |
 | `scripts/calibration_sample.py [--dir D] [--n 5] [--seed 0]` | passing cases for human review, sampled on the gate metrics only | 0, 2 nothing to read |
 
 ## Completion checklist

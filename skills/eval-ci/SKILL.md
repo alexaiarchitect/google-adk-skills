@@ -91,7 +91,9 @@ gets disabled, and a disabled gate is worse than a cheap one.
   scoring is worse than one that fails;
 - upload `.adk/eval_history/` with `if: always()`, so a failure can be examined;
 - on the nightly tier, write a pass@k table and any failure explanation into the
-  job summary.
+  job summary, and compare with the baseline committed under `eval_baseline/` so a drop in a scored
+  metric's mean fails the run and raises the alert (`compare_runs.py
+  --max-mean-drop 0.05`).
 
 ## Repository setup
 
@@ -138,6 +140,15 @@ because someone ran the agent and it looked right.
   a push and too valuable to skip entirely.
 - **Pin the ADK version.** An eval suite that changes behaviour because a
   dependency floated is a suite nobody trusts.
+- **Cheap gates first.** Lints and validators (`lint_agent.py`,
+  `validate_evalset.py`, `validate_config.py`, `lint_workflows.py`) call no model;
+  run them before anything judged, and trigger the expensive suites on purpose
+  (`workflow_dispatch`, a PR comment or label, `paths:` on the agent's files).
+- **Evidence must be fresh.** An eval-affecting PR links a report from a run on
+  its latest commit; one from an earlier commit does not count.
+- **Alert on a drop, not on a low score.** The nightly run compares with the
+  baseline and fails on the drop; a schedule without that exit code is a log,
+  not a gate.
 - **Merge on two rules, not one.** A global pass threshold
   (`run_evals.py --min-pass-rate 0.95`) and zero regressions against the default
   branch (`compare_runs.py --min-pass-rate 0.95 --max-regressions 0`), plus
@@ -160,9 +171,9 @@ Templates: `assets/templates/workflows/`.
 
 | Command | Does | Exit codes |
 |---|---|---|
-| `scripts/gen_workflows.py <repo-root> [--tier pr\|nightly\|both] [--auth wif\|api_key] [--agent-dir D] [--scripts-path P] [--python V] [--cron EXPR] [--conformance] [--dry-run]` | writes the workflows | 0, 1 written with warnings, 2 usage |
+| `scripts/gen_workflows.py <repo-root> [--tier pr\|nightly\|both] [--auth wif\|api_key] [--agent-dir D] [--scripts-path P] [--python V] [--cron EXPR] [--baseline-dir DIR] [--conformance] [--dry-run]` | writes the workflows; the nightly one compares with result files committed under `--baseline-dir` (default `eval_baseline`, step skipped until they exist) via `compare_runs.py --max-mean-drop 0.05` | 0, 1 written with warnings, 2 usage |
 | `scripts/assess_maturity.py <repo-root> [--json]` | the level, evidence and next step | 0 |
-| `scripts/lint_workflows.py <repo-root> [--adk-version V] [--json]` | checks existing workflows gate; `CI001` (bare `adk eval`) is version-aware, the pin auto-detected unless `--adk-version` is given | 0 clean, 1 findings, 2 none found |
+| `scripts/lint_workflows.py <repo-root> [--adk-version V] [--json]` | checks existing workflows gate; `CI001` (bare `adk eval`) is version-aware, the pin auto-detected unless `--adk-version` is given; `CI007` (info) a scheduled eval run with no `--max-mean-drop` drift alert | 0 clean, 1 findings, 2 none found |
 
 ## Completion checklist
 
