@@ -187,7 +187,7 @@ when a judge metric is involved, or one noisy run decides the iteration.
 
 A budget or a quality score must never buy back a failed hard check. Google's engineering benchmark for agents awards a deliverable points only after it clears every "hard safety gate", and its skill-evaluation team keeps correctness, efficiency and security as separate verdicts after watching an optimiser reward candidates that read the answer file (no model turns, so the best efficiency) under a blended score. Here that means: a security or safety case (`/adk:eval-create` `adversarial-cases.md`) fails the merge whatever the token count; `compare_runs.py`'s budgets are separate exits, never weights; and a candidate that "wins" only on efficiency gets read before it merges.
 
-Report two rates, not one. Per-constraint pass rates (each metric, each rubric) look healthy long before per-deliverable rates (a case passing **every** check) do; the case pass rate `run_evals.py --min-pass-rate` gates on is the second kind. Keep a small held-out set beside the committed suite — cases nobody tunes against, run on release candidates — so a suite that has been optimised against still has a witness, and report run cost beside the pass rate.
+Report two rates, not one. Per-constraint pass rates (each metric, each rubric) look healthy long before per-deliverable rates (a case passing **every** check) do; the case pass rate `run_evals.py --min-pass-rate` gates on is the second kind. Keep a small held-out set beside the committed suite — cases nobody tunes against, run on release candidates — so a suite that has been optimised against still has a witness, and report run cost beside the pass rate. When a search tunes the instruction or a skill automatically, the held-out cases stay out of the search entirely (no scores, no failure notes fed back), and a candidate whose gain on the searched cases vanishes on them has learned the answers ([improvement-loop.md](../../eval-analyze/references/improvement-loop.md); Nardini and Nawalgaria).
 
 ## Other harnesses
 
@@ -206,16 +206,9 @@ Google's Agents CLI drives the same loop against the platform:
 | `eval analyze` | `summarize_results.py` |
 | `eval optimize` | none; a proposal for the user to approve (`improvement-loop.md`) |
 
-Its datasets (`tests/eval/datasets/*.json`) and config
-(`tests/eval/eval_config.yaml`, `metrics_to_run`, `custom_metrics`) are separate
-version-controlled files, like an evalset and its `eval_config.json` here;
-`eval grade` reports scores only, so a pass threshold is a script on top of it.
+Its datasets (`tests/eval/datasets/*.json`) and config (`tests/eval/eval_config.yaml`, `metrics_to_run`, `custom_metrics`) are separate version-controlled files, like an evalset and its `eval_config.json` here; `eval grade` reports scores only, so a pass threshold is a script on top of it.
 
-The hosted path needs a Google Cloud project with the evaluation service
-enabled, and its model-based metrics are billed at model rates. The local path
-needs only what `/adk:adk` `check_env.py` reports. Neither is a substitute for
-real traffic: simulated cases are a cold start, and the suite should grow from
-what production actually gets wrong.
+The hosted path needs a Google Cloud project with the evaluation service enabled, and its model-based metrics are billed at model rates. The local path needs only what `/adk:adk` `check_env.py` reports. Neither is a substitute for real traffic: simulated cases are a cold start, and the suite should grow from what production actually gets wrong.
 
 ---
 
@@ -247,3 +240,7 @@ https://cloud.google.com/blog/topics/developers-practitioners/behind-the-scenes-
 Weinmeister and Blount, "Five rules for evaluating agent skills before they bloat
 your context window", Google Cloud Blog, 2026-11-03,
 https://cloud.google.com/blog/topics/developers-practitioners/evaluate-agent-skills-before-they-bloat-your-context-window.
+Held-out cases outside a search: Nardini and Nawalgaria, "Building an agent skill
+optimizer with AlphaEvolve, Harbor and Gemini 4 Argon", Google Cloud Blog,
+2026-11-06, https://cloud.google.com/blog/topics/developers-practitioners/how-to-build-an-agent-skill-optimizer-with-alphaevolve-and-harbor
+(paraphrased).

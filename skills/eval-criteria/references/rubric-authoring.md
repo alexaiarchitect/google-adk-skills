@@ -150,9 +150,22 @@ and needs rewriting (`/adk:eval-analyze` `calibration.md`, stability).
 - **On an eval case**: merged in on top, filtered by `type`
   (`FINAL_RESPONSE_QUALITY`, `TOOL_USE_QUALITY`, `TRAJECTORY_QUALITY`). A per-case
   rubric with no `type` is read by nothing.
+- **On one invocation** (`conversation[i].rubrics`): added for that turn only,
+  same `type` filter. An untyped one is ignored on every version; one with an
+  unknown key or no `rubric_id` fails EvalSet load; a `rubric_id` already used at
+  case level raises `Rubric with rubric_id '<id>' already exists.`
 
 The effective list must be non-empty or evaluation raises, so a criterion with no
 rubrics is only valid when every case supplies its own.
+
+**Per-turn rubrics through 2.13.0.** The judge prompt for each turn lists that
+turn's rubrics, but every reply is parsed against the last turn's list, so an
+earlier turn's verdicts on rubrics the last turn lacks are dropped with a "not
+found" warning and the case can pass with a failing rubric (adk-recipes'
+`long-horizon-harness` `daily_news_bot_journey` evalset is one). Give every turn the
+same list or move the rubrics to the case; `validate_evalset.py` warns
+(`EVS121`). **Coming after 2.13.0 (unreleased main, `e4f6c3a9c`):** each turn is
+scored against its own list, and `EVS121` drops to info on a newer runner.
 
 ## `text_property`: required before 2.12, optional from 2.12
 
@@ -182,7 +195,7 @@ about the agent's mind, and tool names the agent does not have.
 Sources: `adk-docs: docs/evaluate/criteria.md`;
 `adk-python: evaluation/rubric_based_evaluator.py`, `evaluation/eval_rubrics.py`
 (`RubricContent`, validated on installed 2.9.2, 2.11.0 and 2.12.0; the `None`
-default is commit `7d8c950`, in `v2.12.0`), `evaluation/llm_as_judge.py`,
+default is commit `7d8c950`, in `v2.12.0`), `evaluation/llm_as_judge.py` (per-turn rubric parsing measured on 2.9.2, 2.13.0 and main `175682204`; fix `e4f6c3a9c`; the recipe case is `adk-recipes: core/python/long-horizon-harness/tests/eval/evalsets/` at `5eee5c911`),
 `evaluation/rubric_based_multi_turn_trajectory_evaluator.py` (the `TypeError`
 measured on 2.13.0; fix `047815043` on main `dfd534a88`). Atomic expectations:
 Samborski, "Behind the scenes, two months later: How we ship Google Agent Skills

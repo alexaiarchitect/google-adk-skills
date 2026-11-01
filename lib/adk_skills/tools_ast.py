@@ -386,6 +386,16 @@ class AgentSpec:
     #: A module string constant `model=` names, kept apart from `model` so the
     #: model-policy rules keep their meaning; used only to tell live from text.
     model_constant: str | None = None
+    #: AGT085: `max_parallel_workers=` is passed at all (any value, even None).
+    max_parallel_workers_set: bool = False
+    #: Its value when a literal or module constant: an int, or None for `None`.
+    max_parallel_workers: int | None = None
+    #: True when that value could not be read (an expression).
+    max_parallel_workers_unread: bool = False
+    #: `parallel_worker=` as written: True/False when readable, None when unset
+    #: or an expression (see `parallel_worker_set`).
+    parallel_worker: bool | None = None
+    parallel_worker_set: bool = False
     lineno: int = 0
     file: str | None = None
 
@@ -1423,6 +1433,24 @@ def _collect_agent(
     if isinstance(gcc, ast.Call):
         spec.gcc_forbidden = [kw.arg for kw in gcc.keywords if kw.arg in FORBIDDEN_GCC_FIELDS]
     spec.gcc_max_output_tokens, spec.gcc_thinking_off = _gcc_token_settings(gcc, facts)
+
+    workers = _kwarg(call, "max_parallel_workers")
+    if workers is not None:
+        spec.max_parallel_workers_set = True
+        resolved = _follow_constant(workers, facts)
+        value = _literal(resolved)
+        if isinstance(resolved, ast.Constant) and resolved.value is None:
+            spec.max_parallel_workers = None
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            spec.max_parallel_workers = int(value) if float(value).is_integer() else None
+            spec.max_parallel_workers_unread = not float(value).is_integer()
+        else:
+            spec.max_parallel_workers_unread = True
+    parallel = _kwarg(call, "parallel_worker")
+    if parallel is not None:
+        spec.parallel_worker_set = True
+        flag = _literal(_follow_constant(parallel, facts))
+        spec.parallel_worker = flag if isinstance(flag, bool) else None
 
     contents = _kwarg(call, "include_contents")
     if contents is not None:
@@ -3210,6 +3238,79 @@ def agent_tool_memory_findings(facts: ModuleFacts, *,
                     "service given to the Runner reaches the AgentTool",
                 source=_SRC_AGENT_TOOL_MEMORY,
             ))
+    return findings
+
+
+_SRC_PARALLEL_WORKERS = (
+    "adk-python v2.13.0: agents/llm_agent.py (LlmAgent, extra=\"forbid\": no "
+    "max_parallel_workers field); main `5e4f0e18c`: agents/llm_agent.py "
+    "(max_parallel_workers = Field(default=None, ge=1), _validate_parallel_worker_config), "
+    "docs/guides/workflow/parallel_worker"
+)
+#: The release-after-2.13.0 commit that adds `LlmAgent.max_parallel_workers`.
+PARALLEL_WORKERS_COMMIT = "5e4f0e18c"
+
+
+def parallel_worker_findings(facts: ModuleFacts, *,
+                             adk_version: str | None = None) -> list[Finding]:
+    """AGT085: `max_parallel_workers=` on an `LlmAgent` / `Agent`.
+
+    Every released ADK through 2.13.0 has no such field and `LlmAgent` forbids
+    extra inputs, so construction raises whatever the value (even None). Main
+    after 2.13.0 (`5e4f0e18c`) adds it with `ge=1`, and only together with
+    `parallel_worker=True`. `@node(...)` / `Node(...)` accept the kwarg since
+    2.4.0 and are not agents here, so they are never flagged.
+    """
+    version = str(adk_version).strip() if adk_version is not None else None
+    parsable = bool(version and re.match(r"^\d+\.\d+(?:\.\d+)?$", version))
+    newer = (version is not None and parsable and version_at_least(version, "2.13.1")) or (
+        version is not None and not parsable)
+
+    findings: list[Finding] = []
+    for agent in facts.agents:
+        if agent.call not in LLM_AGENT_CALLS or not agent.max_parallel_workers_set:
+            continue
+        who = f"{agent.call} {agent.name!r}" if agent.name else f"{agent.call}({agent.var or 'inline'})"
+        locator = f"line {agent.lineno}"
+        if not newer:
+            findings.append(Finding(
+                id="AGT085", severity="error", area="agent",
+                message=f"{who}: `max_parallel_workers` is not an LlmAgent field on any "
+                        "released ADK: 2.13.0 raises `ValidationError: Extra inputs are not "
+                        "permitted` at construction; main after 2.13.0 "
+                        f"(`{PARALLEL_WORKERS_COMMIT}`) adds it (>= 1, only with "
+                        "`parallel_worker=True`)",
+                path=agent.file, locator=locator,
+                fix=f"remove the kwarg until a release includes `{PARALLEL_WORKERS_COMMIT}`: "
+                    "through 2.13.0 an `LlmAgent` parallel worker cannot be throttled "
+                    "(`parallel_worker=True` alone is fine); `@node(parallel_worker=True, "
+                    "max_parallel_workers=N)` on a function node has accepted the cap since "
+                    "2.4.0",
+                source=_SRC_PARALLEL_WORKERS,
+            ))
+            continue
+        problems: list[str] = []
+        value = agent.max_parallel_workers
+        if value is not None and value < 1:
+            problems.append(f"max_parallel_workers={value}: Input should be greater than or "
+                            "equal to 1")
+        # A value below 1 fails `ge=1` before the validator runs; None (unbounded)
+        # and an unreadable expression are left alone.
+        elif value is not None and (not agent.parallel_worker_set
+                                    or agent.parallel_worker is False):
+            problems.append("max_parallel_workers can only be set when parallel_worker "
+                            "is True")
+        if not problems:
+            continue
+        findings.append(Finding(
+            id="AGT085", severity="error", area="agent",
+            message=f"{who}: {'; '.join(problems)} (ValidationError at construction on ADK "
+                    f"main after 2.13.0, `{PARALLEL_WORKERS_COMMIT}`; runner {adk_version})",
+            path=agent.file, locator=locator,
+            fix="set `parallel_worker=True` and a whole number of at least 1, or pass "
+                "`max_parallel_workers=None` (unbounded) / drop it",
+            source=_SRC_PARALLEL_WORKERS,
+        ))
     return findings
 
 

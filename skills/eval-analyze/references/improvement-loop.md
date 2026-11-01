@@ -44,25 +44,15 @@ In this plugin that is a protocol rule, not advice:
 - **The user approves.** Nothing is kept until the comparison has been shown and the user has said yes.
 - **The cases are not the proposer's to edit.** Changing a golden case so the candidate passes is grading by deletion; `manage_cases.py` refuses it on a frozen suite (`EVS120`), and `/adk:eval-ci` `merge-gates.md` explains why.
 
-The same rule covers a harness that patches the agent itself: a recap of
-Google's DevFest workshops describes self-patching harnesses that update runtime
-behaviour only after an eval passes the change. That is the only safe shape: the
-patch is a proposal, the frozen suite is the gate, and nothing ships on the
-patcher's own say-so.
+The same rule covers a harness that patches the agent itself: a recap of Google's DevFest workshops describes self-patching harnesses that update runtime behaviour only after an eval passes the change. That is the only safe shape: the patch is a proposal, the frozen suite is the gate, and nothing ships on the patcher's own say-so.
 
 ## Trust the delta, not the number
 
-A model-based score is a judgement, not ground truth. The post's phrase is
-"treat the scores as a strong directional signal": a 0.64 on its own means
-little, but the same suite scoring 0.64 before and 0.81 after, with no case
-flipped to failed, means a lot. So:
+A model-based score is a judgement, not ground truth. The post's phrase is "treat the scores as a strong directional signal": a 0.64 on its own means little, but the same suite scoring 0.64 before and 0.81 after, with no case flipped to failed, means a lot. So:
 
-- compare a candidate with a baseline from the same suite, config and judge,
-  never with last month's number;
-- gate the merge on the comparison (`compare_runs.py --max-regressions 0`), and
-  on a floor (`--min-pass-rate`) only as a backstop;
-- when a judge metric is involved, compare batches (`run_evals.py --runs 5`,
-  `pass_at_k.py`) rather than single runs, or one noisy run decides.
+- compare a candidate with a baseline from the same suite, config and judge, never with last month's number;
+- gate the merge on the comparison (`compare_runs.py --max-regressions 0`), and on a floor (`--min-pass-rate`) only as a backstop;
+- when a judge metric is involved, compare batches (`run_evals.py --runs 5`, `pass_at_k.py`) rather than single runs, or one noisy run decides.
 - when a change is about cost (a cheaper model, a router, a lower thinking level), compare **cost per passing case** — every token the run spent, retries and thinking included, divided by the cases that passed — not price per token; `summarize_results.py`'s token columns give the numerator.
 
 ## Adaptive metrics need a stable partner
@@ -192,13 +182,20 @@ turn, graded by rubric — and diff its failures against the live suite's.
 `--dry-run` and `--no-backend` are not plan-only runs; they never call the
 model.
 
+## Automated search over a prompt or a skill
+
+An optimiser that rewrites an instruction or a skill and keeps what scores better is the proposer at scale, so the rules above apply with more force. Google's skill-optimizer write-up (Nardini and Nawalgaria) treats the skill text as the thing searched and the agent's runs on real tasks as the judge, and its section "Make the score trustworthy" comes down to:
+
+- **Paired baseline runs.** Every candidate runs beside the current version on the same cases in the same window, and the score is the difference; a candidate run alone mostly measures how slow the model was that hour.
+- **A holdout the search never sees.** Keep a slice of cases out of the loop and check only the winner on it; a big gain on the search cases that disappears on the holdout is a leak (the candidate has learned the answers), not an improvement.
+- **Feedback, not just a score.** Short notes on why each failed case failed are what the proposer learns from; `summarize_results.py`'s per-case table and rubric verdicts are that note.
+- **Operations.** Pause scoring when model latency spikes, cap or rotate full run logs before they fill a disk, and stop when several rounds bring no better candidate; the search plateaus.
+
+The user still approves the winner here, with the holdout comparison in front of them.
+
 ## Golden sets outlast models
 
-Models, harnesses and tools change every few months; an expert-curated golden
-suite is the stable reference across them. Freeze it (`"frozen": true`,
-`EVS120`), grow it from production failures, and re-take the baseline on a
-model change rather than editing cases. One impressive demo is what the
-lessons call a "vanity metric": it proves the agent can, not that it does.
+Models, harnesses and tools change every few months; an expert-curated golden suite is the stable reference across them. Freeze it (`"frozen": true`, `EVS120`), grow it from production failures, and re-take the baseline on a model change rather than editing cases. One impressive demo is what the lessons call a "vanity metric": it proves the agent can, not that it does.
 
 ---
 
@@ -237,4 +234,8 @@ Cost per passing case: Villani, "Cost per task: Using cheap classifiers to route
 across Gemini models and thinking levels", Google Developers Blog, 2026-11-03,
 https://developers.googleblog.com/cost-per-task-using-cheap-classifiers-to-route-across-gemini-models-and-thinking-levels/
 (paraphrased). Judge audit: "Who judges the judge? Three helpful ways to audit your LLM
-evaluators", Google Cloud Blog, 2026-10-20 (`calibration.md`).
+evaluators", Google Cloud Blog, 2026-10-20 (`calibration.md`). Automated search:
+Nardini and Nawalgaria, "Building an agent skill optimizer with AlphaEvolve,
+Harbor and Gemini 4 Argon", Google Cloud Blog, 2026-11-06,
+https://cloud.google.com/blog/topics/developers-practitioners/how-to-build-an-agent-skill-optimizer-with-alphaevolve-and-harbor
+(paraphrased; one phrase quoted; no figures reproduced).

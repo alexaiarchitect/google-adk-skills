@@ -1,0 +1,92 @@
+{
+  "eval_set_id": "per_invocation_rubrics",
+  "name": "Per-invocation rubrics",
+  "description": "Two turns, each with its own typed rubric: through ADK 2.13.0 the judge parses turn 1 against turn 2's list (EVS121).",
+  "eval_cases": [
+    {
+      "eval_id": "memory_claim_amount_then_approver",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {
+            "parts": [
+              {
+                "text": "How much of claim CLM-000501 will be reimbursed?"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "CLM-000501 will be reimbursed 300 dollars."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "rubrics": [
+            {
+              "rubric_id": "amount",
+              "rubric_content": {
+                "text_property": "The response states the reimbursable amount of the expense claim."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        },
+        {
+          "invocation_id": "inv_2",
+          "user_content": {
+            "parts": [
+              {
+                "text": "Who has to approve it?"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "Your manager, Dana Okafor, approves CLM-000501."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "rubrics": [
+            {
+              "rubric_id": "approver",
+              "rubric_content": {
+                "text_property": "The response names the manager who must approve the claim."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "session_input": {
+        "app_name": "expense_agent",
+        "user_id": "evaluator",
+        "state": {}
+      },
+      "rubrics": [
+        {
+          "rubric_id": "polite",
+          "rubric_content": {
+            "text_property": "The response is courteous to the employee."
+          },
+          "type": "FINAL_RESPONSE_QUALITY"
+        }
+      ]
+    }
+  ]
+}

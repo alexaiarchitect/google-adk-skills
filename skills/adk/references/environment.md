@@ -74,7 +74,26 @@ on 2.13: `ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1` silences the
 environment simulation, user simulation, rubric and judge metrics, resumability,
 compaction, context caching; main after 2.13.0 graduates all of them), and `ADK_TELEMETRY_SCHEMA_VERSION_OPT_IN=otel_semconv_1_36` restores
 the pre-2.13 span names (`/adk:agent-debug` `evidence.md`). `check_env.py`
-reports the first.
+reports the first. A2A has its own switch: through 2.13.0 constructing
+`RemoteA2aAgent` or `A2aAgentExecutor` (not importing them) prints
+`[EXPERIMENTAL] RemoteA2aAgent: ADK Implementation for A2A support ...` unless
+`ADK_SUPPRESS_A2A_EXPERIMENTAL_FEATURE_WARNINGS=1`; main after 2.13.0
+(`95d4a5660`) graduates A2A, so the variable becomes unnecessary there.
+
+## Startup and the first request (2.12+)
+
+2.12.0 made two things cheaper (`1754b3eeb`, an agent-generated change; see
+Weale, Yang and Biernat below). Importing the agent and runner classes
+(`from google.adk import Agent, Runner`) no longer pulls in FastAPI, Starlette,
+OpenTelemetry, tracing or the live flow; they load on first use. A bare
+`import google.adk` was already lazy and is unchanged. And
+`InMemorySessionService` copies only the events a call returns, with a cheaper
+copier, so preparing a turn in a long in-memory session costs less; database,
+SQLite, Firestore and Redis stores read from storage and are unaffected.
+Because the deferred modules load during the first turn, time from a fresh
+process to the first model request did not move: on a server, send one warm-up
+request before taking traffic, and in a latency eval discard the first turn of a
+fresh process or warm it up the same way on both sides of a comparison.
 
 ## Picking an interpreter
 
@@ -149,4 +168,12 @@ Sources: `adk-python: cli/utils/envs.py`, `evaluation/vertex_ai_eval_facade.py`
 `ee8720162` (`3655990f6`); `adk-recipes: core/python/adk-voice-agent/docs/evals.md`
 (`584a7e634`);
 `adk-docs: docs/evaluate/criteria.md`, `docs/get-started/*`;
+A2A warning: `a2a/experimental.py` measured on 2.9.2 and 2.13.0 (on
+instantiation, silenced by the variable), main `175682204` (`95d4a5660`,
+post-tag). Startup: `1754b3eeb` (in `v2.12.0`), module loading measured on 2.9.2
+and 2.13.0 after `from google.adk import Agent, Runner`; Weale, Yang and Biernat,
+"Optimizing a 200,000-line Python codebase overnight with Gemini 4 Argon", Google
+Developers Blog, 2026-10-13,
+https://developers.googleblog.com/optimizing-a-200000-line-python-codebase-overnight-with-gemini-4-argon/
+(paraphrased; no figures reproduced);
 `adk-recipes: AGENTS.md` (model deprecations), recipe `.env.example` files.

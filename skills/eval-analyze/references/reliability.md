@@ -92,6 +92,29 @@ runs are too slow and too expensive to gate a push. A suggested shape:
 - nightly: judge metrics plus 5 runs, alert when any case drops below 0.95;
 - release: 20-50 runs, with an explicit floor per case.
 
+## Speed changes: measure the overhead, hide the benchmark
+
+A change meant to make the agent or its harness faster (yours, or one a coding
+agent proposes) needs a different harness from a quality eval. The ADK team's
+own overnight optimisation run (Weale, Yang and Biernat) is a good template:
+
+- **An instant model and instant tools**, so the timing is the framework's
+  overhead and not the model's mood; a real model belongs in the quality suite.
+- **A holdout benchmark the proposer never sees.** An agent that can read the
+  benchmark tunes for it; keep the timing script out of its workspace.
+- **Byte-identical requests before and after.** Capture what is sent to the
+  model on both sides and diff it, so a speed-up cannot come from sending less.
+- **Medians of repeated runs** over a few fixed workloads (a short chat, a long
+  session, many sub-agents, a workflow), plus the full test suite, not the
+  tests nearest the change.
+- **A reviewable change**: an unmerged pull request carrying the before and after
+  numbers. Reviewers then drop what reads private internals of a dependency or
+  helps only the synthetic benchmark — "the agent explores, the maintainer
+  subtracts".
+
+Time the first turn of a fresh process separately: on ADK 2.12+ deferred modules
+load there (`/adk:adk` `environment.md`).
+
 ## After a fix
 
 Re-run the same number of times and compare. One green run after a change proves
@@ -100,6 +123,10 @@ nothing that one green run before it did not.
 ---
 
 Sources: this plugin's `lib/adk_skills/passk.py`;
-`adk-python: evaluation/agent_evaluator.py` (num_runs averaging). The pass@k
+`adk-python: evaluation/agent_evaluator.py` (num_runs averaging). Speed changes:
+Weale, Yang and Biernat, "Optimizing a 200,000-line Python codebase overnight with
+Gemini 4 Argon", Google Developers Blog, 2026-10-13,
+https://developers.googleblog.com/optimizing-a-200000-line-python-codebase-overnight-with-gemini-4-argon/
+(paraphrased; one phrase quoted; no figures reproduced). The pass@k
 framing and the run-count guidance follow the LinkedIn Learning course
 *Evaluating AI Agents with Google ADK*, recommended as background reading.

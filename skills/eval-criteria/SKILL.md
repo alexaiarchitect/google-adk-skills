@@ -93,6 +93,11 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
   "almost" verdict leaves the rubric out of the mean, so two yeses and a skip
   pass 0.7; main scores no such sample. Keep `num_samples` at 3 or more and
   check the rubric ids in the results.
+- **Through 2.13.0 keep one rubric list on every turn.** The judge parses every
+  reply against the last turn's list, so an earlier turn's own rubrics are
+  dropped as "not found" and the case can pass with one failing (`EVS121` in
+  `/adk:eval-review`); main after 2.13.0 scores each turn on its own. Put shared
+  rubrics at case level, and give every invocation rubric a `type`.
 - **Restraint needs its own metric.** Trajectory matching and response quality
   both pass an agent that does too much. `rubric_based_tool_use_quality_v1` at
   threshold **1.0** with "does NOT call X when Y" is the only check that fails it.

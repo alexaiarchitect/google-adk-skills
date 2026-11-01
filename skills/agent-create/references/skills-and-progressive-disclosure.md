@@ -1,10 +1,6 @@
 # Skills in ADK agents: progressive disclosure, lifecycles, evals
 
-An ADK skill is a folder (or an inline object) holding a task's instructions and
-the files that go with them, which the agent loads only when the task comes up.
-`SkillToolset` turns a set of skills into tools. The point is the context window:
-a long procedure the agent needs once a week should not sit in every request.
-The format follows the agentskills.io spec, the one Claude Code skills use too.
+An ADK skill is a folder (or an inline object) holding a task's instructions and the files that go with them, which the agent loads only when the task comes up. `SkillToolset` turns a set of skills into tools. The point is the context window: a long procedure the agent needs once a week should not sit in every request. The format follows the agentskills.io spec, the one Claude Code skills use too.
 
 ## Anatomy of a skill
 
@@ -26,10 +22,7 @@ claim-policy/
 | `allowed_tools` | optional string; `allowed-tools` is accepted as the alias |
 | `metadata` | optional dict; extra keys allowed. ADK reads `adk_additional_tools` (a list of tool names the skill contributes once loaded) and `adk_inject_state` (`true` substitutes `{var}` from session state into the instructions) |
 
-Unknown top-level keys are allowed (`extra="allow"`). A bad name or an
-over-long description raises a `ValidationError` at import, so the agent never
-loads; a name that differs from its folder raises `ValueError: Skill name 'x'
-does not match directory name 'y'`.
+Unknown top-level keys are allowed (`extra="allow"`). A bad name or an over-long description raises a `ValidationError` at import, so the agent never loads; a name that differs from its folder raises `ValueError: Skill name 'x' does not match directory name 'y'`.
 
 The body is the instructions. Keep it under about 500 lines and push detail into
 `references/`, which the agent reads only when a step says to.
@@ -42,10 +35,9 @@ The body is the instructions. Keep it under about 500 lines and push detail into
 | **L2** instructions | the `SKILL.md` body | after `load_skill` | under about 5k tokens |
 | **L3** resources | `references/`, `assets/`, `scripts/` | after `load_skill_resource` or `run_skill_script` | only what the step needs |
 
-The **description is the trigger**. It is all the model sees before deciding to
-load, so it must say what the skill does and when to use it, in words a user's
-request would match. "Helps with claims" never activates; "Checks an expense
-claim against the travel and meals policy before submission" does.
+The **description is the trigger**. It is all the model sees before deciding to load, so it must say what the skill does and when to use it, in words a user's request would match. "Helps with claims" never activates; "Checks an expense claim against the travel and meals policy before submission" does.
+
+**A worked example: ADK's own repository.** `google/adk-python` keeps eleven skills for the coding agents that work on it in `.agents/skills/`. Each `SKILL.md` is a short index (46 to 239 lines) whose routing table sends a question to one of its `references/*.md` files (up to seventeen per skill), and the long material lives only there: L1 the description, L2 the index, L3 the reference a step names. That layout is what let an unattended coding agent follow the maintainers' conventions on its second overnight run after missing them on the first (Weale, Yang and Biernat, below).
 
 ## The tools `SkillToolset` generates
 
@@ -184,9 +176,7 @@ with `tool_trajectory_avg_score` in `IN_ORDER` or `ANY_ORDER` mode, so a
 
 **Collisions before cost.** The model picks a skill from its `name` and `description` alone: `list_skills` returns only those two fields (and `SkillDiscoveryMode.EAGER` puts the same list into the system instruction), and `load_skill` takes any name. So two failures happen before any body is read: **under-triggering** (the description says how the skill works, not what the user asks for) and **sibling hijacking** (a broad phrase in a neighbouring skill takes requests meant for this one). `AGT083` is the mechanical half — two registered skills whose descriptions share most of their words. The behavioural half is a negative activation case per sibling pair: a request meant for skill A expects `load_skill` for A and must not load B (`/adk:eval-create` `case-taxonomy.md`). Google's open-source `skill-reach` (`reach lint`, `reach overlap`, `reach eval --runs 3`) does the same for coding-agent skill folders, and pairs with a prose-level scanner for injection and exfiltration risks.
 
-**With and without, three times.** One green run is not an evaluation. Run each
-case in two arms — the same prompt and a clean sandbox, without the skill and with
-it — at least three times each, and read the delta:
+**With and without, three times.** One green run is not an evaluation. Run each case in two arms — the same prompt and a clean sandbox, without the skill and with it — at least three times each, and read the delta:
 
 - **delta zero** usually means the skill never loaded; check activation before
   rewriting the body;
@@ -195,12 +185,15 @@ it — at least three times each, and read the delta:
 - **both pass, the skill arm with fewer turns or tokens**: an efficiency win, a
   separate signal from pass rate; keep both numbers.
 
-For an ADK agent the arms are two agent builds (one without the toolset) over one
-evalset, run with `run_evals.py --runs 3`; this plugin's own suite does the same
-for its skills (`evals/README.md` in the plugin root). Run the arms in CI or a
-container, never on a laptop: cached credentials, exported project ids and shell
-history let the no-skill arm pass for the wrong reason. Re-run the matrix on every
-model upgrade and delete the skills whose delta has dropped to zero.
+For an ADK agent the arms are two agent builds (one without the toolset) over one evalset, run with `run_evals.py --runs 3`; this plugin's own suite does the same for its skills (`evals/README.md` in the plugin root). Run the arms in CI or a container, never on a laptop: cached credentials, exported project ids and shell history let the no-skill arm pass for the wrong reason. Re-run the matrix on every model upgrade and delete the skills whose delta has dropped to zero.
+
+**Tuned skills: paired, held out, checked for leaks.** When a skill is tuned over many rounds, by hand or by an automated search, three habits from Google's skill-optimizer write-up keep the score honest (Nardini and Nawalgaria, below):
+
+- run each candidate beside the current skill on the same tasks in the same window and score the difference, since model latency moves both arms together;
+- keep some tasks out of the tuning entirely and check the winner on them once, at the end;
+- distrust a skill that scores far above the baseline on the tuning tasks and falls back on the held-out ones: it has usually absorbed the answers.
+
+Do not assume a hand-written skill helps; theirs made no measurable difference against no skill. What paid was the agent's most common failure turned into rules (running out of time: keep a working result in place early, stop as soon as the check passes), which is the habits point below.
 
 **Habits, not documentation.** Skills that paste reference tables the model already knows add almost nothing and push the constraints that matter out of view. The ones that pay encode habits: check a command's flags at the leaf sub-command before anything that changes state, use least-privilege credentials, ask before a billable change. A thin discovery skill that loads the specialised ones on demand keeps the catalogue small, as Google's Cloud Developer plugin does with its gateway skill and its guardrail skills that validate CLI syntax and block destructive or key-downloading calls. `AGT072` catches the opposite move, the procedure copied into the instruction.
 
@@ -220,7 +213,16 @@ https://cloud.google.com/blog/topics/developers-practitioners/evaluate-agent-ski
 paraphrased, one phrase quoted); Samborski, "Google Cloud Developer plugin now
 available in Antigravity Marketplace", Google Cloud Blog, 2026-11-03,
 https://cloud.google.com/blog/topics/developers-practitioners/google-cloud-developer-plugin-now-available-in-antigravity-marketplace
-(the discovery and guardrail skills; paraphrased). `list_skills` output
+(the discovery and guardrail skills; paraphrased); Nardini and Nawalgaria,
+"Building an agent skill optimizer with AlphaEvolve, Harbor and Gemini 4 Argon",
+Google Cloud Blog, 2026-11-06,
+https://cloud.google.com/blog/topics/developers-practitioners/how-to-build-an-agent-skill-optimizer-with-alphaevolve-and-harbor
+(paired candidate and baseline, holdout, the answer leak; paraphrased, no
+figures reproduced); Weale, Yang and Biernat, "Optimizing a 200,000-line Python
+codebase overnight with Gemini 4 Argon", Google Developers Blog, 2026-10-13,
+https://developers.googleblog.com/optimizing-a-200000-line-python-codebase-overnight-with-gemini-4-argon/
+(the `.agents/skills` layout as used; paraphrased). `adk-python: .agents/skills/`
+counted at `175682204`. `list_skills` output
 (`skills/prompt.py`) measured on 2.9.2 and 2.13.0. `adk-python: tools/skill_toolset.py`
 (tools, `SkillDiscoveryMode`, `SkillLifecycleMode`, `SkillLifecycleConfig`, the
 artifact caps; `save_output_artifacts` is commit `beaef0d`, in `v2.12.0`),

@@ -39,13 +39,9 @@ accidental `return {}` from a `before_tool_callback` silently disables the tool.
 
 ## Plugins: per app
 
-The same hooks, registered once on the `App` and applied everywhere, plus
-run-level ones (`on_user_message_callback`, `before_run_callback`,
-`on_event_callback`, `after_run_callback`, and the error hooks). All async,
-keyword-only.
+The same hooks, registered once on the `App` and applied everywhere, plus run-level ones (`on_user_message_callback`, `before_run_callback`, `on_event_callback`, `after_run_callback`, and the error hooks). All async, keyword-only.
 
-Built-ins worth knowing — **and where each one actually imports from**, because
-only some are re-exported by the package:
+Built-ins worth knowing — **and where each one actually imports from**, because only some are re-exported by the package:
 
 | Plugin | Import from |
 |---|---|
@@ -58,14 +54,7 @@ only some are re-exported by the package:
 | `ContextFilterPlugin` | `google.adk.plugins.context_filter_plugin` |
 | `ModelArmorPlugin`, `ModelArmorConfig` | `google.adk.integrations.model_armor` — **not** under `plugins` at all |
 
-`google.adk.plugins.__all__` is exactly `BasePlugin`, `PluginManager` and the
-names in the first three rows, so `from google.adk.plugins import
-GlobalInstructionPlugin` raises `ImportError` — the package's `__getattr__`
-lazily resolves only the names it lists. The others need their submodule path.
-The lazy list was four names on 2.9.2 and 2.10.0; 2.11.0 adds the integrity pair,
-so code that imports them has to require `google-adk>=2.11`. 2.13.0 adds
-`ForceEscalationPlugin`, `ModelConsultObservabilityPlugin`, `ToolResultClassifier`
-and `ToolResultClassification` (read in the installed 2.13.0 wheel).
+`google.adk.plugins.__all__` is exactly `BasePlugin`, `PluginManager` and the names in the first three rows, so `from google.adk.plugins import GlobalInstructionPlugin` raises `ImportError` — the package's `__getattr__` lazily resolves only the names it lists. The others need their submodule path. The lazy list was four names on 2.9.2 and 2.10.0; 2.11.0 adds the integrity pair, so code that imports them has to require `google-adk>=2.11`. 2.13.0 adds `ForceEscalationPlugin`, `ModelConsultObservabilityPlugin`, `ToolResultClassifier` and `ToolResultClassification` (read in the installed 2.13.0 wheel).
 
 ### 2.13, in one line each
 
@@ -99,6 +88,12 @@ Checked again at `70e1cbde7` (2026-11-04), also main only:
 - **Eval-view SQL in template files** (`6b0171729`): the 2.13.0 views above, same rows, now under `plugins/bigquery_agent_analytics_sql/*_v1.sql`.
 - **Classifier request labels** (`7bfe227f0`): calls made by the labs classifiers carry `google-adk-classifier/<version>+<kind>` (`llm`, `typesafe`, `openai`, `custom`); an outer eval label is kept, so judge and classifier spend stay separable in billing.
 - **`MongoDbMemoryService(retrieval_mode="keyword" | "vector" | "auto", memory_ttl_days=None)`** (`1c84bb955`): keyword stays the default; `vector` embeds at ingest and recalls with `$vectorSearch` scoped to app and user; `memory_ttl_days` adds an expiry index.
+
+Checked again at `175682204` (2026-11-05), also main only:
+
+- **Tool retry guidance** (`03b4fbcee`): `ReflectAndRetryToolPlugin(..., reflection_guidance=..., retry_exceeded_guidance=...)`, keyword-only, each a string or a sync or async callable taking a `ToolReflectionContext` (with `default_guidance`). On 2.13.0 either keyword raises `TypeError: ... got an unexpected keyword argument 'reflection_guidance'`, and subclasses overriding the private reflection hooks break on main.
+- **BigQuery eval views** (`10b716235`, `16898f30c`, `5e83dd5b2`): failed tool calls get `{"error": ...}` responses, human-in-the-loop and transfer requests stop counting as tool calls, a turn with a truncated payload is not eval-ready, protected columns cannot be denied, and `build_eval_session_query_sql` / `build_eval_turn_query_sql` are exported without the BigQuery extra. `eval_view_mode` (`"full"` makes TOOL_ERROR a required event) is main only too.
+- **A2A graduates** (`95d4a5660`): no experimental warning on `RemoteA2aAgent` and friends ([workflow-graphs.md](workflow-graphs.md)).
 
 ### Tool-call integrity (2.11)
 
@@ -191,20 +186,11 @@ for the reject path.
 
 ## Workflows
 
-Orchestration in 2.x is `google.adk.workflow.Workflow`, a node graph that
-supersedes `SequentialAgent`/`ParallelAgent`/`LoopAgent`. Its two raising rules
-(one output per node execution, one terminal output per workflow), node
-confirmation (2.12) and remote A2A steps are in
-[workflow-graphs.md](workflow-graphs.md).
+Orchestration in 2.x is `google.adk.workflow.Workflow`, a node graph that supersedes `SequentialAgent`/`ParallelAgent`/`LoopAgent`. Its two raising rules (one output per node execution, one terminal output per workflow), node confirmation (2.12) and remote A2A steps are in [workflow-graphs.md](workflow-graphs.md).
 
 ## Skills and context
 
-`SkillToolset` (progressive disclosure, lifecycles, and 2.12's
-`save_output_artifacts=True`, which saves files a skill script writes as
-artifacts) is in [skills-and-progressive-disclosure.md](skills-and-progressive-disclosure.md).
-Event compaction (`App(events_compaction_config=...)`), `include_contents`, and
-keeping large payloads out of history are in
-[context-engineering.md](context-engineering.md).
+`SkillToolset` (progressive disclosure, lifecycles, and 2.12's `save_output_artifacts=True`, which saves files a skill script writes as artifacts) is in [skills-and-progressive-disclosure.md](skills-and-progressive-disclosure.md). Event compaction (`App(events_compaction_config=...)`), `include_contents`, and keeping large payloads out of history are in [context-engineering.md](context-engineering.md).
 
 ---
 
@@ -244,4 +230,4 @@ https://cloud.google.com/blog/topics/developers-practitioners/the-devfest-commun
 `_validate_eval_view_config`), `adk-docs: docs/integrations/bigquery-agent-analytics.md`
 ("Agent evaluation views"). Main at `70e1cbde7`: `flows/llm_flows/core/_finalizer.py`
 and `utils/_callback_pipeline.py` (`36cb10ddc`), `labs/classifiers/` (`7bfe227f0`),
-`integrations/mongodb/_memory_service.py` (`1c84bb955`), all post-tag.
+`integrations/mongodb/_memory_service.py` (`1c84bb955`), all post-tag. Main at `175682204`: `plugins/reflect_retry_tool_plugin.py` (`03b4fbcee`; the `TypeError` measured on 2.9.2 and 2.13.0), `plugins/bigquery_agent_analytics_plugin.py` and `plugins/_bigquery_agent_analytics_sql_utils.py` (`10b716235`, `16898f30c`, `5e83dd5b2`; `eval_view_mode` is `5762ef81f`), all post-tag.

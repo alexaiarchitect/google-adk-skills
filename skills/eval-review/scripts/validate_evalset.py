@@ -20,7 +20,14 @@ case expecting `load_skill` for a skill it does not register is EVS074. A case
 whose `session_input.state` seeds a key the agent never reads is EVS075 (info).
 An `eval_set_id` or `app_name` that starts with a drive letter (`c:...`) is
 EVS076: an error on 2.13+ (ADK raises when it saves the results), a warning
-below or when the version is unknown.
+below or when the version is unknown. A multi-turn case whose invocations carry
+different rubric lists (case-level plus the invocation's own, kept by `type` the
+way the judge keeps them) is EVS121: a warning through 2.13.0 or when the
+version is unknown, since the judge then drops an earlier turn's verdicts; info
+on a newer runner. With a config, only the rubric types its rubric-based metrics
+read count. Invocation rubrics get the same shape checks as case-level ones
+(EVS080-085), and a `rubric_id` repeated across the case/invocation merge is
+EVS122.
 
 Exit codes: 0 clean, 1 findings, 2 bad target.
 """
@@ -77,7 +84,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", help="eval config, to know whether a reference response is needed")
     parser.add_argument("--adk-version",
                         help="the ADK release that will run the suite (e.g. 2.11.0); decides "
-                             "whether a rubric without text_property is an error")
+                             "whether a rubric without text_property is an error, and "
+                             "EVS076/EVS121 severities")
     parser.add_argument("--format", choices=("json", "md"), default="md")
     parser.add_argument("--json", action="store_const", const="json", dest="format")
     parser.add_argument("--strict", action="store_true", help="treat warnings as failures")
@@ -118,6 +126,7 @@ def main(argv: list[str] | None = None) -> int:
 
     reference_metrics = True
     match_type = None
+    rubric_types = None
     config_path = args.config
     if not config_path:
         for candidate in layout.configs:
@@ -129,6 +138,7 @@ def main(argv: list[str] | None = None) -> int:
         if loaded_config.ok:
             reference_metrics = loaded_config.has_reference_metrics()
             match_type = loaded_config.trajectory_match_type()
+            rubric_types = loaded_config.rubric_types()
 
     def rel(path: str | None) -> str | None:
         if not path:
@@ -149,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         "expected_app_name": layout.expected_app_name(),
         "registered_skills": sorted(registered_skills) if registered_skills is not None else None,
         "adk_version": args.adk_version,
+        "rubric_types": sorted(rubric_types) if rubric_types is not None else None,
     }
 
     totals = {"cases": 0, "files": len(evalsets)}
@@ -164,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
             adk_version=args.adk_version,
             registered_skills=registered_skills,
             state_key_read=state_key_read,
+            rubric_types=rubric_types,
         )
         if isinstance(loaded.doc, dict):
             totals["cases"] += stats(loaded.doc)["cases"]

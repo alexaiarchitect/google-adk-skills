@@ -19,6 +19,7 @@ comes from. Ids are stable.
 | `AGT015` | warn | two agents anywhere in the tree share a `name`: siblings, cousins, or an agent and one of its descendants | ADK only logs a warning (siblings before 2.13; the whole tree from 2.13, "find_agent() returns the first match in a depth-first walk"), but routing and `find_agent` by name become ambiguous |
 | `AGT016` | **error** | `temperature`, `top_p`, `max_output_tokens` and friends passed to the agent | raises at construction; move them into `generate_content_config` |
 | `AGT084` | info | `generate_content_config` (inline `GenerateContentConfig(...)`, a module constant or a dict) sets an int `max_output_tokens` below 1024 on an agent whose resolved model id is in the plugin's thinking family (`gemini-2.5-*`, `gemini-3*`, `gemini-flash-latest`, `gemini-pro-latest`, `gemini-flash-lite-latest`; Live and TTS ids excluded; an env-only or unknown id is skipped). Exempt when the same config's `thinking_config` sets `thinking_budget=0` or `thinking_level` MINIMAL (LOW is not exempt) | the cap is a ceiling, not a thinking budget: a hard turn spends it on reasoning and stops mid-chain, so the reply is truncated or wrong, while easy turns use the same thinking tokens either way; ADK accepts the value silently. Bound the answer with the instruction or `thinking_config`; keep the cap at 1024 or more, or drop it (`model-policy.md`) |
+| `AGT085` | **error** | `max_parallel_workers=` on an `LlmAgent` / `Agent`: any value (even `None`) on a runner ≤ 2.13.0 or with no `--adk-version`; on a newer runner, a value below 1 or no `parallel_worker=True` (`None` or an unreadable value is left alone). `@node(...)` / `Node(...)` are never flagged | no release has the field and `LlmAgent` forbids extra inputs, so 2.13.0 raises `ValidationError ... Extra inputs are not permitted` at construction; main after 2.13.0 (`5e4f0e18c`) adds it (≥ 1, only with `parallel_worker=True`). Until a release has it, drop the kwarg (an agent worker cannot be throttled; `parallel_worker=True` alone is fine), or cap a function node with `@node(parallel_worker=True, max_parallel_workers=N)` (2.4.0+) |
 | `AGT019` | info | `output_schema` together with `tools` | supported in 2.x, but the model may answer with structured output instead of calling a tool |
 | `AGT020` | warn | no `instruction` | behaviour is whatever the model guesses, and nothing is testable |
 
@@ -130,6 +131,11 @@ A clean review is not a guarantee the agent works: it is a guarantee that these
 specific things are not wrong. The load check (`load_agent.py`) proves it
 imports; evals prove it behaves.
 
+Nor does it say a change is worth keeping. For a change an agent proposed (a
+speed-up, a rewritten instruction), reject what reads a dependency's private
+internals or helps only a synthetic benchmark, as the ADK maintainers did with
+their own agent's proposals (`/adk:eval-analyze` `reliability.md`).
+
 ---
 
 Sources: `adk-python: agents/base_agent.py`, `agents/llm_agent.py`,
@@ -139,7 +145,9 @@ Sources: `adk-python: agents/base_agent.py`, `agents/llm_agent.py`,
 `flows/llm_flows/prompt/_instructions_utils.py` (`AGT080`: the `KeyError` for a
 missing `{key}`, measured on 2.9.2 and 2.13.0); `agents/base_agent.py`
 (`AGT015`: `validate_sub_agents_unique_names`, tree-wide from `6031bb1`, in
-`v2.13.0`, measured on 2.12.0 and 2.13.0);
+`v2.13.0`, measured on 2.12.0 and 2.13.0); `agents/llm_agent.py` (`AGT085`: the
+`ValidationError` measured on 2.9.2 and 2.13.0, `5e4f0e18c` on main `175682204`)
+and `workflow/_node.py` (`199d95481`, `v2.4.0`);
 `flows/llm_flows/tools/_agent_tools.py` and `tools/function_tool.py` (`AGT081`:
 `mark_live_async_tools_non_blocking` only under `run_live`; the `run_async`
 outcome measured on 2.9.2, 2.12.0 and 2.13.0); `tools/agent_tool.py` (`AGT082`:
@@ -158,4 +166,8 @@ https://cloud.google.com/blog/topics/developers-practitioners/evaluate-agent-ski
 after "Cost per task: Using cheap classifiers to route across Gemini models and
 thinking levels", Villani, Google Developers Blog, 2026-11-03,
 https://developers.googleblog.com/cost-per-task-using-cheap-classifiers-to-route-across-gemini-models-and-thinking-levels/; `adk-recipes: AGENTS.md` (`AGT005`, the model-deprecation
-policy — the sole source for it).
+policy — the sole source for it). Reviewing agent-made changes: Weale, Yang and Biernat,
+"Optimizing a 200,000-line Python codebase overnight with Gemini 4 Argon", Google
+Developers Blog, 2026-10-13,
+https://developers.googleblog.com/optimizing-a-200000-line-python-codebase-overnight-with-gemini-4-argon/
+(paraphrased).

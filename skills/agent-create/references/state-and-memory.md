@@ -13,6 +13,15 @@
 `session_input.app_name` differs from production reads and writes a different
 scope.
 
+**Coming after 2.13.0 (unreleased main, `6b2d45523`).** Through 2.13.0,
+`DatabaseSessionService` and `RedisSessionService` can lose an `app:` or `user:`
+write when two sessions of the same app or user write at once: each saves its own
+copy of the shared row and the last one wins. Main serialises those writes
+(row locks on PostgreSQL and MySQL, a watched transaction on Redis). Until then,
+keep counters and lists that many sessions update out of `app:`/`user:` state
+(a table your tool owns), and do not read a lost key in a concurrent load test as
+an agent bug.
+
 ## Write through the framework
 
 ```python
@@ -151,3 +160,5 @@ checkpoints, callback initialisation, webhook resume with a `state_delta`,
 ADK", Google Developers Blog, 2026-05-12,
 https://developers.googleblog.com/build-long-running-ai-agents-that-pause-resume-and-never-lose-context-with-adk/
 (its onboarding example retold as an expense claim).
+Concurrent `app:`/`user:` writes: `sessions/database_session_service.py` and
+`integrations/redis/` at main `175682204` (`6b2d45523`, post-tag).

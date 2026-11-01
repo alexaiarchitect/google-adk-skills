@@ -29,6 +29,7 @@ from .report import GapReport, Option
 from .results import find_result_files, latest_per_evalset, parse_result
 from .tools_ast import (
     LLM_AGENT_CALLS, PLUGIN_EXPORTS, ModuleFacts, agent_tool_memory_findings,
+    parallel_worker_findings,
     builtin_model_tools, cache_suite_findings,
     compaction_suite_findings, extract_module, skill_lifecycle_findings, tool_resolver,
 )
@@ -511,6 +512,7 @@ class Discovery:
                                                     "ADK_ENABLE_SKILL_LIFECYCLE"),
                 adk_version=self.adk_version))
             report.extend(agent_tool_memory_findings(self.facts, adk_version=self.adk_version))
+            report.extend(parallel_worker_findings(self.facts, adk_version=self.adk_version))
 
     def _add_plugin_version_findings(self, report: GapReport) -> None:
         """AGT066: a plugin the project imports is newer than the runner."""
@@ -548,6 +550,10 @@ class Discovery:
                 ),
                 adk_version=self.adk_version,
                 registered_skills=self.facts.registered_skill_names if self.facts else None,
+                rubric_types=(
+                    self.primary_config.rubric_types() if self.primary_config
+                    and self.primary_config.ok else None
+                ),
             )
 
     def _add_config_findings(self, report: GapReport) -> None:

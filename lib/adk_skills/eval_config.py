@@ -178,6 +178,13 @@ class LoadedConfig:
                 return True
         return False
 
+    def rubric_types(self) -> frozenset[str]:
+        """The rubric `type`s the configured rubric-based criteria read, for EVS121."""
+        return frozenset(
+            spec.rubric_type for name in self.metric_names()
+            if (spec := METRIC_CATALOG.get(name)) and spec.rubric_type
+        )
+
     def cost(self) -> str:
         return cost_tier(self.metric_names())
 

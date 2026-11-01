@@ -118,6 +118,10 @@ from the Python-literal repair, an oversized integer, very deep nesting) is
 reported as `MALFORMED_FUNCTION_CALL` instead of raising out of response parsing
 or reaching the tool as that value. Through 2.13.0 such a turn crashes the run or
 hands the tool a set; on main it is a finish reason an eval can count.
+Checked again at `175682204` (`f1f63d303`): a `LiteLlm` stream that ends with
+buffered text but no finish reason (mostly a custom `llm_client`) is reported as
+`finish_reason` `OTHER` with `error_code` `OTHER` and a message that the response
+may be truncated; through 2.13.0 the cut-off text reads as a normal reply.
 
 ## When a literal is unavoidable
 
@@ -145,4 +149,4 @@ https://developers.googleblog.com/cost-per-task-using-cheap-classifiers-to-route
 (paraphrased; one phrase quoted; no figures reproduced); the silent acceptance of
 `max_output_tokens=300` measured on 2.9.2 and 2.13.0 with `gemini-3.8-flash`,
 `gemini-3.8-pro`, `gemini-flash-latest` and `gemini-2.5-flash`. LiteLlm:
-`models/lite_llm.py` at `70e1cbde7` (`d5ecb990f`, post-tag).
+`models/lite_llm.py` at `70e1cbde7` (`d5ecb990f`, post-tag) and `175682204` (`f1f63d303`, post-tag).

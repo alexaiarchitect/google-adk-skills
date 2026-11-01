@@ -127,6 +127,14 @@ graph read `nodeInfo.path` in traces; a node may set its output once.
 - **A remote step is a state, not a crash.** A `RemoteA2aAgent` that cannot be
   reached yields an error event and the pipeline runs on; write the
   manual-review hold yourself ([workflow-graphs.md](references/workflow-graphs.md)).
+  Through 2.13.0 constructing it prints an `[EXPERIMENTAL]` warning
+  (`ADK_SUPPRESS_A2A_EXPERIMENTAL_FEATURE_WARNINGS=1`); only main after 2.13.0
+  graduates A2A.
+- **Throttle a parallel worker on a function node, not an agent.**
+  `max_parallel_workers` on an `LlmAgent` exists only on main after 2.13.0, and
+  every release refuses it at construction (`AGT085`); `parallel_worker=True`
+  alone is fine, and `@node(parallel_worker=True, max_parallel_workers=N)` caps a
+  function node since 2.4.0.
 - **Memory stays with the caller of an `AgentTool` through 2.13.0.** A wrapped
   agent's `load_memory` searches a fresh, empty store (`AGT082`); call the
   memory tool from the parent, or transfer

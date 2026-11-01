@@ -422,6 +422,7 @@ def validate_evalset(
     adk_version: str | None = None,
     registered_skills: set[str] | None = None,
     state_key_read: Any = None,
+    rubric_types: set[str] | frozenset[str] | None = None,
 ) -> GapReport:
     """Check one evalset against what ADK 2.x will accept and what it needs.
 
@@ -437,6 +438,10 @@ def validate_evalset(
     `state_key_read` is a predicate saying whether the agent reads a state key
     (placeholder, `state[...]`, `state.get(...)`), None when unknowable, for
     EVS075. `adk_version` also decides EVS076's severity.
+    `rubric_types` is the set of rubric `type`s the configured rubric-based
+    metrics read (an empty set when a config is known and has none), or None
+    when no config is known: then every per-invocation rubric judge is assumed,
+    for EVS121, whose severity `adk_version` also decides.
     """
     report = report or GapReport(subject=loaded.path, skill="eval-review")
     path = loaded.path
@@ -540,6 +545,7 @@ def validate_evalset(
             tool_known=_tool_checker(known_tools, tool_resolver),
             reference_metrics=reference_metrics,
             adk_version=adk_version,
+            rubric_types=rubric_types,
         )
         if state_key_read is not None:
             _check_seeded_state(case, index, state_key_read, report, path)
@@ -640,6 +646,7 @@ def _validate_case(
     tool_known: Any,
     reference_metrics: bool | None,
     adk_version: str | None = None,
+    rubric_types: set[str] | frozenset[str] | None = None,
 ) -> None:
     locator = f"eval_cases[{index}]"
     eval_id = case.get("eval_id")
@@ -741,9 +748,175 @@ def _validate_case(
                        "`session_input.user_id` is unset; user-scoped state needs a stable id",
                        path=path, locator=locator, source=_SRC_EVAL_CASE)
 
-    for position, rubric in enumerate(case.get("rubrics") or []):
+    case_rubrics = case.get("rubrics")
+    for position, rubric in enumerate(case_rubrics if isinstance(case_rubrics, list) else []):
         _validate_rubric(rubric, report, path, f"{locator}.rubrics[{position}]", per_case=True,
                          adk_version=adk_version)
+    if has_conversation:
+        _check_invocation_rubrics(case, report, path, locator, adk_version=adk_version,
+                                  rubric_types=rubric_types)
+
+
+#: Rubric types whose judges (`RubricBasedEvaluator` via `LlmAsJudge`) score
+#: every invocation of a case: final-response and tool-use quality. The
+#: multi-turn trajectory judge (TRAJECTORY_QUALITY) scores the last invocation
+#: only, on every version, so differing lists do not lose verdicts there.
+PER_INVOCATION_RUBRIC_TYPES = ("FINAL_RESPONSE_QUALITY", "TOOL_USE_QUALITY")
+#: Main after 2.13.0 that scores each invocation against its own rubrics.
+PER_INVOCATION_RUBRICS_FIX = "e4f6c3a9c"
+_SRC_PER_INVOCATION = (
+    "adk-python v2.13.0: evaluation/llm_as_judge.py (every prompt formatted before any "
+    "reply is parsed), evaluation/rubric_based_evaluator.py "
+    "(create_effective_rubrics_list, convert_auto_rater_response_to_score); main "
+    f"`{PER_INVOCATION_RUBRICS_FIX}`"
+)
+_SRC_RUBRIC_COPY = (
+    "adk-python v2.13.0: evaluation/local_eval_service.py (_add_rubrics_to_invocation, "
+    "_copy_eval_case_rubrics_to_actual_invocations, "
+    "_copy_invocation_rubrics_to_actual_invocations)"
+)
+
+
+def _rubric_id(rubric: Any) -> str | None:
+    if isinstance(rubric, dict) and isinstance(rubric.get("rubric_id"), str):
+        return rubric["rubric_id"] or None
+    return None
+
+
+def effective_rubric_ids(
+    case_rubrics: list[Any], invocation_rubrics: list[Any], rubric_type: str,
+) -> frozenset[str]:
+    """The rubric ids a judge of `rubric_type` sees for one invocation.
+
+    ADK copies the case-level rubrics and then the invocation's own onto the
+    actual invocation (`local_eval_service`), and the judge keeps the ones whose
+    `type` is its own (`create_effective_rubrics_list`); an untyped rubric is
+    dropped. Criterion rubrics are common to every invocation and left out.
+    """
+    return frozenset(
+        rid for rubric in [*case_rubrics, *invocation_rubrics]
+        if isinstance(rubric, dict) and rubric.get("type") == rubric_type
+        and (rid := _rubric_id(rubric))
+    )
+
+
+def _check_repeated_rubric_ids(
+    scopes: list[tuple[str, list[Any]]], report: GapReport, path: str, locator: str, *,
+    skip_first_scope: bool = False,
+) -> None:
+    """EVS122: a `rubric_id` ADK would add twice to one invocation.
+
+    `_add_rubrics_to_invocation` copies the case-level rubrics, then the
+    invocation's, onto each actual invocation and raises on a repeat. With
+    `skip_first_scope`, repeats inside the first scope alone are left to the
+    call that checks that scope by itself (the case level, checked once).
+    """
+    seen: dict[str, str] = {}
+    first_scope = scopes[0][0]
+    for scope, items in scopes:
+        for rubric in items:
+            rid = _rubric_id(rubric)
+            if rid is None:
+                continue
+            if rid not in seen:
+                seen[rid] = scope
+                continue
+            if skip_first_scope and scope == first_scope:
+                continue
+            where = (f"twice at {scope}" if seen[rid] == scope
+                     else f"at {seen[rid]} and again at {scope}")
+            report.add(
+                "EVS122", "error", "evalset",
+                f"rubric_id {rid!r} appears {where}: ADK copies the case-level rubrics "
+                "and then each invocation's onto that turn, and raises `ValueError: Rubric "
+                f"with rubric_id '{rid}' already exists.` after inference, which stops the "
+                "whole `adk eval` run. Either two different rubrics share an id, or the same "
+                "rubric is listed twice",
+                path=path, locator=locator,
+                fix="give each rubric its own id; a rubric every turn needs belongs at the "
+                    "case level only, a turn-specific one on that invocation only",
+                source=_SRC_RUBRIC_COPY,
+            )
+
+
+def _check_invocation_rubrics(
+    case: dict[str, Any], report: GapReport, path: str, locator: str, *,
+    adk_version: str | None, rubric_types: set[str] | frozenset[str] | None,
+) -> None:
+    """Invocation-level rubrics: shape (EVS080-085), ids repeated across the
+    case/invocation merge (EVS122), and lists that differ between invocations
+    (EVS121)."""
+    conversation = case.get("conversation")
+    if not isinstance(conversation, list):
+        return
+    raw_case = case.get("rubrics")
+    case_rubrics = raw_case if isinstance(raw_case, list) else []
+    _check_repeated_rubric_ids([("case level", case_rubrics)], report, path,
+                               f"{locator}.rubrics")
+    per_invocation: list[list[Any]] = []
+    for turn, invocation in enumerate(conversation):
+        raw = invocation.get("rubrics") if isinstance(invocation, dict) else None
+        rubrics = raw if isinstance(raw, list) else []
+        per_invocation.append(rubrics)
+        where = f"{locator}.conversation[{turn}]"
+        for position, rubric in enumerate(rubrics):
+            _validate_rubric(rubric, report, path, f"{where}.rubrics[{position}]",
+                             per_case=True, adk_version=adk_version, scope="invocation")
+        if rubrics:
+            _check_repeated_rubric_ids(
+                [("case level", case_rubrics), (f"conversation[{turn}]", rubrics)],
+                report, path, f"{where}.rubrics", skip_first_scope=True)
+    if len(per_invocation) < 2 or not any(per_invocation):
+        return
+
+    types = PER_INVOCATION_RUBRIC_TYPES if rubric_types is None else tuple(
+        t for t in PER_INVOCATION_RUBRIC_TYPES if t in rubric_types)
+    for rubric_type in types:
+        lists = [effective_rubric_ids(case_rubrics, inv, rubric_type) for inv in per_invocation]
+        if len(set(lists)) < 2:
+            continue
+        last = len(lists) - 1
+        # The earliest turn whose list differs from the last one formatted.
+        first = next((i for i, ids in enumerate(lists) if ids != lists[last]), 0)
+        lost = sorted(lists[first] - lists[last])
+        from .env import version_at_least  # local import: keeps this module light
+
+        parsable = bool(adk_version) and bool(
+            re.match(r"^\d+\.\d+(?:\.\d+)?$", str(adk_version).strip()))
+        # An unparsable version (`main`) is taken as newer, as CFG077 and AGT082 do.
+        newer = bool(adk_version) and (
+            not parsable or version_at_least(adk_version, "2.13.1"))
+        detail = (f" (conversation[{first}] has {', '.join(map(repr, lost))}, which "
+                  f"conversation[{last}] does not)" if lost else "")
+        if newer:
+            report.add(
+                "EVS121", "info", "evalset",
+                f"invocations carry different {rubric_type} rubric lists{detail}: main after "
+                f"2.13.0 (`{PER_INVOCATION_RUBRICS_FIX}`) scores each invocation against its "
+                f"own list; runner {adk_version} is newer than any release this plugin has "
+                "measured, so check it carries that fix (2.13.0 and earlier drop an earlier "
+                "turn's verdicts)",
+                path=path, locator=locator,
+                fix="nothing to change on a runner with the fix; keep the lists identical "
+                    "while the suite must also run on 2.13.0 or earlier",
+                source=_SRC_PER_INVOCATION,
+            )
+        else:
+            report.add(
+                "EVS121", "warn", "evalset",
+                f"conversation[{first}]'s {rubric_type} rubrics differ from "
+                f"conversation[{last}]'s{detail}: through ADK 2.13.0 the rubric judge formats "
+                "every invocation's prompt first and then matches every response against the "
+                "last invocation's rubric list, so an earlier turn's verdicts on rubrics only "
+                "it carries are dropped with `Rubric <text> not found in the rubrics provided "
+                "to the metric.`, that turn is scored on the rubrics that remain, and the case "
+                "can pass with a failing rubric (fixed on main after 2.13.0, "
+                f"`{PER_INVOCATION_RUBRICS_FIX}`)",
+                path=path, locator=locator,
+                fix="give every invocation the same rubric list, or move the rubrics to the "
+                    f"case level, until a release includes `{PER_INVOCATION_RUBRICS_FIX}`",
+                source=_SRC_PER_INVOCATION,
+            )
 
 
 #: `evaluation/_path_validation.py` (2.13.0, 29bb053): `re.match(r"[A-Za-z]:")`.
@@ -1074,7 +1247,7 @@ def missing_text_property_finding(
 
 def _validate_rubric(
     rubric: Any, report: GapReport, path: str, locator: str, *, per_case: bool,
-    adk_version: str | None = None,
+    adk_version: str | None = None, scope: str = "case",
 ) -> None:
     if not isinstance(rubric, dict):
         report.add("EVS080", "error", "evalset", "rubric must be an object",
@@ -1106,7 +1279,7 @@ def _validate_rubric(
         if not rubric_type:
             report.add(
                 "EVS083", "warn", "evalset",
-                "per-case rubric has no `type`, so no criterion will pick it up",
+                f"per-{scope} rubric has no `type`, so no criterion will pick it up",
                 path=path, locator=locator,
                 fix=f"set type to one of {', '.join(RUBRIC_TYPES)}",
                 source=_SRC_RUBRICS,

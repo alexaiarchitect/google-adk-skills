@@ -14,10 +14,11 @@ tree it came from.
     Licensed under the Apache License, Version 2.0
     https://github.com/google/adk-python
 
-Snapshot: `70e1cbde7` (2026-11-04) on `main`, 32 commits after the previous
-snapshot `ee8720162` (2026-11-02), none of them in a release (2.13.0, uploaded
+Snapshot: `175682204` (2026-11-05) on `main`, 31 commits after the previous
+snapshot `70e1cbde7` (2026-11-04), none of them in a release (2.13.0, uploaded
 2026-10-23, is still the latest on PyPI and `v2.13.0` the newest tag); before
-that `ee8720162` was 63 commits after `dfd534a88` (2026-10-29; local checkout
+that `70e1cbde7` was 32 commits after `ee8720162` (2026-11-02), none in a release
+either; before that `ee8720162` was 63 commits after `dfd534a88` (2026-10-29; local checkout
 `3b74a99bd`), none in a release either; before that `dfd534a88` was 87
 commits after `12c7bed76` (2026-10-24), none in a release either; the reference
 pages describe them under "Coming after 2.13.0 (unreleased main)" and keep
@@ -40,9 +41,12 @@ references. No source files are redistributed.
     Licensed under the Apache License, Version 2.0
     https://github.com/google/adk-docs
 
-Snapshot: `dd6f16c0f` (2026-11-03; previously `5f1b1b5b3`, before that
-`49c928f1e`, before that `cc53b6c14`, before that `923938a4`). The four commits
-since `5f1b1b5b3`: the Java 1.14.0 API reference and its Javadoc rendering,
+Snapshot: `222adf7ee` (2026-11-05; previously `dd6f16c0f`, before that
+`5f1b1b5b3`, before that `49c928f1e`, before that `cc53b6c14`, before that
+`923938a4`). The two commits since `dd6f16c0f` add `docs/graphs/retry.md`
+(retry and timeout defaults for graph nodes, covered in `workflow-graphs.md`) and
+`docs/integrations/google-api-toolsets.md` (the Google Apps toolsets, covered in
+`tool-crosscheck.md`). The four commits between `5f1b1b5b3` and `dd6f16c0f`: the Java 1.14.0 API reference and its Javadoc rendering,
 review follow-ups to `docs/agents/models/google-gemini/deferred-schedule.md`
 (the page dates from 2026-10-01; first covered here in `batch-and-gating.md`),
 and the BigQuery agent analytics page (Go plugin, Python 2.13.0 updates
@@ -65,9 +69,13 @@ Used as a source for the condensed reference pages, including
     Licensed under the Apache License, Version 2.0
     https://github.com/google/adk-recipes
 
-Snapshot: `dc11493fa` (2026-11-04; previously `584a7e634`, before that
-`665f7b2a1`, before that `a6d62a409`, before that `05811bba`). Since
-`584a7e634`, six commits: genmedia-for-commerce fixes, CI action bumps, an image
+Snapshot: `5eee5c911` (2026-11-05; previously `dc11493fa`, before that
+`584a7e634`, before that `665f7b2a1`, before that `a6d62a409`, before that
+`05811bba`). Since `dc11493fa`, three commits: genmedia-for-commerce (a newer
+video model, variation rules) and a staged-ui-widgets deployable with a Windows
+path test, nothing about ADK eval structure; unchanged but newly cited, the
+`long-horizon-harness` journey evalset whose per-turn rubrics `EVS121` flags
+(`rubric-authoring.md`). Between `584a7e634` and `dc11493fa`, six commits: genmedia-for-commerce fixes, CI action bumps, an image
 link, and `core/python/ambient-quality-agent` v0.3.0, which raises its floor to
 `google-adk>=2.13.0` and adds an OpenTelemetry plugin package — operational
 changes, nothing about ADK eval structure. Between `665f7b2a1` and `584a7e634`: the new
@@ -91,12 +99,12 @@ file is redistributed or derived from.
 
 ## Background reading
 
-Twenty-nine Google-authored articles (one co-written with CopilotKit) informed the context-caching,
+Thirty-one Google-authored articles (one co-written with CopilotKit) informed the context-caching,
 eval-engineering, shadow-rollout, merge-gates, behavioural-tests, skills,
 context-engineering, layouts, improvement-loop, user-simulation, case-taxonomy,
 state-and-memory, workflows, maturity, rubric-authoring, live-agents,
 workflow-graphs, app-and-plugins, model-policy, review-rule, calibration and CLI
-guidance. Nothing is reproduced from them: the references
+guidance, plus the environment, reliability and tool-crosscheck notes. Nothing is reproduced from them: the references
 paraphrase their ideas in this plugin's own words, cite them by title and URL in
 their `Sources:` footers, and quote no more than a short phrase.
 
@@ -231,6 +239,21 @@ their `Sources:` footers, and quote no more than a short phrase.
   https://cloud.google.com/blog/topics/developers-practitioners/google-cloud-developer-plugin-now-available-in-antigravity-marketplace
   (`skills-and-progressive-disclosure.md`, one sentence on discovery and
   guardrail skills).
+- George Weale, Bo Yang and Andrew Biernat, "Optimizing a 200,000-line Python
+  codebase overnight with Gemini 4 Argon", Google Developers Blog, 2026-10-13 —
+  https://developers.googleblog.com/optimizing-a-200000-line-python-codebase-overnight-with-gemini-4-argon/
+  (`environment.md`, `reliability.md`, `skills-and-progressive-disclosure.md`,
+  `review-checklist.md`; the 2.12 startup and session-copy changes and the
+  warm-up request, a hidden overhead benchmark with identical requests and
+  medians, human review of agent-made changes, ADK's own `.agents/skills`
+  layout; one phrase quoted, no figures reproduced).
+- Ivan Nardini and Anant Nawalgaria, "Building an agent skill optimizer with
+  AlphaEvolve, Harbor and Gemini 4 Argon", Google Cloud Blog, 2026-11-06 —
+  https://cloud.google.com/blog/topics/developers-practitioners/how-to-build-an-agent-skill-optimizer-with-alphaevolve-and-harbor
+  (`skills-and-progressive-disclosure.md`, `improvement-loop.md`,
+  `merge-gates.md`; paired candidate and baseline runs, a holdout outside the
+  search, the answer leak, search operations; one phrase quoted, no figures
+  reproduced).
 
 ## Not included
 
@@ -242,4 +265,4 @@ evalset, checklist or prose from that repository is included in this plugin;
 every reference page, template and fixture here is original work. The course is
 credited as background reading only. (Snapshot consulted for the background
 reading credit only: `17924c4`, unchanged at the 2026-10-17, 2026-10-24,
-2026-10-29, 2026-11-02 and 2026-11-04 syncs.)
+2026-10-29, 2026-11-02, 2026-11-04 and 2026-11-05 syncs.)

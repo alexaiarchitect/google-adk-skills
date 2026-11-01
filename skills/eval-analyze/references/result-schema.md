@@ -186,6 +186,11 @@ Checked again at `70e1cbde7` (2026-11-04), two more:
 - **Reloaded tool declarations** (`425576020`): through 2.13.0, `app_details.agent_details.<name>.tool_declarations` read back from a result or history file stay plain dicts. A live run is unaffected; code that reloads saved invocations and judges them again is not: `rubric_based_multi_turn_trajectory_quality_v1` raises `AttributeError: 'dict' object has no attribute 'function_declarations'` (`rubric_based_multi_turn_trajectory_evaluator.py:268`), and the other rubric and hallucination judges receive a tool block padded with every unset field as `null` (measured: about six times longer). Main restores them as `genai.types.Tool` objects. This plugin's readers never touch the field.
 - **Silent turns** (`94eb6c4fc`): a case with a turn the agent answered with no event now appears with an invocation whose `final_response` is null; through 2.13.0 no result file is written at all (`/adk:eval-run` `cli-reference.md`).
 
+Checked again at `175682204` (2026-11-05):
+
+- **Per-turn rubric scores** (`e4f6c3a9c`): through 2.13.0 an earlier turn's verdicts on rubrics only that turn carries are missing from its `rubric_scores` (dropped as not found), so a turn and its case can read PASSED with a failing rubric; main scores each turn on its own list. Read `eval-criteria` `rubric-authoring.md`; `validate_evalset.py` warns (`EVS121`).
+- **BigQuery eval views** (`16898f30c`, `10b716235`, `5e83dd5b2`): a turn whose trace holds a truncated payload is no longer eval-ready; a failed tool call gets an `{"error": ...}` function response, and with `eval_view_mode="full"` (itself main only) TOOL_ERROR becomes a required event; transfer and human-in-the-loop requests stop counting as tool calls or errors; `build_eval_session_query_sql` / `build_eval_turn_query_sql` are exported from `google.adk.plugins` and need no BigQuery extra.
+
 **From production traces (in 2.13.0).** The BigQuery agent analytics plugin can build two views over logged sessions, `v_eval_session` and `v_eval_turn` (`create_eval_views`); they hold session-level counts and an eval-ready trace, not these result files. `/adk:agent-create` `app-and-plugins.md` has the setup; use them to choose which sessions to turn into cases.
 
 ## Deprecated fields
@@ -220,4 +225,4 @@ and live usage are post-tag at `ee8720162` (`rubric_based_evaluator.py`,
 Tool declarations and silent turns: `evaluation/app_details.py` and
 `evaluation_generator.py` at `70e1cbde7`, measured on 2.9.2 and 2.13.0 by a JSON
 round trip and a two-turn case; eval views: `plugins/bigquery_agent_analytics_plugin.py`
-on 2.13.0, `adk-docs: docs/integrations/bigquery-agent-analytics.md`.
+on 2.13.0, `adk-docs: docs/integrations/bigquery-agent-analytics.md`; per-turn rubrics and the eval-view changes read at main `175682204` (rubric parsing measured with a stub judge on 2.13.0 and main).

@@ -80,13 +80,17 @@ threshold 0 is disabled and does not trigger it either.
 |---|---|---|
 | `EVS080`-`EVS081` | error | rubric is not an object, or has no `rubric_id` |
 | `EVS082` | error / warn | no `rubric_content` object (error); `rubric_content` without `text_property` is an **error** only when the runner version is known and below 2.12 (2.9–2.11 reject it), otherwise a **warn**: 2.12 loads it, but a rubric with no sentence asks the judge nothing. `--adk-version V` overrides the detected runner. `CFG044` is the same rule for rubrics in an eval config |
-| `EVS083` | warn | per-case rubric with no `type`, so no criterion reads it |
+| `EVS083` | warn | per-case or per-invocation rubric with no `type`, so no criterion reads it (ADK drops it silently on every version) |
 | `EVS084` | error | rubric `type` outside `FINAL_RESPONSE_QUALITY`, `TOOL_USE_QUALITY`, `TRAJECTORY_QUALITY` |
+| `EVS121` | warn / info | a case with two or more invocations whose effective rubric lists differ (case-level plus that invocation's own, kept by `type` as the judge keeps them, one finding per case and type; `FINAL_RESPONSE_QUALITY` and `TOOL_USE_QUALITY` only, since the multi-turn trajectory judge reads only the last turn; with `--config`, only the types its rubric-based metrics read; also reported by discovery). **Warn** on a runner ≤ 2.13.0 or unknown: the judge formats each turn's prompt correctly but matches every reply against the last turn's list, so an earlier turn's verdicts on rubrics only it carries are dropped (`Rubric <text> not found in the rubrics provided to the metric.`), that turn is scored on what remains, and the case can pass with a failing rubric. **Info** on a newer runner (main after 2.13.0, `e4f6c3a9c`, scores each turn on its own list). Fix: the same list on every turn, or the rubrics at case level |
+| `EVS122` | error | a `rubric_id` repeated between the case level and an invocation, or twice in one list: ADK copies case-level rubrics and then the invocation's onto each turn and raises `ValueError: Rubric with rubric_id '<id>' already exists.` after inference, stopping the whole run |
 | `EVS090`-`EVS092` | error | `conversation_scenario` malformed, or missing `starting_prompt` / `conversation_plan` |
 
-Criterion-level rubrics are used unfiltered; per-case rubrics are filtered by
-`type` and merged on top. The effective list must be non-empty or evaluation
-raises.
+Criterion-level rubrics are used unfiltered; per-case and per-invocation
+rubrics are filtered by `type` and merged on top. The effective list must be
+non-empty or evaluation raises. `EVS080`–`EVS085` run on invocation-level
+rubrics too: ADK refuses an invocation rubric with an unknown key or no
+`rubric_id` when it loads the EvalSet.
 
 ## Findings from the neighbouring scripts
 
@@ -121,6 +125,7 @@ eval-review report next to a config or conformance one:
 | `AGT082` | warn / info | (`lint_agent.py`, discovery) an agent wrapped as `AgentTool(agent=x)` where `x`, or an agent below it, binds `load_memory`, `preload_memory`, `LoadMemoryTool()` or `PreloadMemoryTool()`. Through 2.13.0 the AgentTool runs it with a fresh, empty `InMemoryMemoryService`, so the tools find nothing; main after 2.13.0 (`4e0ac64e3`) shares the parent's. **Warn** on a runner ≤ 2.13 or none given, **info** on a newer one. Call the memory tool from the parent and pass what it found in the request, or transfer instead; after a release with `4e0ac64e3` the memory service given to the Runner reaches the AgentTool |
 | `ENV014` | info | (discovery) the target is an Agent-Plugins skill layer (`plugin.json`, `skills/*/SKILL.md`, `EVAL.yaml`), not an ADK agent; it replaces `ENV011` there and points at `/adk:eval-review` |
 | `AGT083` | info | (`lint_agent.py`, discovery) two skills in the `SkillToolset`s bound to one agent whose descriptions share most of their words: the shorter has 4+ tokens (lowercase words minus stopwords) and Jaccard ≥ 0.5 or containment of the shorter in the longer ≥ 0.8. The model chooses a skill from `list_skills`' name and description alone (or the same list in the system instruction under `EAGER`), so the broader one can take requests meant for the other. Reword so each says what it does and when in words the other does not use, and add an activation case per skill that must not load its sibling. Not version-dependent |
+| `AGT085` | error | (`lint_agent.py`, discovery) `max_parallel_workers=` on an `LlmAgent` / `Agent`. On a runner ≤ 2.13.0 or unknown, any value (even `None`): the field does not exist on any release and `LlmAgent` forbids extra inputs (`ValidationError ... Extra inputs are not permitted`). On a newer runner (main after 2.13.0, `5e4f0e18c`), only a value below 1 or a missing `parallel_worker=True`. `@node(...)` / `Node(...)` accept the cap since 2.4.0 and are never flagged. A `None` or unreadable value on a newer runner is left alone |
 | `AGT084` | info | (`lint_agent.py`, discovery) `generate_content_config` sets `max_output_tokens` below 1024 on an agent whose model id is in the plugin's thinking family (`gemini-2.5-*`, `gemini-3*`, the three `-latest` aliases; Live/TTS excluded; env-only or unknown ids skipped), unless its `thinking_config` sets `thinking_budget=0` or `thinking_level` MINIMAL. The cap is a ceiling, not a thinking budget: a hard turn is cut off mid-reasoning; ADK accepts it silently on every version |
 
 ## `EVAL.yaml` (`EVY0xx`)
@@ -197,3 +202,9 @@ rubric atomicity
 Google Agent Skills like products", Google Cloud Blog, 2026-10-29,
 https://cloud.google.com/blog/topics/developers-practitioners/behind-the-scenes-two-months-later-how-we-ship-google-agent-skills-like-products;
 `adk-docs: docs/evaluate/criteria.md`, `docs/evaluate/index.md`.
+`EVS121`: `evaluation/llm_as_judge.py` and `evaluation/rubric_based_evaluator.py`
+(the dropped verdict measured with a stub judge on 2.9.2 and 2.13.0; fix
+`e4f6c3a9c` on main `175682204`); `EVS122` and invocation-rubric loading:
+`evaluation/local_eval_service.py`, `evaluation/eval_case.py` (2.13.0);
+`AGT085`: `agents/llm_agent.py` (the `ValidationError` measured on 2.9.2 and
+2.13.0; `5e4f0e18c` on main), `workflow/_node.py` (`199d95481`, `v2.4.0`).

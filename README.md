@@ -112,6 +112,13 @@ Both are info findings. Separately, through 2.13.0 a user turn the agent answers
 with no event aborts a whole `adk eval` run with no case scored; `run_evals.py`
 recognises it and says what to change.
 
+**Two more things released ADK gets wrong quietly.** Through 2.13.0 a multi-turn
+case whose turns carry different rubric lists is scored against the last turn's
+list, so an earlier turn's failing rubric vanishes and the case can pass
+(`EVS121`, with `EVS122` for a `rubric_id` repeated between case and turn); and
+`LlmAgent(max_parallel_workers=...)` exists only on main after 2.13.0, so every
+release refuses the agent at construction (`AGT085`).
+
 ## Requirements
 
 Python 3.10+ for the plugin's own scripts, which are **standard library only** and
@@ -159,8 +166,9 @@ python3 skills/adk/scripts/check_env.py <agent-dir> --config <config>
 
 Pages that fold a Google article into the plugin's own commands (the first five
 added in the 2.13 sync, the next five in the sync with main after 2.13.0, the
-next three in the sync with main through 2026-11-02, the last four in the sync
-with main through 2026-11-04):
+next three in the sync with main through 2026-11-02, the next four in the sync
+with main through 2026-11-04, the last two in the sync with main through
+2026-11-05):
 
 | Page | Covers |
 |---|---|
@@ -185,6 +193,8 @@ with main through 2026-11-04):
 | `skills/agent-review/references/model-policy.md` | an output cap is not a thinking budget (`AGT084`), a fast model at low thinking before a router, caches per model; `workflow-graphs.md`: classifier routing with one yes/no question per factor and cost per successful task |
 | `skills/eval-ci/references/merge-gates.md` | gate, then score: hard checks first, correctness, efficiency and security kept apart, per-constraint versus per-case rates, a held-out set; long-horizon deliverable cases in `case-taxonomy.md` |
 | `skills/agent-create/references/skills-and-progressive-disclosure.md` | a discovery skill that loads specialised skills on demand, guardrail skills that validate CLI syntax before a state-changing call |
+| `skills/adk/references/environment.md` | what ADK 2.12 loads lazily and why a server needs a warm-up request; `eval-analyze` `reliability.md`: timing a speed change with an instant model, a hidden benchmark, identical requests and medians, then reviewing what an agent proposed; ADK's own `.agents/skills` as the L1/L2/L3 example |
+| `skills/eval-analyze/references/improvement-loop.md` | automated prompt or skill search: paired candidate and baseline runs, a holdout the search never sees, the answer leak, plateaus and slow model windows; held-out cases in `merge-gates.md` |
 
 The `adk-recipes` three-layer layout and its plugin-skill `EVAL.yaml` format are
 in `skills/adk/references/layouts.md` and `skills/eval-create/references/managing-evalsets.md`.
@@ -234,7 +244,7 @@ checked.
 The context-caching, eval-engineering, shadow-rollout, merge-gates,
 behavioural-tests, skills, context-engineering, layouts, improvement-loop,
 user-simulation, case-taxonomy, state-and-memory, workflows, maturity,
-rubric-authoring, live-agents, workflow-graphs, app-and-plugins and model-policy pages draw on
+rubric-authoring, live-agents, workflow-graphs, app-and-plugins, model-policy, environment and reliability pages draw on
 Google-authored articles (on context caching in agent harnesses, continuous
 evaluation, eval-driven development at Firebase, moving past the vibe check,
 harness engineering, building ADK agents with skills, context-aware multi-agent
@@ -245,7 +255,8 @@ hill-climbing with Agents CLI evaluation, four eval-engineering lessons,
 shipping Agent Skills like products, voice agents that never go silent,
 cross-language A2A teams, governed self-evolving agents, evaluating agent
 skills, cost per task with classifier routing, Physical-Engineering's Last Exam,
-and the Google Cloud Developer plugin),
+the Google Cloud Developer plugin, optimising ADK's own codebase overnight, and
+an agent skill optimizer),
 paraphrased and cited by title and URL; the list is in `THIRD_PARTY_NOTICES.md`.
 
 The evaluation practices described here — trajectory over final answer, the case

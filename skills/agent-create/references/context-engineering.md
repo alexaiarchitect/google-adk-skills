@@ -109,6 +109,10 @@ caller's memory service under the same app and user, so the pattern works once a
 release includes it. `lint_agent.py` warns on an explicit `AgentTool(agent=...)`
 whose agent, or an agent below it, binds a memory tool (`AGT082`; info on a newer
 runner).
+Also main only (`73cfd62ed`): `AgentTool` closes the child runner in a `finally`
+block. Through 2.13.0 a sub-agent run that raised or was cancelled left that
+runner and its toolsets open (an MCP connection, for one), so a long eval batch
+with many failing delegations can pile up open connections.
 
 **Heavy generation in its own sub-agent.** Google's A2UI and CopilotKit
 walkthrough (an ADK `LlmAgent` served to a web client through `ag_ui_adk`) makes
@@ -178,7 +182,8 @@ A2UI & CopilotKit Agents", Google Developers Blog, 2026-10-29,
 https://developers.googleblog.com/build-generative-ui-apps-with-a2ui-copilotkit-agents/
 (the UI sub-agent, client-side validation, retry then fallback; paraphrased, one
 phrase quoted). AgentTool memory: `tools/agent_tool.py` on 2.9.2, 2.13.0 and main
-`ee8720162` (`4e0ac64e3`, post-tag), the 2.13.0 sub-runner captured at runtime.
+`ee8720162` (`4e0ac64e3`, post-tag), the 2.13.0 sub-runner captured at runtime;
+the child-runner close at main `175682204` (`73cfd62ed`, post-tag).
 `adk-python: apps/_configs.py` (`EventsCompactionConfig`, its bounds and
 pairing validator), `apps/compaction.py` (`_ensure_compaction_summarizer`),
 `agents/llm_agent.py` (`include_contents`), `flows/llm_flows/context/_contents.py`

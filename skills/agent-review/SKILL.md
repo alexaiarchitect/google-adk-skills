@@ -61,7 +61,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 |---|---|---|
 | 1 | loader and naming | nothing loadable exported; a name that is not an identifier, or is `user`; two agents in the tree with one name (`AGT015`); an app directory `adk` cannot load (`ENV015`) |
 | 2 | model policy | retiring `gemini-2.0-flash` / `gemini-2.5-flash` (a plugin policy, so a warning), preview ids, hardcoded dated ids; a `max_output_tokens` below 1024 on a thinking model (`AGT084`) |
-| 3 | agent configuration | sampling kwargs passed directly; `generate_content_config` carrying tools, system_instruction or response_schema |
+| 3 | agent configuration | sampling kwargs passed directly; `generate_content_config` carrying tools, system_instruction or response_schema; `max_parallel_workers=` on an `LlmAgent` (`AGT085`) |
 | 4 | tool contracts | no docstring, no `Args:`, untyped parameters, raising instead of returning, no `status` |
 | 5 | state | `session.state[...] = ...` on a service-fetched session; an instruction `{key}` nothing writes or seeds (`AGT080`) |
 | 6 | App wiring | no `App`, so plugins, caching and resumability cannot reach a run |
@@ -98,7 +98,10 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
   main after 2.13.0 shares the parent's memory, so with `--adk-version` above
   2.13.0 it drops to info. `ENV015` is an error when the loader refuses the app
   directory name (a hyphen, dot, space or non-ASCII letter) and an info for a
-  keyword or leading digit, which loads today.
+  keyword or leading digit, which loads today. `AGT085`
+  (`max_parallel_workers=` on an `LlmAgent`) is an error on every release, which
+  refuses the kwarg at construction; above 2.13.0 it is an error only for a value
+  below 1 or a missing `parallel_worker=True`. Never flag `@node` / `Node`.
 - **Two infos that read like style notes and are not.** `AGT083`: the model
   picks a skill from its name and description alone, so two descriptions in the
   same words let the broader skill take the other's requests; suggest rewording

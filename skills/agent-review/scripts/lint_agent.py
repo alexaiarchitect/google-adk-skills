@@ -11,7 +11,10 @@ Fourteen dimensions:
 2. model policy — deprecated ids, preview ids, hardcoded ids; a
    `generate_content_config` `max_output_tokens` under 1,024 on a thinking model
    (Gemini 2.5+, 3.x, the `-latest` aliases) that does not turn thinking off (AGT084)
-3. agent configuration — the kwargs that raise at construction
+3. agent configuration — the kwargs that raise at construction, including
+   `max_parallel_workers=` on an LlmAgent/Agent (AGT085: error through 2.13.0 or
+   unprobed, where the field does not exist; with an `--adk-version` newer than
+   2.13.0, an error only for a value below 1 or a missing `parallel_worker=True`)
 4. tool contracts — docstrings, type hints, return shapes, raising versus returning
 5. state — writes that never persist
 6. App wiring — plugins, caching, resumability reach a run through an App;
@@ -68,7 +71,7 @@ from adk_skills.evalset import load_evalset  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport  # noqa: E402
 from adk_skills.tools_ast import (  # noqa: E402
-    LLM_AGENT_CALLS, agent_tool_memory_findings, cache_suite_findings,
+    LLM_AGENT_CALLS, agent_tool_memory_findings, parallel_worker_findings, cache_suite_findings,
     compaction_suite_findings, extract_module,
     skill_lifecycle_findings, state_placeholder_findings, streaming_tool_findings,
 )
@@ -185,6 +188,8 @@ def main(argv: list[str] | None = None) -> int:
                    path=agent.file,
                    fix="if the agent should ever refuse, say so in the instruction")
 
+    # 3. agent configuration: max_parallel_workers is not an LlmAgent field through 2.13.0
+    report.extend(parallel_worker_findings(facts, adk_version=args.adk_version))
     # 6. caching against the suite: a cache only shows up from turn two
     docs = [load_evalset(path).doc for path in layout.evalsets]
     report.extend(cache_suite_findings(facts, docs))

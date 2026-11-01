@@ -73,8 +73,21 @@ Imported tools, `AgentTool`s and MCP toolsets cannot be read statically, so thei
 calls are reported as unchecked (`EVS038`) rather than as errors. Review those
 where they are defined.
 
+The Google Apps toolsets are the common case (`CalendarToolset`, `GmailToolset`,
+`DocsToolset`, `SheetsToolset`, `SlidesToolset`, `YoutubeToolset` from
+`google.adk.tools.google_api_tool`, Python since 1.0.0). They are generated from
+Google API Discovery documents, one tool per API method, named
+`<api>_<resource>_<method>` (`calendar_events_list`, plus `tool_name_prefix` when
+set), and handle the OAuth 2.0 flow themselves. Write expected calls with those
+names and pass `tool_filter` so the agent sees only the methods a case expects.
+The filter narrows the tools, not the access: in Python each toolset asks the user
+for one full-access scope (all of Gmail, all of Drive for Sheets and Slides), so a
+read-only case still needs a consent screen for full access.
+
 ---
 
 Sources: `adk-python: tools/function_tool.py`, `tools/tool_context.py`,
 `evaluation/trajectory_evaluator.py`, `flows/llm_flows/functions.py`;
-`adk-docs: docs/tools-custom/function-tools.md`.
+`adk-docs: docs/tools-custom/function-tools.md`,
+`docs/integrations/google-api-toolsets.md` (`222adf7ee`); `tools/google_api_tool/`
+read in the 2.13.0 wheel.

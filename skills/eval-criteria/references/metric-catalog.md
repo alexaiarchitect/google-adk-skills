@@ -210,9 +210,13 @@ Not released (post-tag at `adk-python` `dfd534a88`; `token_usage_v1` is above); 
 
 Checked again at `ee8720162` (2026-11-02):
 
-- **An unanswered rubric no longer passes silently** (`d1f2add4f`): when the judge's response leaves any criterion rubric without a yes/no verdict (skipped, unknown id, a verdict such as "almost"), that sample is **unscored** (score None) instead of averaged over the rest. With `num_samples > 1` the other samples still vote; if every sample is unscored the metric is `NOT_EVALUATED`. Per-case (invocation-level) rubrics are not checked yet. The substring reading of verdicts is unchanged.
+- **An unanswered rubric no longer passes silently** (`d1f2add4f`): when the judge's response leaves any criterion rubric without a yes/no verdict (skipped, unknown id, a verdict such as "almost"), that sample is **unscored** (score None) instead of averaged over the rest. With `num_samples > 1` the other samples still vote; if every sample is unscored the metric is `NOT_EVALUATED`. At `ee8720162` that check covered criterion rubrics only; after `e4f6c3a9c` it walks each invocation's effective list, so case- and invocation-level rubrics without a verdict make the sample unscored too. The substring reading of verdicts is unchanged.
 - **Live usage is counted** (`8cd3b12c8`): under `live_model_config`, Gemini Live's standalone usage reports are merged into the model events, so `token_usage_v1` (and `inference_call_count_v1`) stop under-counting; through 2.13.0 those reports were dropped.
 - **Case parallelism** (`e9e8f6156`): a top-level `parallelism` key, not a metric option; `criterion-schemas.md`.
+
+Checked again at `175682204` (2026-11-05):
+
+- **Each invocation is scored against its own rubrics** (`e4f6c3a9c`). Through 2.13.0 the rubric judges build every invocation's prompt correctly but parse every reply against the *last* invocation's rubric list, so a verdict on a rubric only an earlier turn carries is dropped (`WARNING ... Rubric <text> not found in the rubrics provided to the metric.`), that turn is scored on what is left, and the case can pass with a failing rubric (measured: 1.0 PASSED on 2.13.0, 0.75 FAILED on main). Until a release carries the fix, keep the rubric list identical on every turn or put the rubrics at case level; `validate_evalset.py` flags differing lists (`EVS121`: warn through 2.13.0, info on a newer runner). Invocation rubrics without a `type` are ignored on every version.
 
 ---
 
@@ -230,6 +234,6 @@ measured on installed wheels 2.9.2 and 2.10.0; the 17-metric registry and
 `_reject_threshold` re-read on 2.11.0 and 2.12.0. The 2.13.0 `token_usage_v1`
 docstring ("every invocation") and the trajectory-judge `TypeError` were
 measured on the 2.13.0 wheel; the main-only changes were read at `dfd534a88`,
-the unscored sample and live usage at `ee8720162`; the substring verdict rule and
+the unscored sample and live usage at `ee8720162`, per-invocation rubric parsing at `175682204` (`e4f6c3a9c`, measured with a stub judge on 2.9.2, 2.13.0 and main); the substring verdict rule and
 the dropped rubric were measured on 2.13.0 (`DefaultAutoRaterResponseParser`,
 `llm_as_judge_utils.get_average_rubric_score`).

@@ -177,6 +177,13 @@ keeping the transcriptions (`50ab3b5e9`); through 2.13.0 a resumed cascade sessi
 that had saved live blobs (`save_live_blob`) failed every turn with
 `CASCADE_TURN_FAILED`, so leave blob saving off for cascade agents you resume.
 
+Checked again at `175682204`. On a barge-in with `save_live_blob=True`, main yields
+`interrupted` before saving the model's cached audio (`907414b7e`); through 2.13.0
+the save came first, and with a network artifact store such as
+`GcsArtifactService` each save is an upload, so a client kept playing queued
+audio over the user. `turn_complete` still follows the saved audio. A barge-in
+latency case run on 2.13.0 with blob saving on measures the store, not the agent.
+
 ---
 
 Sources: `adk-python: flows/llm_flows/tools/_agent_tools.py`
@@ -194,6 +201,6 @@ Voice Agent That Never Goes Silent using ADK", Google Developers Blog,
 2026-10-19,
 https://developers.googleblog.com/step-by-step-guide-build-a-voice-agent-that-never-goes-silent-using-adk/
 (the one quoted line is theirs). Main at `ee8720162`: `live/` (`e4a824f24`,
-`50ab3b5e9`, post-tag). Worked example: `adk-recipes`
+`50ab3b5e9`, post-tag); at `175682204`: `live/_live_llm_flow.py` (`907414b7e`, post-tag). Worked example: `adk-recipes`
 `core/python/adk-voice-agent/{README.md,AGENTS.md,docs/architecture.md}` at
 `584a7e634` (Apache-2.0; described, not copied).

@@ -133,6 +133,14 @@ Gemini Enterprise path did. On Agent Engine its own header still wins. One
 behaviour change to know when spans go missing: an inbound `traceparent` whose
 flags are `00` (not sampled) makes the default sampler drop every ADK span of
 that request.
+Checked again at `175682204` (2026-11-05), main only: main's own
+`gen_ai.client.inference.*` token counters (above) were skipped whenever
+`opentelemetry-instrumentation-google-genai` 0.7b2 was installed, and are
+recorded again (`94be06f6e`; 2.13.0 has none of them either way); and
+`SqliteSpanExporter(db_path=...)` (`google.adk.telemetry.sqlite_span_exporter`)
+now stores span status and events, adding three columns to an existing file on
+open (`28743ecd5`). Through 2.13.0 a span read back from that file has no
+error status and no events, so an error trace looks clean there.
 
 Export with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (install `google-adk[otel]` on
 2.13+ for the OTLP exporter), or `adk web --otel_to_cloud` for Cloud Trace.
@@ -195,7 +203,9 @@ exporter (schema v2 is `adk-python` commit `7838488`, in `v2.13.0`);
 `cc53b6c14`); main after 2.13.0: the four telemetry commits above, read at
 `dfd534a88`; `telemetry/_metrics.py` and `telemetry/_instrumentation.py`
 (`e0b812a3d`, `80a44111c`) at `ee8720162`, post-tag. `cli/fast_api.py` and
-`telemetry/_agent_engine.py` (`f27b8f105`) at `70e1cbde7`, post-tag. The reasoning-trace / system-trace
+`telemetry/_agent_engine.py` (`f27b8f105`) at `70e1cbde7`, post-tag. `telemetry/_genai_instrumentor.py`
+(`94be06f6e`) and `telemetry/sqlite_span_exporter.py` (`28743ecd5`) at
+`175682204`, post-tag; `SqliteSpanExporter(*, db_path)` read in the 2.13.0 wheel. The reasoning-trace / system-trace
 distinction is paraphrased from Vlad Kolesnikov, "From 'vibe checks' to
 continuous evaluation: engineering reliable AI agents", Google Cloud blog,
 2026-02-28,

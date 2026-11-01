@@ -63,8 +63,8 @@ Three classes, and the middle one is why this skill exists.
 
 **ADK accepts it and ignores it.** Eval cases allow unknown keys, and criterion
 objects do too, so a misspelled field raises nothing and silently changes
-nothing. Also here: a per-case rubric with no `type` (no criterion will read it),
-and an expected call to a tool that does not exist (it can never match, so the
+nothing. Also here: a per-case or per-invocation rubric with no `type` (no
+criterion will read it), and an expected call to a tool that does not exist (it can never match, so the
 case fails forever without telling you anything).
 
 **It runs, but it proves less than you think.** A threshold of 0, `ignore_args`
@@ -83,6 +83,12 @@ fail, a branch in the instruction with no case at all.
   breaks is scoping: `app:` state, memory and artifacts live under that name.
 - **Coverage is evidence, not a verdict.** Rule-to-case matching is heuristic.
   Present uncovered branches as questions for the user, not as failures.
+- **Per-turn rubrics are a released-version trap.** Through ADK 2.13.0 every
+  judge reply is matched against the last turn's rubric list, so a turn whose
+  list differs loses its own verdicts and the case can pass with a failing
+  rubric. `EVS121` warns (info on a newer runner); suggest one list for every
+  turn or case-level rubrics. A `rubric_id` repeated between case and turn
+  (`EVS122`) stops the whole run after inference, so it is an error.
 - **Never edit a golden trace to make a check pass.** If a case looks wrong, say
   why and let the user decide; a changed specification is a decision, not a fix.
 
@@ -99,7 +105,7 @@ fail, a branch in the instruction with no case at all.
 
 | Command | Checks | Exit codes |
 |---|---|---|
-| `scripts/validate_evalset.py <path> [--agent-dir D] [--config F] [--adk-version V] [--strict] [--json]` | schema, ids, structure, app_name, rubrics (`EVS082`: a missing `text_property` is an error below 2.12, a warning otherwise; `--adk-version` overrides the detected runner), `load_skill` for an unregistered skill (`EVS074`), a seeded state key the agent never reads (`EVS075`, info, needs `--agent-dir`), a drive-qualified `eval_set_id` / `app_name` that 2.13 rejects (`EVS076`) | 0 clean, 1 findings, 2 bad target |
+| `scripts/validate_evalset.py <path> [--agent-dir D] [--config F] [--adk-version V] [--strict] [--json]` | schema, ids, structure, app_name, rubrics (`EVS082`: a missing `text_property` is an error below 2.12, a warning otherwise; `--adk-version` overrides the detected runner), `load_skill` for an unregistered skill (`EVS074`), a seeded state key the agent never reads (`EVS075`, info, needs `--agent-dir`), a drive-qualified `eval_set_id` / `app_name` that 2.13 rejects (`EVS076`), rubric lists that differ between turns (`EVS121`, warn ≤ 2.13.0, info newer; with `--config`, only the types its rubric metrics read), a `rubric_id` repeated across case and turn (`EVS122`) | 0 clean, 1 findings, 2 bad target |
 | `scripts/crosscheck_tools.py <path> --agent-dir D [--json]` | tool names, argument nesting, Literal/regex/bounds | 0 clean, 1 findings, 2 bad target |
 | `scripts/coverage_matrix.py <agent-dir> [--evalset F] [--json]` | branch coverage, suite shape, tool coverage, skills no case activates (`EVS073`) | 0 no gaps, 1 gaps, 2 bad target |
 | `scripts/validate_eval_yaml.py [path] [--strict] [--json]` | every `EVAL.yaml` under an `adk-recipes` plugin skill, plugin or repository: `cases[].id/prompt/rubric/assertions`, known assertion types and their fields, duplicate ids, empty rubrics (`EVY001`–`EVY010`); never runs the cases | 0 no errors, 1 errors (or warnings with `--strict`), 2 nothing to check (no `EVAL.yaml` under the path) |

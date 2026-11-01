@@ -1,0 +1,149 @@
+{
+  "eval_set_id": "per_invocation_rubrics_broken",
+  "name": "Per-invocation rubrics, broken",
+  "description": "An untyped invocation rubric no judge reads (EVS083) and a rubric_id repeated between the case and an invocation (EVS122).",
+  "eval_cases": [
+    {
+      "eval_id": "memory_claim_amount_untyped",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {
+            "parts": [
+              {
+                "text": "How much of claim CLM-000502 will be reimbursed?"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "CLM-000502 will be reimbursed 120 dollars."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "rubrics": [
+            {
+              "rubric_id": "amount",
+              "rubric_content": {
+                "text_property": "The response states the reimbursable amount of the expense claim."
+              }
+            }
+          ]
+        },
+        {
+          "invocation_id": "inv_2",
+          "user_content": {
+            "parts": [
+              {
+                "text": "Is the receipt attached?"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "Yes, the receipt for CLM-000502 is attached."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "expense_agent",
+        "user_id": "evaluator",
+        "state": {}
+      }
+    },
+    {
+      "eval_id": "memory_claim_polite_twice",
+      "conversation": [
+        {
+          "invocation_id": "inv_1",
+          "user_content": {
+            "parts": [
+              {
+                "text": "Submit claim CLM-000503 for 80 dollars of taxi fares."
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "Claim CLM-000503 for 80 dollars is submitted."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [],
+            "tool_responses": [],
+            "intermediate_responses": []
+          },
+          "rubrics": [
+            {
+              "rubric_id": "polite",
+              "rubric_content": {
+                "text_property": "The response is courteous to the employee."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        },
+        {
+          "invocation_id": "inv_2",
+          "user_content": {
+            "parts": [
+              {
+                "text": "Thanks, that is all."
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "You are welcome."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediate_data": {
+            "tool_uses": [],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "expense_agent",
+        "user_id": "evaluator",
+        "state": {}
+      },
+      "rubrics": [
+        {
+          "rubric_id": "polite",
+          "rubric_content": {
+            "text_property": "The response is courteous to the employee."
+          },
+          "type": "FINAL_RESPONSE_QUALITY"
+        }
+      ]
+    }
+  ]
+}

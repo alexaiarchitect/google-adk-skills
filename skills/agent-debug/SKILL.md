@@ -169,3 +169,6 @@ all, so read the script's output rather than matching by eye.
 - [ ] One change was made at that layer.
 - [ ] A regression case was added.
 - [ ] The fix was confirmed across several runs, not one.
+- [ ] For a loop, the reply itself leads with the layer, says that the tool
+      returned its error instead of raising (so the run kept going), and
+      proposes both an error message that says what to change and a retry cap.
