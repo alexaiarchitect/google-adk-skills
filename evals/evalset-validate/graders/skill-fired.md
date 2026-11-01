@@ -1,5 +1,5 @@
 ---
 type: tool_used
 tool: Skill
-input_match: "eval-review|adk"
+input_match: '"skill"\s*:\s*"(?:adk:)?eval-review"'
 ---

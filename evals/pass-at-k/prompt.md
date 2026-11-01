@@ -1,7 +1,6 @@
 ---
 max_turns: 12
 allowed_tools: [Read, Glob, Grep, Skill, AskUserQuestion, "Bash(python3 *)"]
-scaffold_script: ../scaffold.sh none stage-history
 tags: [reliability]
 ---
 

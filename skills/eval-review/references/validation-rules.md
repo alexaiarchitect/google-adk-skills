@@ -120,6 +120,8 @@ eval-review report next to a config or conformance one:
 | `ENV015` | error / info | (discovery and `lint_agent.py`) the app directory (or module, or the package under `src/`) has a name `adk` cannot load. **Error** when it fails `^[a-zA-Z0-9_]+$` (hyphen, dot, space, non-ASCII): `AgentLoader` stops with `ValueError: Invalid agent name` on 2.9.2 through 2.13.0, though 2.13.0's `adk create` writes such a directory. **Info** for a keyword or a leading digit: it loads, but main's `adk create` (`3655990f6`) refuses the name. Rename it and every `app_name`, `agent_module` and command that uses it |
 | `AGT082` | warn / info | (`lint_agent.py`, discovery) an agent wrapped as `AgentTool(agent=x)` where `x`, or an agent below it, binds `load_memory`, `preload_memory`, `LoadMemoryTool()` or `PreloadMemoryTool()`. Through 2.13.0 the AgentTool runs it with a fresh, empty `InMemoryMemoryService`, so the tools find nothing; main after 2.13.0 (`4e0ac64e3`) shares the parent's. **Warn** on a runner ≤ 2.13 or none given, **info** on a newer one. Call the memory tool from the parent and pass what it found in the request, or transfer instead; after a release with `4e0ac64e3` the memory service given to the Runner reaches the AgentTool |
 | `ENV014` | info | (discovery) the target is an Agent-Plugins skill layer (`plugin.json`, `skills/*/SKILL.md`, `EVAL.yaml`), not an ADK agent; it replaces `ENV011` there and points at `/adk:eval-review` |
+| `AGT083` | info | (`lint_agent.py`, discovery) two skills in the `SkillToolset`s bound to one agent whose descriptions share most of their words: the shorter has 4+ tokens (lowercase words minus stopwords) and Jaccard ≥ 0.5 or containment of the shorter in the longer ≥ 0.8. The model chooses a skill from `list_skills`' name and description alone (or the same list in the system instruction under `EAGER`), so the broader one can take requests meant for the other. Reword so each says what it does and when in words the other does not use, and add an activation case per skill that must not load its sibling. Not version-dependent |
+| `AGT084` | info | (`lint_agent.py`, discovery) `generate_content_config` sets `max_output_tokens` below 1024 on an agent whose model id is in the plugin's thinking family (`gemini-2.5-*`, `gemini-3*`, the three `-latest` aliases; Live/TTS excluded; env-only or unknown ids skipped), unless its `thinking_config` sets `thinking_budget=0` or `thinking_level` MINIMAL. The cap is a ceiling, not a thinking budget: a hard turn is cut off mid-reasoning; ADK accepts it silently on every version |
 
 ## `EVAL.yaml` (`EVY0xx`)
 
@@ -182,7 +184,15 @@ in the prompt, read on 2.9.2 and 2.13.0),
 main `ee8720162` (`CFG077`, `e9e8f6156`; the dropped key measured on 2.9.2 and
 2.13.0); `cli/utils/agent_loader.py` (`ENV015`, measured on 2.9.2 and 2.13.0) and
 `cli/cli_create.py` (`3655990f6`); `tools/agent_tool.py` (`AGT082`, 2.9.2 and
-2.13.0, `4e0ac64e3` on main); rubric atomicity
+2.13.0, `4e0ac64e3` on main); `skills/prompt.py` and `tools/skill_toolset.py`
+(`AGT083`, measured on 2.9.2 and 2.13.0); `AGT083` and `AGT084` motivated by
+Weinmeister and Blount, "Five rules for evaluating agent skills before they bloat
+your context window", Google Cloud Blog, 2026-11-03,
+https://cloud.google.com/blog/topics/developers-practitioners/evaluate-agent-skills-before-they-bloat-your-context-window,
+and Villani, "Cost per task: Using cheap classifiers to route across Gemini models
+and thinking levels", Google Developers Blog, 2026-11-03,
+https://developers.googleblog.com/cost-per-task-using-cheap-classifiers-to-route-across-gemini-models-and-thinking-levels/;
+rubric atomicity
 (`RUB006`) from Samborski, "Behind the scenes, two months later: How we ship
 Google Agent Skills like products", Google Cloud Blog, 2026-10-29,
 https://cloud.google.com/blog/topics/developers-practitioners/behind-the-scenes-two-months-later-how-we-ship-google-agent-skills-like-products;

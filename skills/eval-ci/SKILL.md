@@ -154,6 +154,14 @@ because someone ran the agent and it looked right.
   branch (`compare_runs.py --min-pass-rate 0.95 --max-regressions 0`), plus
   token, latency and tool-call budgets where cost matters. Freeze the golden
   suite (`"frozen": true`) so tuning cannot delete its way to green.
+- **Gate, then score; never blend.** A failed safety or security case fails
+  the merge whatever the token count, and budgets are separate exits, not
+  weights; a blended score rewards a candidate that cheats on efficiency.
+  Report the per-case pass rate beside the per-metric ones, and keep a small
+  held-out set nobody tunes against.
+- **Evals run in CI, not on a laptop.** Cached credentials and exported project
+  ids make a run pass that fails elsewhere. Re-run the gating suite on every
+  model upgrade before switching.
 
 ## References
 
@@ -162,7 +170,7 @@ because someone ran the agent and it looked right.
 | Designing the tiers, and what belongs in each | [tiered-pipeline.md](references/tiered-pipeline.md) |
 | The workflows, annotated, plus auth and secrets | [workflows.md](references/workflows.md) |
 | The maturity ladder and how to climb it | [maturity.md](references/maturity.md) |
-| Merge rules, frozen baselines, cost budgets, Day 0/1/2 | [merge-gates.md](references/merge-gates.md) |
+| Merge rules, frozen baselines, cost budgets, gate-then-score, Day 0/1/2 | [merge-gates.md](references/merge-gates.md) |
 | Evaluating a Cloud Run revision before it takes traffic (pattern only, no template) | [shadow-rollout.md](references/shadow-rollout.md) |
 
 Templates: `assets/templates/workflows/`.
@@ -185,3 +193,6 @@ Templates: `assets/templates/workflows/`.
 - [ ] The nightly tier has a run count and a reliability report.
 - [ ] `--scripts-path` matches where the plugin actually lives in the CI checkout.
 - [ ] The linter exits 0 on what was generated.
+- [ ] The reply itself says why the gate is the wrapper (bare `adk eval` exits 0
+      through 2.12.0 and only 1 from 2.13.0, with no pass-rate or regression
+      gate) and lists the repository variables or secrets the workflow needs.

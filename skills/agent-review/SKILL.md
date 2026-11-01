@@ -60,7 +60,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 | # | Dimension | What goes wrong |
 |---|---|---|
 | 1 | loader and naming | nothing loadable exported; a name that is not an identifier, or is `user`; two agents in the tree with one name (`AGT015`); an app directory `adk` cannot load (`ENV015`) |
-| 2 | model policy | retiring `gemini-2.0-flash` / `gemini-2.5-flash` (a plugin policy, so a warning), preview ids, hardcoded dated ids |
+| 2 | model policy | retiring `gemini-2.0-flash` / `gemini-2.5-flash` (a plugin policy, so a warning), preview ids, hardcoded dated ids; a `max_output_tokens` below 1024 on a thinking model (`AGT084`) |
 | 3 | agent configuration | sampling kwargs passed directly; `generate_content_config` carrying tools, system_instruction or response_schema |
 | 4 | tool contracts | no docstring, no `Args:`, untyped parameters, raising instead of returning, no `status` |
 | 5 | state | `session.state[...] = ...` on a service-fetched session; an instruction `{key}` nothing writes or seeds (`AGT080`) |
@@ -70,7 +70,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 | 9 | eval readiness | an instruction with no branch, so there is nothing to test |
 | 10 | blocking calls | `time.sleep`, `requests`, `subprocess` in a synchronous tool |
 | 11 | context caching | a cached prefix that changes per request, a long instruction nothing caches, an out-of-range `ContextCacheConfig`, caching no eval case can exercise (`AGT060`–`AGT063`), and plugin imports that need 2.11 or a public path (`AGT065`, `AGT066`), and a prefix too small for the cache floor (`AGT067`) |
-| 12 | skills | a `SKILL.md` ADK will reject, instructions too long to disclose progressively, an agent instruction that repeats a skill's body, a description too vague to trigger it, lifecycle settings out of range (`AGT070`–`AGT075`) |
+| 12 | skills | a `SKILL.md` ADK will reject, instructions too long to disclose progressively, an agent instruction that repeats a skill's body, a description too vague to trigger it, lifecycle settings out of range (`AGT070`–`AGT075`), two sibling skills described in mostly the same words (`AGT083`) |
 | 13 | context engineering | an `EventsCompactionConfig` ADK rejects, long conversations with no compaction, a sub-agent scoped wider than its job, a tool returning a large inline blob instead of an artifact (`AGT076`–`AGT079`), memory tools inside an `AgentTool` (`AGT082`) |
 | 14 | streaming tools | an async-generator tool on a text model, or on a live model whose evals lack `live_model_config` (`AGT081`) |
 
@@ -99,6 +99,13 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
   2.13.0 it drops to info. `ENV015` is an error when the loader refuses the app
   directory name (a hyphen, dot, space or non-ASCII letter) and an info for a
   keyword or leading digit, which loads today.
+- **Two infos that read like style notes and are not.** `AGT083`: the model
+  picks a skill from its name and description alone, so two descriptions in the
+  same words let the broader skill take the other's requests; suggest rewording
+  and a negative sibling activation case (`/adk:eval-create`). `AGT084`: an
+  output cap under 1024 on a thinking model is a ceiling, not a thinking budget,
+  so hard turns come back truncated; suggest `thinking_config` or the
+  instruction instead. Both are static and version-independent.
 - **The load check is optional and it costs an import.** Offer it when the static
   review is clean but the agent is reported not to work, or when the user is
   mid-migration.

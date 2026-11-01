@@ -8,7 +8,9 @@ on a project you cannot yet run.
 Fourteen dimensions:
 
 1. loader and naming — will ADK find and accept this agent
-2. model policy — deprecated ids, preview ids, hardcoded ids
+2. model policy — deprecated ids, preview ids, hardcoded ids; a
+   `generate_content_config` `max_output_tokens` under 1,024 on a thinking model
+   (Gemini 2.5+, 3.x, the `-latest` aliases) that does not turn thinking off (AGT084)
 3. agent configuration — the kwargs that raise at construction
 4. tool contracts — docstrings, type hints, return shapes, raising versus returning
 5. state — writes that never persist
@@ -25,7 +27,9 @@ Fourteen dimensions:
     `load_skill_from_dir`, `load_skills_from_dir`): frontmatter ADK rejects
     (AGT070), an oversized body (AGT071), an instruction that repeats a skill
     (AGT072), a description too short to activate on (AGT073), lifecycle modes
-    without ADK_ENABLE_SKILL_LIFECYCLE (AGT074), max_active_skills < 1 (AGT075)
+    without ADK_ENABLE_SKILL_LIFECYCLE (AGT074), max_active_skills < 1 (AGT075),
+    two skills on one agent whose descriptions use mostly the same words
+    (AGT083: Jaccard >= 0.5 or containment >= 0.8, shorter one >= 4 words)
 12. context — an EventsCompactionConfig ADK rejects (AGT076), long eval
     conversations with no compaction (AGT077), a transfer target that reads the
     whole history (AGT078), a tool returning a large inline blob (AGT079),

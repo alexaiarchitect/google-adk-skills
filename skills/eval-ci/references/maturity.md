@@ -115,6 +115,16 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/assess_maturity.py <repo-root>
 
 reports the level with its evidence and the next concrete step.
 
+Two habits that separate an L2 gate from a laptop ritual, from Google's
+skill-evaluation write-up. **Evals run in CI or a container, not on a
+developer's machine**: cached credentials, an exported project id or a warm shell
+let a run pass that would fail anywhere else, and a busy machine changes timings
+and with them the agent's choices. And **a model upgrade is a change like any
+other**: re-run the gating suite on the new model before switching, keep the
+correctness, efficiency and security verdicts separate
+([merge-gates.md](merge-gates.md), "Gate, then score"), and retire the cases,
+instructions or skills that the new model no longer needs.
+
 ---
 
 Sources: this plugin's `assess_maturity.py`. The maturity ladder follows the
@@ -135,3 +145,8 @@ https://developers.googleblog.com/hill-climbing-agent-quality-with-agents-cli-ev
 fresh evidence per PR from Samborski, "Behind the scenes, two months later: How
 we ship Google Agent Skills like products", Google Cloud Blog, 2026-10-29,
 https://cloud.google.com/blog/topics/developers-practitioners/behind-the-scenes-two-months-later-how-we-ship-google-agent-skills-like-products.
+CI not laptops and the model-upgrade re-run: Weinmeister and Blount, "Five rules
+for evaluating agent skills before they bloat your context window", Google Cloud
+Blog, 2026-11-03,
+https://cloud.google.com/blog/topics/developers-practitioners/evaluate-agent-skills-before-they-bloat-your-context-window
+(paraphrased).

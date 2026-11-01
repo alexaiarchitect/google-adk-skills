@@ -45,6 +45,16 @@ Concurrency: `adk eval --parallelism N` and a top-level `parallelism` key exist
 on ADK main after 2.13.0 (`e9e8f6156`: flag or argument > config key > default
 4); through 2.13.0 cases run 4 at a time and the key is ignored. This wrapper
 has no flag for it.
+
+A silent turn aborts the run: on 2.9.2 through 2.13.0, a user turn the agent
+answers with no event at all is dropped at inference, and scoring then raises
+`ValueError: Inferences should match conversations in eval case. Found 1
+inferences and 2 conversations in eval case.` (`evaluation/local_eval_service.py`),
+so `adk eval` exits 1 with no summary and no result file for ANY case. This
+wrapper recognises the message and names the cause. Main after 2.13.0
+(`94eb6c4fc`) records the silent turn as an invocation with no final response
+instead, which a trajectory-only metric passes; only a response metric or a
+rubric catches it there.
 """
 
 from __future__ import annotations
@@ -79,6 +89,35 @@ EXIT_CODE_NOTE = ("bare `adk eval` exits 0 on every version through 2.12.0 and e
 PARALLELISM_NOTE = ("`adk eval --parallelism N` and a top-level `parallelism` key exist on "
                     "main after 2.13.0 (`e9e8f6156`: flag or argument > config key > default "
                     "4); through 2.13.0 cases run 4 at a time and the key is ignored")
+
+
+#: Shown by `--dry-run`.
+SILENT_TURN_NOTE = ("through 2.13.0 a user turn the agent answers with no event aborts the "
+                    "whole run (ValueError \"Inferences should match conversations in eval "
+                    "case\"; no summary, no result file for any case); main after 2.13.0 "
+                    "(`94eb6c4fc`) records it as a turn with no final response, which a "
+                    "trajectory-only metric passes")
+
+#: (substring of `adk eval` output, what it means and what to do). Checked when a
+#: run fails before writing any result file.
+FAILURE_HINTS: tuple[tuple[str, str], ...] = (
+    ("Inferences should match conversations in eval case",
+     "a user turn produced no event at all (an agent or callback that returns without "
+     "yielding, or a model reply with no content), so ADK through 2.13.0 dropped the turn "
+     "and the scorer rejected the case; this aborts the whole `adk eval` call, so no case "
+     "was scored. Find the case with `adk run` or /adk:agent-debug, make the agent always "
+     "answer (or remove that turn), or run the cases one at a time with --cases. Main "
+     "after 2.13.0 (`94eb6c4fc`) scores such a turn as one with no final response; add a "
+     "response metric or a rubric so it fails there instead of passing"),
+)
+
+
+def failure_hint(output: str) -> str | None:
+    """The hint for a known `adk eval` failure in its output, or None."""
+    for pattern, hint in FAILURE_HINTS:
+        if pattern in (output or ""):
+            return hint
+    return None
 
 
 def absolute(path: str | None) -> str | None:
@@ -234,6 +273,7 @@ def main(argv: list[str] | None = None) -> int:
                   "`adk` on PATH", file=sys.stderr)
         print(f"note: {EXIT_CODE_NOTE}", file=sys.stderr)
         print(f"note: {PARALLELISM_NOTE}", file=sys.stderr)
+        print(f"note: {SILENT_TURN_NOTE}", file=sys.stderr)
         if args.min_pass_rate is not None:
             print(f"note: gating on a pass rate of at least {args.min_pass_rate:.1%}",
                   file=sys.stderr)
@@ -287,6 +327,9 @@ def main(argv: list[str] | None = None) -> int:
             if not outcome.command.ok and not outcome.new_result_files:
                 print(f"error: the run failed before producing results:\n{outcome.command.tail()}",
                       file=sys.stderr)
+                hint = failure_hint(outcome.command.combined)
+                if hint:
+                    print(f"hint: {hint}", file=sys.stderr)
                 return EXIT_USAGE
 
     failing = sorted({case for run in runs for case in run["failing_cases"]})

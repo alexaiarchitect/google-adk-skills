@@ -161,3 +161,7 @@ generation config, and an environment-simulation module.
       instructions and violation rubrics.
 - [ ] Injected environment failures are off unless a case needs one.
 - [ ] `validate_sim_config.py` exits 0.
+- [ ] The reply itself names `conversation_scenario` (starting prompt plus plan,
+      not fixed turns), the persona used, which reference metric cannot score a
+      simulated run (`tool_trajectory_avg_score`) and what replaces it, and that
+      the simulated user costs model calls too.

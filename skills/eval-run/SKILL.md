@@ -125,6 +125,15 @@ Never `adk eval` alone in CI. A project with no pytest gate gets one from
   either you get a page of never-scored cases.
 - **A flat-turn legacy file cannot go through `adk eval`.** It crashes inside
   ADK; the wrapper refuses it and points at `migrate_legacy.py` or the pytest path.
+- **A turn with no reply sinks the whole run through 2.13.0.** If the agent
+  answers a user turn with no event, `adk eval` and `AgentEvaluator` raise
+  `ValueError: Inferences should match conversations in eval case` and score no
+  case; `run_evals.py` names it and exits 2. Give the agent a fallback reply or
+  move the turn; main records it as a turn with no final response, which only a
+  response metric fails ([cli-reference.md](references/cli-reference.md)).
+- **Deferred capacity is not an `adk eval` option.** No eval entry point takes a
+  `RunConfig`, so a bulk run on `ServiceTier.DEFERRED` (2.10+, Preview,
+  allowlisted) is your own runner loop ([batch-and-gating.md](references/batch-and-gating.md)).
 - **Run the cheap tier first.** There is no point paying a judge to score an
   agent that called the wrong tool.
 - **Resolve the runner honestly.** `$ADK_PYTHON`, a project venv, an `adk` on
@@ -139,7 +148,7 @@ Never `adk eval` alone in CI. A project with no pytest gate gets one from
 |---|---|
 | Every flag of `adk eval`, and what it does not have | [cli-reference.md](references/cli-reference.md) |
 | The pytest path, `num_runs`, and sub-agents | [pytest-agent-evaluator.md](references/pytest-agent-evaluator.md) |
-| Batch manifests, tiers and gating | [batch-and-gating.md](references/batch-and-gating.md) |
+| Batch manifests, tiers and gating; deferred (off-peak) capacity | [batch-and-gating.md](references/batch-and-gating.md) |
 | Conformance recording and replay | [conformance.md](references/conformance.md) |
 | GCS eval storage and live mode | [gcs-and-live.md](references/gcs-and-live.md) |
 | Behavioural pytest assertions and batch pass rates | [behavioral-tests.md](../eval-create/references/behavioral-tests.md) |

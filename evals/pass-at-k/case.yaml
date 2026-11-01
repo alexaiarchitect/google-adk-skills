@@ -1,0 +1,4 @@
+schema_version: "1.0"
+name: pass-at-k
+context:
+  scaffold_script: scaffold.sh

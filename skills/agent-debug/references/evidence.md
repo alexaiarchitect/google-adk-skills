@@ -125,6 +125,14 @@ streamed call's `generate_content` span now records the aggregated answer, not
 each partial chunk (`80a44111c`), so through 2.13.0 expect one output message per
 chunk on a streamed span (duplicated text with LiteLlm) and read the final event
 instead.
+Checked again at `70e1cbde7` (2026-11-04): every `get_fast_api_app()` server
+(`adk web`, `adk api_server`, a deployed container) now continues an inbound W3C
+`traceparent` / `tracestate` and reads `baggage` (`f27b8f105`), so ADK's spans
+join the caller's trace instead of starting a new one; through 2.13.0 only the
+Gemini Enterprise path did. On Agent Engine its own header still wins. One
+behaviour change to know when spans go missing: an inbound `traceparent` whose
+flags are `00` (not sampled) makes the default sampler drop every ADK span of
+that request.
 
 Export with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (install `google-adk[otel]` on
 2.13+ for the OTLP exporter), or `adk web --otel_to_cloud` for Cloud Trace.
@@ -186,7 +194,8 @@ exporter (schema v2 is `adk-python` commit `7838488`, in `v2.13.0`);
 `adk-docs: docs/observability/*`, `docs/integrations/weave.md` (Agent Lens,
 `cc53b6c14`); main after 2.13.0: the four telemetry commits above, read at
 `dfd534a88`; `telemetry/_metrics.py` and `telemetry/_instrumentation.py`
-(`e0b812a3d`, `80a44111c`) at `ee8720162`, post-tag. The reasoning-trace / system-trace
+(`e0b812a3d`, `80a44111c`) at `ee8720162`, post-tag. `cli/fast_api.py` and
+`telemetry/_agent_engine.py` (`f27b8f105`) at `70e1cbde7`, post-tag. The reasoning-trace / system-trace
 distinction is paraphrased from Vlad Kolesnikov, "From 'vibe checks' to
 continuous evaluation: engineering reliable AI agents", Google Cloud blog,
 2026-02-28,

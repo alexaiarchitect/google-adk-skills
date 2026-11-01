@@ -22,6 +22,10 @@ Behaviour is driven by environment variables:
     FAKE_ADK_CHECK_PATHS                                         `eval` resolves its evalset
                                                                  and config paths against
                                                                  its cwd, as ADK does
+    FAKE_ADK_SILENT_TURN                                         `eval` dies the way 2.9.2-
+                                                                 2.13.0 do when a turn yields
+                                                                 no event: the ValueError,
+                                                                 exit 1, no summary or file
 
 Without FAKE_ADK_RETURNCODE, `eval` exits the way the reported version does:
 0 whatever the result through 2.12.0, 1 when a case did not pass from 2.13.0
@@ -161,6 +165,13 @@ def _eval(args: list[str]) -> int:
         refused = _check_paths(args)
         if refused:
             return refused
+    if os.environ.get("FAKE_ADK_SILENT_TURN"):
+        print("Traceback (most recent call last):\n"
+              '  File ".../google/adk/evaluation/local_eval_service.py", line 348, in '
+              "_evaluate_single_inference_result\n"
+              "ValueError: Inferences should match conversations in eval case. Found 1 "
+              "inferences and 2 conversations in eval case.", file=sys.stderr)
+        return 1
     agent_dir = Path(args[0]).resolve() if args else Path.cwd()
     eval_set = os.environ.get("FAKE_ADK_EVAL_SET", "fixture_set")
     passed = int(os.environ.get("FAKE_ADK_PASSED", "2"))

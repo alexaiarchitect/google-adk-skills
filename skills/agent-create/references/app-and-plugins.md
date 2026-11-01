@@ -74,6 +74,8 @@ and `ToolResultClassification` (read in the installed 2.13.0 wheel).
 - **`pip install "google-adk[otel]"`** pulls the OTLP exporter and GenAI/gRPC/httpx instrumentation; without it a configured exporter now degrades to a warning.
 - **`ForceEscalationPlugin()`** (`google.adk.plugins`) forces `ModelConsultTool` calls a weak executor would skip: the first step, after repeated identical calls, or before named state-changing tools. Forced consults are tool calls, so the trajectory changes.
 - **Duplicate agent names** anywhere in the tree are logged (siblings before 2.13; cousins and an agent reused below itself from 2.13); `find_agent()` returns the first depth-first match. `AGT015` reports the whole tree.
+- **Eval views from production logs** (`BigQueryAgentAnalyticsPlugin(project_id, dataset_id, config=BigQueryLoggerConfig(create_eval_views=True))`, or `await plugin.create_eval_views()` on demand; absent on 2.9.2): `v_eval_session` (one row per session: turn, tool-call and error counts, `has_tool_loop`, token and latency totals, `eval_ready`, a multi-turn `trace` JSON) and `v_eval_turn` (one row per invocation), prefix set by `view_prefix`. They need the `content` column (denylisting it raises `ValueError`) and all 15 required events (`USER_MESSAGE_RECEIVED` … `INVOCATION_COMPLETED`; an allow- or denylist that drops one is rejected). Use them to pick the production sessions worth turning into eval cases; they do not score anything.
+- **Deferred capacity** (`RunConfig(service_tier=ServiceTier.DEFERRED)`, 2.10+, Preview, allowlisted projects, `Gemini(use_interactions_api=True)` only): `/adk:eval-run` `batch-and-gating.md` has what it takes and why `adk eval` cannot pass it on.
 
 ### Coming after 2.13.0 (unreleased main)
 
@@ -90,6 +92,13 @@ Checked again at `ee8720162` (2026-11-02), also main only:
 - **`FsspecArtifactService`** (`6bf806a01`, experimental, behind the `FSSPEC_ARTIFACT_SERVICE` feature, off by default; `pip install "google-adk[fsspec]"` plus the protocol backend such as `gcsfs`): reads and lists artifacts in the GCS object layout over any fsspec filesystem; saving and deleting raise `NotImplementedError`, so it is not yet a drop-in artifact service.
 - **YAML configs refuse more references** (`1c7e8f76b`): the module denylist, on by default, now also blocks `anyio`, `click`, `dotenv`, `graphviz`, `uvicorn`, `watchdog`, anything under `google.adk.cli`, `pydantic._internal` or `pydantic.v1`, and any private `google.adk` module or symbol (`Blocked module reference: ...`). The key denylist (`args`) now also runs in `BaseAgent.from_config`, but stays off unless `adk web` turns it on. A `root_agent.yaml` that names such a callback stops loading on main.
 - **`TeamsRunner`** (`c4376a657`, `google.adk.integrations.teams`, `pip install "google-adk[teams]"`, experimental): serves an ADK runner to Microsoft Teams, acknowledging at once and answering in the background.
+
+Checked again at `70e1cbde7` (2026-11-04), also main only:
+
+- **`on_model_error` runs on cancellation** (`36cb10ddc`): every plugin then agent `on_model_error` callback is called with the `asyncio.CancelledError` when a model call is cancelled (or a stream is closed after partial chunks), for cleanup only; a returned `LlmResponse` is ignored and the cancellation propagates. Through 2.13.0 the handler catches only `Exception` (`flows/llm_flows/core/_finalizer.py:405`), so a cancelled model call skips `on_model_error`; tool cancellation already runs `on_tool_error`. Release a lock or a span you opened in `before_model` from somewhere that runs on 2.13.0 too.
+- **Eval-view SQL in template files** (`6b0171729`): the 2.13.0 views above, same rows, now under `plugins/bigquery_agent_analytics_sql/*_v1.sql`.
+- **Classifier request labels** (`7bfe227f0`): calls made by the labs classifiers carry `google-adk-classifier/<version>+<kind>` (`llm`, `typesafe`, `openai`, `custom`); an outer eval label is kept, so judge and classifier spend stay separable in billing.
+- **`MongoDbMemoryService(retrieval_mode="keyword" | "vector" | "auto", memory_ttl_days=None)`** (`1c84bb955`): keyword stays the default; `vector` embeds at ingest and recalls with `$vectorSearch` scoped to app and user; `memory_ttl_days` adds an expiry index.
 
 ### Tool-call integrity (2.11)
 
@@ -230,4 +239,9 @@ https://cloud.google.com/blog/topics/developers-practitioners/the-devfest-commun
 `request_confirmation(hint=, payload=)` read in the 2.13.0 wheel. Main at
 `ee8720162`: `apps/compaction.py` (`87d9dcdf5`), `integrations/fsspec/`
 (`6bf806a01`), `agents/config_agent_utils.py` and `agents/base_agent.py`
-(`1c7e8f76b`), `integrations/teams/` (`c4376a657`), all post-tag.
+(`1c7e8f76b`), `integrations/teams/` (`c4376a657`), all post-tag. Eval views:
+`plugins/bigquery_agent_analytics_plugin.py` on 2.13.0 (`create_eval_views`,
+`_validate_eval_view_config`), `adk-docs: docs/integrations/bigquery-agent-analytics.md`
+("Agent evaluation views"). Main at `70e1cbde7`: `flows/llm_flows/core/_finalizer.py`
+and `utils/_callback_pipeline.py` (`36cb10ddc`), `labs/classifiers/` (`7bfe227f0`),
+`integrations/mongodb/_memory_service.py` (`1c84bb955`), all post-tag.

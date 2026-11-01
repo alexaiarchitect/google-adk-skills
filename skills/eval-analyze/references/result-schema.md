@@ -181,6 +181,13 @@ Checked again at `ee8720162` (2026-11-02), two more:
 - **Unscored rubric samples** (`d1f2add4f`): a judge response that leaves a criterion rubric without a yes/no verdict makes that sample unscored (no `rubric_scores`, score None) instead of averaging the answered rubrics. The vote skips such samples; if all are unscored the metric's `score` is null and `eval_status` 3 (`NOT_EVALUATED`). A case that passed on 2.13.0 because a rubric went missing can read `NOT_EVALUATED` or `FAILED` on main.
 - **Live usage** (`8cd3b12c8`): for evals under `live_model_config`, standalone Gemini Live usage reports now reach `token_usage_v1`'s `token_usage_details` (and the call count); through 2.13.0 they were dropped, so live token figures were zero or partial. Do not compare live token usage across the two.
 
+Checked again at `70e1cbde7` (2026-11-04), two more:
+
+- **Reloaded tool declarations** (`425576020`): through 2.13.0, `app_details.agent_details.<name>.tool_declarations` read back from a result or history file stay plain dicts. A live run is unaffected; code that reloads saved invocations and judges them again is not: `rubric_based_multi_turn_trajectory_quality_v1` raises `AttributeError: 'dict' object has no attribute 'function_declarations'` (`rubric_based_multi_turn_trajectory_evaluator.py:268`), and the other rubric and hallucination judges receive a tool block padded with every unset field as `null` (measured: about six times longer). Main restores them as `genai.types.Tool` objects. This plugin's readers never touch the field.
+- **Silent turns** (`94eb6c4fc`): a case with a turn the agent answered with no event now appears with an invocation whose `final_response` is null; through 2.13.0 no result file is written at all (`/adk:eval-run` `cli-reference.md`).
+
+**From production traces (in 2.13.0).** The BigQuery agent analytics plugin can build two views over logged sessions, `v_eval_session` and `v_eval_turn` (`create_eval_views`); they hold session-level counts and an eval-ready trace, not these result files. `/adk:agent-create` `app-and-plugins.md` has the setup; use them to choose which sessions to turn into cases.
+
 ## Deprecated fields
 
 `eval_set_file` (use `eval_set_id`) and `eval_metric_results` (use
@@ -210,3 +217,7 @@ need Vertex credentials. `repetition_index` is `evaluation/eval_result.py` on ma
 and live usage are post-tag at `ee8720162` (`rubric_based_evaluator.py`,
 `evaluation_generator.py`); the absence of per-sample verdicts was read off the
 2.9.2 and 2.13.0 result models (`local_eval_service.py` writes the voted list).
+Tool declarations and silent turns: `evaluation/app_details.py` and
+`evaluation_generator.py` at `70e1cbde7`, measured on 2.9.2 and 2.13.0 by a JSON
+round trip and a two-turn case; eval views: `plugins/bigquery_agent_analytics_plugin.py`
+on 2.13.0, `adk-docs: docs/integrations/bigquery-agent-analytics.md`.

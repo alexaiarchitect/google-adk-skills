@@ -121,6 +121,14 @@ unknown keys; measured on 2.9.2, 2.12.0 and 2.13.0), so `pass_at_k.py` and
 `run_evals.py --runs` remain the way to batch today. `validate_config.py` reports
 the key as `CFG072` (info) and checks its shape (`CFG073`).
 
+Since then (checked against `70e1cbde7`, 2026-11-04; absent from 2.13.0):
+
+- **A silent turn is recorded** (`94eb6c4fc`): a user turn the agent answers with no event at all becomes an invocation with no final response, and every case is scored. A trajectory-only metric passes such a case (no tool expected, none called); only a response metric or a rubric catches the silence. Through 2.13.0 the same turn aborts the run (below).
+
+### Troubleshooting: a traceback and no summary
+
+`adk eval` exits 1 with a traceback, prints no summary and writes no eval history, and the last line reads `ValueError: Inferences should match conversations in eval case. Found 1 inferences and 2 conversations in eval case.` (2.9.2 and 2.13.0, measured; `local_eval_service.py:348` on 2.13.0). One case has a user turn the agent answered with no event at all — an agent that returns without yielding, or a callback that swallows the turn. Inference drops that turn silently, the case then has fewer invocations than conversation turns, and the whole call raises, so the good cases are lost with it. `run_evals.py` recognises the message, prints a hint and exits 2 (the environment could not run the suite). Find the case (`adk run` it, or run the cases one at a time with `run_evals.py --cases`), then either give the agent a fallback reply for that turn or move the turn into its own case. A turn the agent may legitimately leave unanswered does not belong in a multi-turn case until you run on a release that has `94eb6c4fc`.
+
 ## Two other test commands
 
 | Command | What it is |
@@ -189,6 +197,9 @@ and cache-token items were classified post-tag against `v2.13.0` at `12c7bed76`,
 the storage and deploy items at `dfd534a88` (`file://` measured on 2.13.0), the
 parallelism, reload, agent-card and `adk create` items at `ee8720162`
 (`cli/_cli_generate_agent_card.py`, `cli/cli_create.py`, `cli/utils/agent_loader.py`);
+the silent-turn item at `70e1cbde7` (`evaluation/evaluation_generator.py`; the
+`ValueError` measured on 2.9.2 and 2.13.0 with an agent that yields nothing on
+turn 2);
 `adk-docs: docs/deploy/cloud-run.md` (`cc53b6c14`). Neighbours: "Powering the
 Agent Development Lifecycle with any framework, from ADK to LangChain and beyond"
 (https://developers.googleblog.com/powering-the-agent-development-lifecycle-with-any-framework-from-adk-to-langchain-and-beyond/),

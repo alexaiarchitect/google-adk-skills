@@ -18,6 +18,7 @@ comes from. Ids are stable.
 | `AGT012` | **error** | an `LlmAgent` with no `name` | required |
 | `AGT015` | warn | two agents anywhere in the tree share a `name`: siblings, cousins, or an agent and one of its descendants | ADK only logs a warning (siblings before 2.13; the whole tree from 2.13, "find_agent() returns the first match in a depth-first walk"), but routing and `find_agent` by name become ambiguous |
 | `AGT016` | **error** | `temperature`, `top_p`, `max_output_tokens` and friends passed to the agent | raises at construction; move them into `generate_content_config` |
+| `AGT084` | info | `generate_content_config` (inline `GenerateContentConfig(...)`, a module constant or a dict) sets an int `max_output_tokens` below 1024 on an agent whose resolved model id is in the plugin's thinking family (`gemini-2.5-*`, `gemini-3*`, `gemini-flash-latest`, `gemini-pro-latest`, `gemini-flash-lite-latest`; Live and TTS ids excluded; an env-only or unknown id is skipped). Exempt when the same config's `thinking_config` sets `thinking_budget=0` or `thinking_level` MINIMAL (LOW is not exempt) | the cap is a ceiling, not a thinking budget: a hard turn spends it on reasoning and stops mid-chain, so the reply is truncated or wrong, while easy turns use the same thinking tokens either way; ADK accepts the value silently. Bound the answer with the instruction or `thinking_config`; keep the cap at 1024 or more, or drop it (`model-policy.md`) |
 | `AGT019` | info | `output_schema` together with `tools` | supported in 2.x, but the model may answer with structured output instead of calling a tool |
 | `AGT020` | warn | no `instruction` | behaviour is whatever the model guesses, and nothing is testable |
 
@@ -70,7 +71,7 @@ When each is worth acting on, and how to prove a caching change paid:
 No `AGT064`: `global_instruction` is `AGT002`. `AGT020` does not fire when only
 `static_instruction` is set.
 
-## Skills (`AGT070`–`AGT075`)
+## Skills (`AGT070`–`AGT075`, `AGT083`)
 
 What a skill is, the limits ADK enforces and the activation evals:
 `../../agent-create/references/skills-and-progressive-disclosure.md`.
@@ -83,6 +84,7 @@ What a skill is, the limits ADK enforces and the activation evals:
 | `AGT073` | info | a skill description shorter than 40 characters | the description is all the model sees before loading, so it drives activation; say what the skill does and when |
 | `AGT074` | info | `lifecycle_config` uses `BOUNDED` / `EPHEMERAL` or `skill_overrides` while the agent's `.env` lacks `ADK_ENABLE_SKILL_LIFECYCLE`; a known runner below 2.10 adds that `SkillLifecycleConfig` exists only from 2.10 | the modes and the cap work without the flag; it adds `unload_skill` and pruning of released skills' instructions (experimental) |
 | `AGT075` | **error** | `SkillLifecycleConfig(max_active_skills < 1)`, literal or through a constant | ADK raises `ValueError` at construction |
+| `AGT083` | info | two skills in the `SkillToolset`s bound to one agent (both readable, no `AGT070` problem, not registry or GCS) whose description tokens (lowercase words minus stopwords) overlap: the shorter has 4+ tokens and Jaccard ≥ 0.5 or containment of the shorter in the longer ≥ 0.8; each pair once | the model chooses a skill from `list_skills`' name and description alone (or the same list in the system instruction under `EAGER` discovery), so the broader one can take requests meant for the other. Say what each does and when, in words the other does not use, and add an activation case per skill that must load it and not its sibling |
 
 ## Context engineering (`AGT076`–`AGT079`, `AGT082`)
 
@@ -146,5 +148,14 @@ the sub-runner's memory service captured at runtime on 2.9.2 and 2.13.0;
 on 2.9.2 and 2.13.0; `adk create` check `3655990f6` on main);
 `adk-docs: docs/tools-custom/function-tools.md`, `docs/sessions/state.md`,
 `docs/2.0/index.md`, `docs/context/caching.md` (`AGT060`–`AGT063`, `AGT065`–`AGT067`),
-`docs/live/tools.md` (`AGT081`); `adk-recipes: AGENTS.md` (`AGT005`, the model-deprecation
+`docs/live/tools.md` (`AGT081`); `skills/prompt.py` (`format_skills_as_xml`) and
+`tools/skill_toolset.py` (`AGT083`: name and description only, measured on 2.9.2
+and 2.13.0; thresholds set above the most similar upstream sibling pair, J 0.33 /
+C 0.50); "Five rules for evaluating agent skills before they bloat your context
+window", Weinmeister and Blount, Google Cloud Blog, 2026-11-03,
+https://cloud.google.com/blog/topics/developers-practitioners/evaluate-agent-skills-before-they-bloat-your-context-window
+(`AGT083`); `AGT084`'s thinking family is this plugin's (adk-docs lists none),
+after "Cost per task: Using cheap classifiers to route across Gemini models and
+thinking levels", Villani, Google Developers Blog, 2026-11-03,
+https://developers.googleblog.com/cost-per-task-using-cheap-classifiers-to-route-across-gemini-models-and-thinking-levels/; `adk-recipes: AGENTS.md` (`AGT005`, the model-deprecation
 policy — the sole source for it).

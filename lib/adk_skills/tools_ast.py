@@ -36,7 +36,8 @@ from .env import classify_model_id, is_live_model_id, version_at_least
 from .report import Finding
 from .skills import (
     MAX_INSTRUCTION_LINES, MAX_INSTRUCTION_TOKENS, MIN_DESCRIPTION_CHARS, UNREADABLE,
-    SkillInfo, inline_skill, load_skill_dir, load_skills_dir, repeated_share,
+    SkillInfo, descriptions_overlap, inline_skill, load_skill_dir, load_skills_dir,
+    repeated_share,
 )
 
 #: Constructors that build an LLM agent.
@@ -88,6 +89,34 @@ MISPLACED_MODEL_KWARGS = {
     "temperature", "top_p", "top_k", "max_output_tokens", "candidate_count",
     "stop_sequences", "seed", "safety_settings", "response_mime_type",
 }
+
+#: AGT084: model ids this plugin treats as thinking models, where
+#: `max_output_tokens` also has to hold the reasoning. adk-docs lists no
+#: thinking-capable ids, so the family is set here: every Gemini 2.5 and 3.x
+#: text id and the `-latest` aliases (Live and TTS ids excluded).
+THINKING_MODEL_PREFIXES = ("gemini-2.5-", "gemini-3")
+THINKING_MODEL_ALIASES = ("gemini-flash-latest", "gemini-pro-latest", "gemini-flash-lite-latest")
+#: Below this an output cap on a thinking model starts to cut reasoning short.
+MIN_THINKING_OUTPUT_TOKENS = 1024
+_SRC_THINKING_CAP = (
+    "Google Developers Blog, \"Cost per task: Using cheap classifiers to route across Gemini "
+    "models and thinking levels\" (https://developers.googleblog.com/cost-per-task-using-"
+    "cheap-classifiers-to-route-across-gemini-models-and-thinking-levels/); thinking family "
+    "set by this plugin (adk-docs lists no thinking model ids)")
+
+
+def is_thinking_model_id(model: str | None) -> bool:
+    """Is this a model id in the plugin's thinking family (:data:`THINKING_MODEL_PREFIXES`,
+    :data:`THINKING_MODEL_ALIASES`)? Live and TTS ids are not."""
+    if not model:
+        return False
+    model = str(model).strip().lower()
+    if model.startswith("models/"):
+        model = model[len("models/"):]
+    if is_live_model_id(model) or "-tts" in model:
+        return False
+    return model in THINKING_MODEL_ALIASES or model.startswith(THINKING_MODEL_PREFIXES)
+
 
 BLOCKING_CALLS = {
     "time.sleep": "time.sleep",
@@ -343,6 +372,11 @@ class AgentSpec:
     callbacks: list[str] = field(default_factory=list)
     kwargs: list[str] = field(default_factory=list)
     gcc_forbidden: list[str] = field(default_factory=list)
+    #: `generate_content_config`'s `max_output_tokens` when it is a readable int.
+    gcc_max_output_tokens: int | None = None
+    #: The same config turns thinking off: `thinking_budget=0` or
+    #: `thinking_level=MINIMAL` in its `thinking_config`.
+    gcc_thinking_off: bool = False
     #: `include_contents=` as written: "default", "none", the source text of
     #: an expression, or None when unset (ADK's default is "default").
     include_contents: str | None = None
@@ -1289,6 +1323,34 @@ def scan_static_instruction(
     return "".join(texts), reasons
 
 
+def _config_fields(node: ast.AST | None, facts: ModuleFacts | None) -> dict[str, ast.expr]:
+    """The fields of a config written as `X(...)` or a dict literal, following a
+    module constant; `{}` for anything else."""
+    node = _follow_constant(node, facts)
+    if isinstance(node, ast.Call):
+        return {kw.arg: kw.value for kw in node.keywords if kw.arg}
+    if isinstance(node, ast.Dict):
+        return {k.value: v for k, v in zip(node.keys, node.values)
+                if isinstance(k, ast.Constant) and isinstance(k.value, str)}
+    return {}
+
+
+def _gcc_token_settings(node: ast.AST | None, facts: ModuleFacts | None) -> tuple[int | None, bool]:
+    """(max_output_tokens, thinking turned off) of a `generate_content_config`:
+    `types.GenerateContentConfig(...)`, a module constant holding one, or a dict."""
+    fields = _config_fields(node, facts)
+    cap = _literal(_follow_constant(fields.get("max_output_tokens"), facts))
+    if not isinstance(cap, int) or isinstance(cap, bool):
+        cap = None
+    thinking = _config_fields(fields.get("thinking_config"), facts)
+    budget = _literal(_follow_constant(thinking.get("thinking_budget"), facts))
+    level = _follow_constant(thinking.get("thinking_level"), facts)
+    level_name = _literal(level) if isinstance(level, ast.Constant) else _name_of(level)
+    off = (budget == 0 and not isinstance(budget, bool)) or (
+        isinstance(level_name, str) and level_name.upper() == "MINIMAL")
+    return cap, off
+
+
 def _collect_agent(
     var: str | None, call: ast.Call, call_name: str,
     constants: dict[str, str] | None = None,
@@ -1360,6 +1422,7 @@ def _collect_agent(
     gcc = _kwarg(call, "generate_content_config")
     if isinstance(gcc, ast.Call):
         spec.gcc_forbidden = [kw.arg for kw in gcc.keywords if kw.arg in FORBIDDEN_GCC_FIELDS]
+    spec.gcc_max_output_tokens, spec.gcc_thinking_off = _gcc_token_settings(gcc, facts)
 
     contents = _kwarg(call, "include_contents")
     if contents is not None:
@@ -2185,6 +2248,22 @@ def analyze(facts: ModuleFacts) -> list[Finding]:
                     fix="fine for a sub-agent; the root agent should be explicit",
                     source=_SRC_LLM_AGENT)
 
+        cap = agent.gcc_max_output_tokens
+        thinking_model = agent.model or agent.model_constant
+        if (agent.call in LLM_AGENT_CALLS and cap is not None
+                and cap < MIN_THINKING_OUTPUT_TOKENS and not agent.gcc_thinking_off
+                and is_thinking_model_id(thinking_model)):
+            add("AGT084", "info",
+                f"max_output_tokens={cap} on {thinking_model} is a ceiling, not a thinking "
+                "budget: a hard turn spends the cap on reasoning and stops mid-chain, so the "
+                "reply is truncated or wrong; easy turns use the same thinking tokens "
+                "either way",
+                path=agent.file, locator=locator,
+                fix="bound the answer with the instruction or `thinking_config`, not the "
+                    f"output size; keep max_output_tokens at least "
+                    f"{MIN_THINKING_OUTPUT_TOKENS} on thinking models, or drop it",
+                source=_SRC_THINKING_CAP)
+
         if agent.gcc_forbidden:
             add("AGT003", "error",
                 f"generate_content_config carries {', '.join(sorted(agent.gcc_forbidden))}, "
@@ -2401,7 +2480,7 @@ def _agents_for_toolset(facts: ModuleFacts, toolset: SkillToolsetSpec) -> list[A
 
 
 def _skill_findings(facts: ModuleFacts) -> list[Finding]:
-    """AGT070-AGT073 and AGT075: the skills a SkillToolset registers."""
+    """AGT070-AGT073, AGT075 and AGT083: the skills a SkillToolset registers."""
     found: list[Finding] = []
 
     def add(fid: str, severity: str, message: str, *, path: str | None, locator: str | None,
@@ -2472,6 +2551,67 @@ def _skill_findings(facts: ModuleFacts) -> list[Finding]:
                 fix="use 1 or more (default 5); the cap counts only BOUNDED skills, so to stop "
                     "skills piling up use BOUNDED with a small cap, or EPHEMERAL",
                 source=f"{_SRC_SKILL_TOOLSET} (SkillLifecycleConfig.__post_init__)")
+    found.extend(_skill_overlap_findings(facts))
+    return found
+
+
+_SRC_SKILL_OVERLAP = (
+    "adk-python v2.13.0: skills/prompt.py (format_skills_as_xml: name and description "
+    "only), tools/skill_toolset.py (list_skills, SkillDiscoveryMode.EAGER); Google Cloud "
+    "Blog, \"Five rules for evaluating agent skills before they bloat your context "
+    "window\" (https://cloud.google.com/blog/topics/developers-practitioners/"
+    "evaluate-agent-skills-before-they-bloat-your-context-window)")
+
+
+def _skill_overlap_findings(facts: ModuleFacts) -> list[Finding]:
+    """AGT083: two skills one agent can load whose descriptions overlap.
+
+    A group is every skill in the SkillToolsets bound to one LLM agent; a
+    toolset no agent binds is its own group. Each pair is reported once.
+    """
+    groups: list[list[SkillInfo]] = []
+    bound_labels: set[str] = set()
+    for agent in facts.agents:
+        if agent.call not in LLM_AGENT_CALLS:
+            continue
+        toolsets = [t for t in facts.skill_toolsets if t.label in agent.opaque_tools]
+        bound_labels.update(t.label for t in toolsets)
+        groups.append([s for t in toolsets for s in t.skills])
+    groups.extend(list(t.skills) for t in facts.skill_toolsets if t.label not in bound_labels)
+
+    found: list[Finding] = []
+    seen: set[tuple[int, int]] = set()
+    for group in groups:
+        readable = [s for s in group if s.description and not s.problems
+                    and s.source not in ("registry", "gcs")]
+        for i, first in enumerate(readable):
+            for second in readable[i + 1:]:
+                key = tuple(sorted((id(first), id(second))))
+                if key in seen or first is second:
+                    continue
+                seen.add(key)
+                hit, jaccard, containment = descriptions_overlap(
+                    first.description, second.description)
+                if not hit:
+                    continue
+                a = first.name or (Path(first.path).name if first.path else "inline skill")
+                b = second.name or (Path(second.path).name if second.path else "inline skill")
+                where = first.path if first.source == "dir" and first.path else first.file
+                found.append(Finding(
+                    id="AGT083", severity="info", area="skill",
+                    message=f"skills {a!r} and {b!r} describe themselves with mostly the "
+                            f"same words (Jaccard {jaccard:.2f}, containment "
+                            f"{containment:.2f}): the model chooses a skill from "
+                            "`list_skills`' name and description alone (or from the same "
+                            "list in the system instruction under EAGER discovery), so the "
+                            "broader one can take requests meant for the other",
+                    path=where,
+                    locator=None if first.source == "dir" else f"line {first.lineno}",
+                    fix="say what each does and when, in words the other does not use; add "
+                        "an activation case per skill whose prompt must load that skill and "
+                        "not its sibling",
+                    source=_SRC_SKILL_OVERLAP,
+                ))
     return found
 
 

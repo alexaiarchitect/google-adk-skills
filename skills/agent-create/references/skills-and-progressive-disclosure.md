@@ -145,6 +145,7 @@ literal path, read each `SKILL.md`, and report:
 | `AGT073` | info | a skill description shorter than 40 characters; the description is all the model sees before loading, so it drives activation; say what the skill does and when |
 | `AGT074` | info | `lifecycle_config` uses `BOUNDED` / `EPHEMERAL` or `skill_overrides` while the agent's `.env` lacks `ADK_ENABLE_SKILL_LIFECYCLE`; a known runner below 2.10 adds that `SkillLifecycleConfig` exists only from 2.10; the modes and the cap work without the flag; it adds `unload_skill` and pruning of released skills' instructions (experimental) |
 | `AGT075` | **error** | `SkillLifecycleConfig(max_active_skills < 1)`, literal or through a constant; ADK raises `ValueError` at construction |
+| `AGT083` | info | two skills on one agent whose descriptions share most of their words (the shorter has 4+ tokens; Jaccard ≥ 0.5 or containment ≥ 0.8); the model routes on name and description alone, so the broader one can take the other's requests; reword each in words the other does not use, and add a negative sibling activation case |
 
 `load_skill`, `list_skills` and `load_skill_resource` count as known tools when
 an evalset expects them, so coverage and tool cross-checks do not flag them.
@@ -181,6 +182,28 @@ activates (`EVS073`), and `validate_evalset.py` warns when a case expects
 with `tool_trajectory_avg_score` in `IN_ORDER` or `ANY_ORDER` mode, so a
 `list_skills` call before the load does not fail the case.
 
+**Collisions before cost.** The model picks a skill from its `name` and `description` alone: `list_skills` returns only those two fields (and `SkillDiscoveryMode.EAGER` puts the same list into the system instruction), and `load_skill` takes any name. So two failures happen before any body is read: **under-triggering** (the description says how the skill works, not what the user asks for) and **sibling hijacking** (a broad phrase in a neighbouring skill takes requests meant for this one). `AGT083` is the mechanical half — two registered skills whose descriptions share most of their words. The behavioural half is a negative activation case per sibling pair: a request meant for skill A expects `load_skill` for A and must not load B (`/adk:eval-create` `case-taxonomy.md`). Google's open-source `skill-reach` (`reach lint`, `reach overlap`, `reach eval --runs 3`) does the same for coding-agent skill folders, and pairs with a prose-level scanner for injection and exfiltration risks.
+
+**With and without, three times.** One green run is not an evaluation. Run each
+case in two arms — the same prompt and a clean sandbox, without the skill and with
+it — at least three times each, and read the delta:
+
+- **delta zero** usually means the skill never loaded; check activation before
+  rewriting the body;
+- **both arms pass equally fast**: the model already knows this, so the skill is
+  "pure context tax" — delete it;
+- **both pass, the skill arm with fewer turns or tokens**: an efficiency win, a
+  separate signal from pass rate; keep both numbers.
+
+For an ADK agent the arms are two agent builds (one without the toolset) over one
+evalset, run with `run_evals.py --runs 3`; this plugin's own suite does the same
+for its skills (`evals/README.md` in the plugin root). Run the arms in CI or a
+container, never on a laptop: cached credentials, exported project ids and shell
+history let the no-skill arm pass for the wrong reason. Re-run the matrix on every
+model upgrade and delete the skills whose delta has dropped to zero.
+
+**Habits, not documentation.** Skills that paste reference tables the model already knows add almost nothing and push the constraints that matter out of view. The ones that pay encode habits: check a command's flags at the leaf sub-command before anything that changes state, use least-privilege credentials, ask before a billable change. A thin discovery skill that loads the specialised ones on demand keeps the catalogue small, as Google's Cloud Developer plugin does with its gateway skill and its guardrail skills that validate CLI syntax and block destructive or key-downloading calls. `AGT072` catches the opposite move, the procedure copied into the instruction.
+
 ---
 
 Sources: Nigam and Saboo, "Developer's guide to building ADK agents with
@@ -190,7 +213,15 @@ https://developers.googleblog.com/developers-guide-to-building-adk-agents-with-s
 Charlotte Liang, "Eval-driven development: how we build better agent skills for
 Firebase", Firebase blog, 2026-08-11,
 https://firebase.blog/posts/2026/08/eval-driven-development-agent-skills (the
-three scopes). `adk-python: tools/skill_toolset.py`
+three scopes). Weinmeister and Blount, "Five rules for evaluating agent
+skills before they bloat your context window", Google Cloud Blog, 2026-11-03,
+https://cloud.google.com/blog/topics/developers-practitioners/evaluate-agent-skills-before-they-bloat-your-context-window
+(collisions, the paired ablation, the deletion rule, clean sandboxes, habits;
+paraphrased, one phrase quoted); Samborski, "Google Cloud Developer plugin now
+available in Antigravity Marketplace", Google Cloud Blog, 2026-11-03,
+https://cloud.google.com/blog/topics/developers-practitioners/google-cloud-developer-plugin-now-available-in-antigravity-marketplace
+(the discovery and guardrail skills; paraphrased). `list_skills` output
+(`skills/prompt.py`) measured on 2.9.2 and 2.13.0. `adk-python: tools/skill_toolset.py`
 (tools, `SkillDiscoveryMode`, `SkillLifecycleMode`, `SkillLifecycleConfig`, the
 artifact caps; `save_output_artifacts` is commit `beaef0d`, in `v2.12.0`),
 `skills/models.py`, `skills/_utils.py`, `features/_feature_registry.py`

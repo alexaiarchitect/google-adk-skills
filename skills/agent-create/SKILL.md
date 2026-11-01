@@ -102,6 +102,10 @@ graph read `nodeInfo.path` in traces; a node may set its output once.
 - **Sampling settings go in `generate_content_config`.** Passing `temperature=`
   to the agent raises at construction, and that config must not carry `tools`,
   `system_instruction` or `response_schema`.
+- **Do not cap a thinking model's output to save tokens.** `max_output_tokens`
+  is a ceiling on thoughts and answer together; under 1024 a hard turn comes
+  back truncated (`AGT084`). Set the thinking level in `thinking_config` and
+  bound the answer in the instruction.
 - **Prefer `Workflow` over `SequentialAgent` / `ParallelAgent` / `LoopAgent`**,
   which are deprecated, unless an `LlmAgent` has to transfer into the block.
 - **Never overwrite by default.** Existing files, functions and eval ids are left
@@ -110,6 +114,11 @@ graph read `nodeInfo.path` in traces; a node may set its output once.
   one kind of request belongs in a `SkillToolset` skill the agent loads on
   demand; a large tool result belongs in an artifact, and a long conversation
   wants event compaction. The instruction stays short and always relevant.
+- **Each skill's description must be its own.** The model routes on name and
+  description alone; two skills in the same words (`AGT083`) let one take the
+  other's requests. Encode habits (check flags, least privilege, ask before a
+  billable change), not reference tables, and prove each skill earns its place
+  with a with/without run ([skills-and-progressive-disclosure.md](references/skills-and-progressive-disclosure.md)).
 - **A live (voice) agent: read [live-agents.md](references/live-agents.md)
   first.** A slow tool there is silence; make it a streaming (`yield`) or
   non-blocking tool, add `stop_streaming`, and give its evals
@@ -132,9 +141,9 @@ graph read `nodeInfo.path` in traces; a node may set its output once.
 |---|---|
 | Why each structural choice makes an agent evaluable | [eval-ready-architecture.md](references/eval-ready-architecture.md) |
 | Writing the instruction so its branches are testable | [instruction-design.md](references/instruction-design.md) |
-| App, plugins, callbacks and where guardrails belong | [app-and-plugins.md](references/app-and-plugins.md) |
+| App, plugins, callbacks and where guardrails belong; BigQuery eval views; deferred capacity | [app-and-plugins.md](references/app-and-plugins.md) |
 | State, memory and what persists | [state-and-memory.md](references/state-and-memory.md) |
-| Workflow graphs: nodes, edges, joins, human input, remote A2A steps, testing them | [workflow-graphs.md](references/workflow-graphs.md) |
+| Workflow graphs: nodes, edges, joins, human input, remote A2A steps, classifier routing, testing them | [workflow-graphs.md](references/workflow-graphs.md) |
 | Live and voice agents: streaming and non-blocking tools, `stop_streaming`, barge-in, scheduling | [live-agents.md](references/live-agents.md) |
 | Context caching: when it pays, what breaks the prefix, proving the gain | [context-caching.md](references/context-caching.md) |
 | ADK skills: `SKILL.md`, `SkillToolset`, discovery and lifecycles, activation evals | [skills-and-progressive-disclosure.md](references/skills-and-progressive-disclosure.md) |

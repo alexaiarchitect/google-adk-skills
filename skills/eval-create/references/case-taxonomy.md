@@ -78,6 +78,12 @@ Prefix `activation_`; `gen_cases.py` accepts `{"skill": "<name>"}` in a turn's
 starting point. What it tests is the skill's description. See
 `/adk:agent-create` `skills-and-progressive-disclosure.md`.
 
+Add a **negative sibling case** for every pair of skills whose subjects touch: a request meant for skill A expects `load_skill` for A and is written in the words skill B also uses, so a broad description on B shows up as a hijack, not as a pass (`activation_hotel_limit_not_claim_policy`). The model routes on name and description alone; `AGT083` flags the pairs most at risk.
+
+### Long-horizon deliverables
+
+For an agent that produces a whole artefact over many steps and inputs (a reconciled claim pack from receipts, emails and a policy PDF): one case per deliverable, written or checked by someone who does that work for a living, with the hard checks that make the deliverable unacceptable stated first and graded before anything else (the gate-then-score rule, `/adk:eval-ci` `merge-gates.md`). Name it by what it proves (`happy_claim_pack_reconciled`, `edge_claim_pack_missing_receipt_rejected`); there is no separate prefix. Keep a few such cases out of the committed suite as a held-out set nobody tunes against.
+
 ### Resume (long-running, stateful agents)
 
 For an agent that pauses — waiting for a receipt, an approval, a delivery — and
@@ -185,6 +191,8 @@ One behavioural concern per case. The test: name what it proves in one clause.
 If the sentence needs an "and", split it — a multi-concern failure tells you
 something broke, not what.
 
+A multi-turn case whose turn the agent may legitimately leave unanswered (a callback that swallows an acknowledgement, a node that yields nothing) breaks the whole run through 2.13.0: inference drops the silent turn and `adk eval` stops with `Inferences should match conversations in eval case`, scoring no case. Give the agent a fallback reply for that turn, or end the case before it (`/adk:eval-run` `cli-reference.md`, "Troubleshooting").
+
 ## Redundancy
 
 Two cases proving the same thing cost time and money on every run and add
@@ -224,6 +232,14 @@ duplicate and conflicting expectations from Samborski, "Behind the scenes, two
 months later: How we ship Google Agent Skills like products", Google Cloud Blog,
 2026-10-29,
 https://cloud.google.com/blog/topics/developers-practitioners/behind-the-scenes-two-months-later-how-we-ship-google-agent-skills-like-products.
-The case taxonomy, the branch rule and the suite-shape
+Negative sibling cases: Weinmeister and Blount, "Five rules for evaluating agent
+skills before they bloat your context window", Google Cloud Blog, 2026-11-03,
+https://cloud.google.com/blog/topics/developers-practitioners/evaluate-agent-skills-before-they-bloat-your-context-window;
+long-horizon, expert-validated deliverables and the held-out set: Gokturk, Han and
+Lee, "Introducing Physical-Engineering's Last Exam for agents", Google Cloud
+Blog, 2026-11-03,
+https://cloud.google.com/blog/products/ai-machine-learning/introducing-physical-engineerings-last-exam-for-agents
+(both paraphrased, retold in this plugin's domain). The silent-turn `ValueError`
+measured on 2.9.2 and 2.13.0. The case taxonomy, the branch rule and the suite-shape
 guidance follow the LinkedIn Learning course *Evaluating AI Agents with Google
 ADK* (Jigyasa Grover), recommended as background reading.

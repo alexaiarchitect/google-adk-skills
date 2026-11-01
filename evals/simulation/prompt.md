@@ -1,7 +1,6 @@
 ---
-max_turns: 14
+max_turns: 24
 allowed_tools: [Read, Glob, Grep, Skill, AskUserQuestion, Write, Edit, "Bash(python3 *)"]
-scaffold_script: ../scaffold.sh recipes_good
 tags: [simulation]
 ---
 

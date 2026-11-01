@@ -97,6 +97,18 @@ Through 2.13.0 the argument does not exist and the config key is dropped silentl
 (measured on 2.9.2 and 2.13.0), so cases run 4 at a time; `validate_config.py`
 warns about the key as `CFG077`.
 
+**A silent turn no longer sinks the test** (`94eb6c4fc`, checked at
+`70e1cbde7`): on main a user turn the agent answers with no event becomes an
+invocation with no final response and every case is scored; a trajectory-only
+metric passes it, so keep a response metric in the config. Through 2.13.0 the
+turn is dropped at inference and `evaluate` / `evaluate_eval_set` raise
+`ValueError: Inferences should match conversations in eval case. Found 1
+inferences and 2 conversations in eval case.` — no case is reported, the good
+ones included (measured on 2.9.2 and 2.13.0). `LocalEvalService.evaluate`, used
+directly, yields the cases that finished before the failing one and then raises.
+Give the agent a fallback reply for that turn, or split the turn into its own
+case.
+
 ## A working test module
 
 ```python
@@ -171,4 +183,6 @@ pins read from each wheel's `METADATA` (2.13.0's compared with 2.12.0's). The
 2.13.0 changes are commits `5bf7f12`, `c12392e` and `cb48b91`, in `v2.13.0`;
 multi-run (`7f3517e`) and the matcher (`ed76f94`) are post-tag at `12c7bed76`,
 the runtime-agent signature (`ce92e9247`) at `dfd534a88`, `parallelism=`
-(`e9e8f6156`, `agent_evaluator.py:187-188` on main) at `ee8720162`.
+(`e9e8f6156`, `agent_evaluator.py:187-188` on main) at `ee8720162`. The
+silent-turn behaviour is `evaluation/local_eval_service.py:348` (2.13.0) and
+`evaluation_generator.py:700-707` on main `70e1cbde7`.

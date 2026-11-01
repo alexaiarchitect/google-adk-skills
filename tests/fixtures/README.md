@@ -37,6 +37,9 @@ this plugin's references in its own words.
 | `eval_configs/parallelism_zero.json` | `"parallelism": 0` (CFG077 error on every version: main rejects it with "Input should be greater than or equal to 1") |
 | `projects/kebab_app` | a policy agent in `my-agent/` (ENV015 error: AgentLoader refuses the name on 2.9.2 and 2.13.0 with "Invalid agent name") |
 | `projects/keyword_app` | the same agent in `class/` (ENV015 info: it loads, but `adk create` on main after 2.13.0 refuses keyword names) |
+| `agents/skills_overlap` | `load_skills_from_dir` over `skills/claim-policy` (travel, meals, equipment) and `skills/claim-policy-hotel` (hotel nights): different procedures, descriptions that differ by one word (AGT083 info: Jaccard 0.93, containment 1.00, so the model has nothing to choose between them by). Loads on ADK 2.9.2 and 2.13.0 |
+| `agents/low_token_cap` | `generate_content_config=types.GenerateContentConfig(temperature=0.2, max_output_tokens=300)` on the `gemini-flash-latest` default (AGT084 info: on a thinking model the cap also has to hold the reasoning). Loads on ADK 2.9.2 and 2.13.0 with the value kept and no warning; AGT016 stays silent |
+| `bin/fake_adk.py` `FAKE_ADK_SILENT_TURN` | `eval` dies the way 2.9.2 through 2.13.0 do when a turn yields no event: the `Inferences should match conversations in eval case` ValueError, exit 1, no summary and no result file (run_evals.py's failure hint) |
 | `agents/yaml_agent` | `root_agent.yaml`, the deprecated config layout |
 | `evalsets/` | valid snake_case, valid camelCase, legacy list format, scenario, and broken variants |
 | `eval_configs/` | one per criterion family, plus invalid ones |

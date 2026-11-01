@@ -183,17 +183,15 @@ Two variables at once make the result unreadable: a fix and a regression cancel
 out, and the next iteration starts from a guess. Use `--runs 5` and `pass_at_k.py`
 when a judge metric is involved, or one noisy run decides the iteration.
 
+## Gate, then score; keep the axes apart
+
+A budget or a quality score must never buy back a failed hard check. Google's engineering benchmark for agents awards a deliverable points only after it clears every "hard safety gate", and its skill-evaluation team keeps correctness, efficiency and security as separate verdicts after watching an optimiser reward candidates that read the answer file (no model turns, so the best efficiency) under a blended score. Here that means: a security or safety case (`/adk:eval-create` `adversarial-cases.md`) fails the merge whatever the token count; `compare_runs.py`'s budgets are separate exits, never weights; and a candidate that "wins" only on efficiency gets read before it merges.
+
+Report two rates, not one. Per-constraint pass rates (each metric, each rubric) look healthy long before per-deliverable rates (a case passing **every** check) do; the case pass rate `run_evals.py --min-pass-rate` gates on is the second kind. Keep a small held-out set beside the committed suite — cases nobody tunes against, run on release candidates — so a suite that has been optimised against still has a witness, and report run cost beside the pass rate.
+
 ## Other harnesses
 
-- **`agents-cli eval`** is Google's hosted counterpart (below). The same two
-  merge rules apply to its output; what the platform adds after launch is in
-  `/adk:eval-analyze` `improvement-loop.md`.
-- **`agent-eval`** (GoogleCloudPlatform/professional-services) is an open-source
-  evaluation toolkit the post links. It is an alternative harness, not something
-  this plugin drives; the merge rules above apply to it unchanged.
-- **User simulation** for Day 0 scenarios: `/adk:eval-simulation`.
-- **Adaptive rubrics** (Vertex-generated, per prompt) are the Vertex-served rubric
-  metrics: `/adk:eval-criteria` `vertex-requirements.md`.
+`agents-cli eval` (the hosted counterpart, below) and `agent-eval` (GoogleCloudPlatform/professional-services, an open-source toolkit the post links, not driven by this plugin) take the two merge rules unchanged. User simulation for Day 0: `/adk:eval-simulation`; Vertex adaptive rubrics: `/adk:eval-criteria` `vertex-requirements.md`; what the platform adds after launch: `/adk:eval-analyze` `improvement-loop.md`.
 
 ## The hosted path, and this plugin's equivalent
 
@@ -242,4 +240,10 @@ Gate order, suite validation, fresh evidence and manual triggers: Remigiusz
 Samborski, "Behind the scenes, two months later: How we ship Google Agent Skills
 like products", Google Cloud Blog, 2026-10-29,
 https://cloud.google.com/blog/topics/developers-practitioners/behind-the-scenes-two-months-later-how-we-ship-google-agent-skills-like-products
-(paraphrased).
+(paraphrased). Gate-then-score, two rates, held-out set: Gokturk, Han and Lee,
+"Introducing Physical-Engineering's Last Exam for agents", Google Cloud Blog,
+2026-11-03, https://cloud.google.com/blog/products/ai-machine-learning/introducing-physical-engineerings-last-exam-for-agents
+(paraphrased, one phrase quoted, no results reproduced); separate axes:
+Weinmeister and Blount, "Five rules for evaluating agent skills before they bloat
+your context window", Google Cloud Blog, 2026-11-03,
+https://cloud.google.com/blog/topics/developers-practitioners/evaluate-agent-skills-before-they-bloat-your-context-window.

@@ -162,6 +162,43 @@ with a client factory that has no HTTP client of its own and a2a-sdk 1.3, releas
 versions can send no header, which an A2A v1 server reads as protocol 0.3 and
 rejects.
 
+**Checked again at `70e1cbde7` (2026-11-04), also main only.** A node that
+delegates its output (`ctx.run_node(..., use_as_output=True)`) now forwards the
+parent event's text, images, errors and approval requests with only the
+duplicate output cleared (`efec445a4`); through 2.13.0 that event was dropped, so
+a workflow could wait on an approval the caller never saw — an approval case
+through such a node can hang on 2.13.0 and pass on main. Two resume fixes: a
+slow rerun node no longer makes its replayed siblings wait out the barrier
+timeout (`3565ad3dd`), and resuming a session stored by ADK 2.10 or older strips
+a Markdown code fence from a schema reply before parsing it instead of failing
+with `WorkflowDataError` (`f4fa73e80`).
+
+## Routing with a classifier (labs)
+
+On 2.13.0, `google.adk.labs.classifiers.ClassifierNode` (experimental) routes a
+graph by asking one `BaseClassifier` one question — a `Binary` (route `True` /
+`False` at `threshold`, default 0.5) or a `Choice` (route = label; graph
+validation checks every label has an edge). `LlmClassifier` asks a model;
+`google.adk.integrations.typesafe.TypesafeClassifier` calls TypeSafe's hosted Jev
+models (`TYPESAFE_API_KEY`), which return calibrated probabilities; main adds
+`OpenAIDecisionsClassifier` and per-request labels (`app-and-plugins.md`). The
+usual job is a cheap model in front of an expensive one. Lessons worth taking
+from Google's own write-up of exactly that (Villani, below):
+
+- **Ask atomic yes/no questions, one per factor** (needs a lookup? spans several
+  files? ambiguous?) rather than one broad "simple or complex" choice, which
+  tends to send nearly everything down one path. In ADK that is a chain of
+  `Binary` nodes, each with its own edge.
+- **Hold out prompts before trusting a router.** A keyword or length heuristic
+  fits the prompts it was tuned on and falls apart on new ones; give the router
+  its own eval set with cases it never saw (`/adk:eval-create` `case-taxonomy.md`).
+- **Measure cost per successful task**, everything spent (loop turns, retries,
+  thinking) divided by the cases that pass, not price per token.
+- **Route short, self-contained turns only.** A context cache belongs to one
+  model, so switching models mid-conversation loses or duplicates it; keep long,
+  context-heavy turns on one model. And try one fast model at a low thinking
+  level first: a router is worth building only if that baseline fails.
+
 ## Choosing between a graph and the deprecated workflow agents
 
 `SequentialAgent`, `ParallelAgent` and `LoopAgent` still exist and are
@@ -186,6 +223,14 @@ routing); `workflow/_workflow.py` (terminal-output finalization),
 error events) and `agents/sequential_agent.py`, read in the 2.13.0 wheel;
 `cli/_cli_generate_agent_card.py`, `a2a/executor/` and `a2a/_compat.py` on main
 `ee8720162` (`875e2aef7`, `14765ab2b`, `abd8f0f69`, `e44b31675`, all post-tag).
+Main at `70e1cbde7`: `workflow/` (`efec445a4`, `3565ad3dd`, `f4fa73e80`), post-tag.
+Classifiers: `labs/classifiers/_classifier_node.py`, `__init__.py` and
+`integrations/typesafe/` read in the 2.13.0 wheel; `OpenAIDecisionsClassifier`
+(`aa98d180b`) is post-tag. Villani, "Cost per task: Using cheap classifiers to
+route across Gemini models and thinking levels", Google Developers Blog,
+2026-11-03,
+https://developers.googleblog.com/cost-per-task-using-cheap-classifiers-to-route-across-gemini-models-and-thinking-levels/
+(paraphrased; no figures reproduced).
 Remote steps: Saboo and Dong, "Build Cross-Language Multi-Agent Team with
 Google's Agent Development Kit and A2A", Google Developers Blog, 2026-06-22,
 https://developers.googleblog.com/en/build-cross-language-multi-agent-team-with-google-agent-development-kit-and-a2a/.

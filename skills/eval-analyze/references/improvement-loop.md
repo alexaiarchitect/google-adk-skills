@@ -63,6 +63,7 @@ flipped to failed, means a lot. So:
   on a floor (`--min-pass-rate`) only as a backstop;
 - when a judge metric is involved, compare batches (`run_evals.py --runs 5`,
   `pass_at_k.py`) rather than single runs, or one noisy run decides.
+- when a change is about cost (a cheaper model, a router, a lower thinking level), compare **cost per passing case** — every token the run spent, retries and thinking included, divided by the cases that passed — not price per token; `summarize_results.py`'s token columns give the numerator.
 
 ## Adaptive metrics need a stable partner
 
@@ -232,5 +233,8 @@ https://cloud.google.com/blog/topics/developers-practitioners/four-eval-engineer
 Christina Lin, "The DevFest Community Workshop Experience: Building Real Agents
 Together", Google Cloud Blog, 2026-09-19,
 https://cloud.google.com/blog/topics/developers-practitioners/the-devfest-community-workshop-experience-building-real-agents-together.
-Judge audit: "Who judges the judge? Three helpful ways to audit your LLM
+Cost per passing case: Villani, "Cost per task: Using cheap classifiers to route
+across Gemini models and thinking levels", Google Developers Blog, 2026-11-03,
+https://developers.googleblog.com/cost-per-task-using-cheap-classifiers-to-route-across-gemini-models-and-thinking-levels/
+(paraphrased). Judge audit: "Who judges the judge? Three helpful ways to audit your LLM
 evaluators", Google Cloud Blog, 2026-10-20 (`calibration.md`).

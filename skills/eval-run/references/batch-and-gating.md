@@ -100,6 +100,37 @@ Twenty cases, two turns, two rubric metrics, three samples is 240 calls per run.
 With `--runs 5` for pass@k, 1200. Say the number out loud before running it; it
 is usually the whole argument for the tiering.
 
+## Deferred capacity for a bulk run
+
+Since 2.10.0 (Preview, allowlisted Google Cloud projects only) a run can ask for
+off-peak Gemini capacity: `RunConfig(service_tier=ServiceTier.DEFERRED)`, with
+`from google.adk.agents import RunConfig` and `from google.adk.models import
+ServiceTier` (`flex`, `standard`, `priority`, `deferred`; 2.9.2 has no such field
+and rejects it as an extra input). adk-docs names "a bulk evaluation run" as a use
+case. What it takes, measured on 2.13.0:
+
+- the model must be `Gemini(model=..., use_interactions_api=True)`; any other
+  model logs `run_config.service_tier=... has no effect for agent ...` once per
+  run and runs on standard capacity;
+- deferred with `StreamingMode.SSE` is a `ValidationError` when the `RunConfig`
+  is built; each model turn queues on its own and there is no client deadline, so
+  wrap the run in `asyncio.timeout()` and accept that a timeout forfeits work
+  already billed.
+
+**No eval entry point passes it on.** `adk eval`, `AgentEvaluator`,
+`LocalEvalService`, `InferenceConfig` and `EvalConfig` take no `RunConfig` or
+service tier on 2.13.0 or on main (`70e1cbde7`); non-live inference calls
+`runner.run_async` without one. A deferred bulk eval is therefore your own loop:
+drive a `Runner` with the deferred `RunConfig` over each case's user turns, keep
+the sessions, then score them — `EvaluationGenerator.convert_events_to_eval_invocations`
+turns a session's events into invocations that `LocalEvalService.evaluate` scores
+as `InferenceResult`s, and `/adk:eval-create` `session_to_evalset.py` turns a
+recorded session into a readable case for review. This path was read from the
+2.13.0 source, not run (no allowlisted project), so try it on two cases before a
+thousand. For the tiers in `run_registry.py`, keep `adk eval` on standard
+capacity; deferred suits the nightly bulk set, where hours of queueing cost
+nothing.
+
 ## Repeated runs
 
 `--runs N` runs the suite N times, keeping each run's results as its own file,
@@ -131,4 +162,10 @@ a failing case), `cli/cli_eval.py`, `evaluation/eval_config.py` (multi-run,
 `evaluation/agent_evaluator.py`; "Evaluating AI agents: moving past the vibe
 check", Google Developers Blog,
 https://developers.googleblog.com/evaluating-ai-agents-moving-past-the-vibe-check/
-(the global-threshold merge rule).
+(the global-threshold merge rule). Deferred capacity: `adk-docs:
+docs/agents/models/google-gemini/deferred-schedule.md` (Python v2.10.0,
+Preview); `adk-python: agents/run_config.py` (`service_tier`, the SSE validator),
+`models/_service_tier.py`, `flows/llm_flows/context/_interactions.py:175`,
+`evaluation/evaluation_generator.py` (`convert_events_to_eval_invocations`, no
+`run_config` on non-live inference), measured on 2.9.2 and 2.13.0 and read at
+`70e1cbde7`.

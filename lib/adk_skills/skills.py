@@ -307,3 +307,48 @@ def repeated_share(skill_text: str | None, instruction: str | None) -> tuple[flo
     haystack = " ".join(instruction.split())
     repeated = sum(1 for line in lines if " ".join(line.split()) in haystack)
     return repeated / len(lines), repeated, len(lines)
+
+
+#: AGT083: two skills on one agent whose descriptions use mostly the same words.
+#: The model picks a skill from `list_skills` (name and description only) or, under
+#: `SkillDiscoveryMode.EAGER`, the same catalog in the system instruction, so two
+#: descriptions that say the same thing leave it nothing to choose by. Measured over
+#: every multi-skill catalog upstream (2026-11-04): the closest legitimately distinct
+#: pair scores Jaccard 0.33 / containment 0.50; a near-duplicate scores 0.93 / 1.00.
+OVERLAP_JACCARD = 0.5
+OVERLAP_CONTAINMENT = 0.8
+#: Below this many content words in the shorter description, a single shared word
+#: already reaches a high containment, which proves nothing.
+OVERLAP_MIN_TOKENS = 4
+#: Words that say nothing about what a skill is for.
+OVERLAP_STOPWORDS = frozenset("""
+a an the and or of to for in on with by from at as is are be this that these those it
+its your you use used using when what which who how not no any all into than then so if
+do does can will about via per such other more most only also each skill skills
+""".split())
+_WORD = re.compile(r"[a-z0-9]+")
+
+
+def description_tokens(text: str | None) -> set[str]:
+    """The content words of a description: lowercase `[a-z0-9]+`, longer than
+    one character, minus :data:`OVERLAP_STOPWORDS`."""
+    return {w for w in _WORD.findall((text or "").lower())
+            if len(w) > 1 and w not in OVERLAP_STOPWORDS}
+
+
+def description_overlap(a: str | None, b: str | None) -> tuple[float, float, int]:
+    """(Jaccard, containment of the shorter set in the longer, tokens in the shorter)."""
+    ta, tb = description_tokens(a), description_tokens(b)
+    if not ta or not tb:
+        return 0.0, 0.0, min(len(ta), len(tb))
+    short, long_ = (ta, tb) if len(ta) <= len(tb) else (tb, ta)
+    shared = len(ta & tb)
+    return shared / len(ta | tb), shared / len(short), len(short)
+
+
+def descriptions_overlap(a: str | None, b: str | None) -> tuple[bool, float, float]:
+    """(overlapping, Jaccard, containment) under the AGT083 thresholds."""
+    jaccard, containment, short = description_overlap(a, b)
+    hit = short >= OVERLAP_MIN_TOKENS and (
+        jaccard >= OVERLAP_JACCARD or containment >= OVERLAP_CONTAINMENT)
+    return hit, jaccard, containment

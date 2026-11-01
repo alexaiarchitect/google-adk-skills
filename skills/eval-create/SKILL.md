@@ -68,7 +68,7 @@ time is the same discipline applied to renames, splits and deletions.
 | **adversarial** | pressure, claimed authority and tempting-but-valid data do not change the decision | `adversarial_` |
 | **memory** | a constraint stated once survives intervening turns | `memory_` |
 | **regression** | a fixed bug stays fixed | `regression_` |
-| **activation** | a skill-equipped agent loads the right skill, and none for an unrelated request | `activation_` |
+| **activation** | a skill-equipped agent loads the right skill, not its sibling, and none for an unrelated request | `activation_` |
 | **resume** | a stateful agent, started from seeded `session_input.state`, holds at an unmet gate or proceeds from the recorded step | `resume_` |
 
 Roughly 70% narrow single-turn cases, 20% multi-turn, 10% adversarial. Weight
@@ -97,6 +97,13 @@ instead of inventing capabilities.
 - **Never edit an existing case to make a run pass.** Every writer here refuses
   to overwrite an `eval_id`. Change a case deliberately, with the reason
   recorded, through `manage_cases.py`, and re-capture rather than hand-edit.
+- **Every turn of a multi-turn case must get a reply.** Through 2.13.0 a turn
+  the agent answers with no event aborts the whole `adk eval` run and scores no
+  case. If the agent may legitimately stay silent there, give it a fallback
+  reply or end the case before that turn.
+- **A skill pair needs a negative sibling case.** A request meant for skill A
+  must load A and not B, worded the way B's description is (`AGT083` flags the
+  riskiest pairs).
 - **Capture only runs you have read.** A golden trace of the agent doing the
   wrong thing locks in the wrong thing.
 - **Legacy files come in two shapes.** The wrapped shape still runs under
