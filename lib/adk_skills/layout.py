@@ -27,6 +27,7 @@ On top of those, two project conventions exist in the wild:
 from __future__ import annotations
 
 import ast
+import keyword
 import re
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -51,6 +52,14 @@ CONFIG_NAMES = ADK_CONFIG_NAMES + FOREIGN_CONFIG_NAMES
 
 #: ``App.name`` and agent directory names must match this (``apps/app.py``).
 APP_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
+
+#: What `AgentLoader` accepts as the name of the directory or module it loads
+#: (`cli/utils/agent_loader.py` `_VALID_AGENT_NAME_RE`, the same on 2.9.2,
+#: 2.13.0 and main). Hyphens, dots, spaces and non-ASCII letters fail it;
+#: keywords and names starting with a digit pass.
+LOADER_NAME_RE = re.compile(r"^[a-zA-Z0-9_]+$")
+_SRC_LOADER_NAME = ("adk-python v2.13.0: cli/utils/agent_loader.py (_validate_agent_name); "
+                    "main 3655990f6: cli/cli_create.py")
 
 
 @dataclass
@@ -116,6 +125,9 @@ class LayoutInfo:
     #: agents-cli eval datasets (`tests/eval/datasets/*.json`, graded with
     #: `tests/eval/eval_config.yaml` by `agents-cli eval`): not ADK evalsets.
     agents_cli_datasets: list[str] = field(default_factory=list)
+    #: The agents-cli eval configs beside them (`tests/eval/eval_config*.yaml`);
+    #: a project with two suites has one per suite.
+    agents_cli_configs: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -142,6 +154,56 @@ class LayoutInfo:
         if self.declared_app_name and self.app_name and self.declared_app_name != self.app_name:
             return (self.declared_app_name, self.app_name)
         return None
+
+    def app_dir_name_finding(self) -> dict[str, Any] | None:
+        """ENV015: the name `adk` would load this agent by, when the loader
+        refuses it (error) or only main's `adk create` would (info).
+
+        Returns the keyword arguments for `GapReport.add`, or None. The name is
+        `app_name`: the agent directory, the module stem for a `<name>.py`
+        agent, the package under `src/` for a src layout (so a kebab-case
+        project directory above a valid package is fine).
+        """
+        name = self.app_name
+        if not name:
+            return None
+        kind = "module" if self.style == "module_file" else "directory"
+        if not LOADER_NAME_RE.match(name):
+            suggestion = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+            return {
+                "id": "ENV015", "severity": "error", "area": "layout",
+                "message": (
+                    f"`adk` cannot load the app {kind} {name!r}: AgentLoader accepts only "
+                    f"letters, digits and underscores and stops with \"ValueError: Invalid "
+                    f"agent name: {name!r}. Agent names must be valid Python identifiers "
+                    f"(letters, digits, and underscores only).\" on 2.9.2 through 2.13.0 "
+                    f"(`adk create` on 2.13.0 still writes such a directory; main after "
+                    f"2.13.0 refuses the name)"),
+                "path": self.agent_dir or self.agent_module_file,
+                "fix": (f"rename the {kind} to a Python identifier such as {suggestion!r} "
+                        "and every reference to the old name: `session_input.app_name` in "
+                        "the evalsets (unless an `App(name=...)` decides it), pytest "
+                        "`agent_module` paths, and `adk run` / `adk eval` commands in "
+                        "scripts and CI"),
+                "source": _SRC_LOADER_NAME,
+            }
+        if name.isidentifier() and not keyword.iskeyword(name):
+            return None
+        why = "a Python keyword" if keyword.iskeyword(name) else (
+            "not a Python identifier (it starts with a digit)" if name[0].isdigit()
+            else "not a Python identifier")
+        return {
+            "id": "ENV015", "severity": "info", "area": "layout",
+            "message": (
+                f"app {kind} {name!r} is {why}: it loads today (AgentLoader checks only "
+                "letters, digits and underscores), but `adk create` on main after 2.13.0 "
+                "(`3655990f6`) refuses such a name, and `adk create` on 2.13.0 checks nothing, "
+                "which is how directories `adk run` cannot load get written"),
+            "path": self.agent_dir or self.agent_module_file,
+            "fix": (f"rename the {kind} to a plain identifier (for example {name + '_agent'!r}) "
+                    "when convenient, with every `app_name` and evalset reference to it"),
+            "source": _SRC_LOADER_NAME,
+        }
 
     def eval_command_needs_explicit_config(self) -> bool:
         """Must ``--config_file_path`` be passed for the config to be used?
@@ -539,11 +601,22 @@ def _note_agents_cli_datasets(root: Path, info: LayoutInfo) -> None:
     if not datasets.is_dir():
         return
     info.agents_cli_datasets = sorted(str(p) for p in datasets.glob("*.json"))
+    info.agents_cli_configs = sorted(
+        str(p) for pattern in ("eval_config*.yaml", "eval_config*.yml")
+        for p in (root / "tests" / "eval").glob(pattern))
     if info.agents_cli_datasets:
+        names = [Path(p).name for p in info.agents_cli_configs]
+        if len(names) > 1:
+            graded = (f"graded by `agents-cli eval` with one of {len(names)} configs: "
+                      f"{', '.join('tests/eval/' + n for n in names)}")
+        elif names:
+            graded = f"graded by `agents-cli eval` with tests/eval/{names[0]}"
+        else:
+            graded = "graded by `agents-cli eval`"
         info.notes.append(
             f"{len(info.agents_cli_datasets)} agents-cli eval dataset(s) under "
-            "tests/eval/datasets (graded by `agents-cli eval` with tests/eval/eval_config.yaml): "
-            "not ADK evalsets, so `adk eval` and this plugin's evalset tools do not read them")
+            f"tests/eval/datasets ({graded}): not ADK evalsets, so `adk eval` and this "
+            "plugin's evalset tools do not read them")
 
 
 def _fill_agent_dir(info: LayoutInfo, agent_dir: Path, entry: tuple[Path, str]) -> None:

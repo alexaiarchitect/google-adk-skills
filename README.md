@@ -92,7 +92,16 @@ under `run_live` (`AGT081`). The nightly workflow compares each run with its
 baseline and fails on a drop in any scored metric's mean
 (`compare_runs.py --max-mean-drop`), so drift raises an alert overnight
 instead of surfacing in the next pull request; `lint_workflows.py` notes a
-scheduled run without that step (`CI007`).
+scheduled run without that step (`CI007`). Before a climb is trusted, the judge
+itself is audited: its stability on repeated scoring, chance-corrected agreement
+with human labels, one property per rubric, and two runs that differ only in
+`judge_model` compared for divergence (`eval-analyze` `calibration.md`).
+
+**Three things released ADK gets wrong quietly.** A top-level `parallelism` key
+in an eval config is read only by main after 2.13.0 and dropped by every release
+(`CFG077`); an app directory named like `my-agent` is written by 2.13.0's `adk
+create` and then refused by the loader (`ENV015`); and memory tools inside an
+`AgentTool` search a fresh, empty store through 2.13.0 (`AGT082`).
 
 ## Requirements
 
@@ -140,7 +149,8 @@ python3 skills/adk/scripts/check_env.py <agent-dir> --config <config>
 ## Beyond the evalset
 
 Pages that fold a Google article into the plugin's own commands (the first five
-added in the 2.13 sync, the last five in the sync with main after 2.13.0):
+added in the 2.13 sync, the next five in the sync with main after 2.13.0, the
+last three in the sync with main through 2026-11-02):
 
 | Page | Covers |
 |---|---|
@@ -158,6 +168,9 @@ added in the 2.13 sync, the last five in the sync with main after 2.13.0):
 | `skills/eval-criteria/references/rubric-authoring.md` | atomic expectations (`RUB006`), action rubrics need a trajectory view (`CFG075`), built-in tools and the multi-turn judge (`CFG076`) |
 | `skills/eval-ci/references/merge-gates.md` | cheap deterministic gates first, a fresh eval report per PR, expensive suites on demand, the `agents-cli eval` mapping |
 | `skills/agent-create/references/workflow-graphs.md` | remote A2A steps: an explicit step enum, an unreachable remote held for manual review, deterministic validators audited by repetition |
+| `skills/eval-analyze/references/calibration.md` | auditing the judge: five biases, stability, chance-corrected agreement, decomposed rubrics, two judges compared with `compare_runs.py` |
+| `skills/agent-create/references/context-engineering.md` | heavy generation (a UI catalog) in its own sub-agent, client-side validation, retry with the error then fall back |
+| `skills/agent-create/references/app-and-plugins.md` | tiered actions: read-only tools unattended, changes behind `require_confirmation`, constraints in the execution layer rather than the prompt |
 
 The `adk-recipes` three-layer layout and its plugin-skill `EVAL.yaml` format are
 in `skills/adk/references/layouts.md` and `skills/eval-create/references/managing-evalsets.md`.

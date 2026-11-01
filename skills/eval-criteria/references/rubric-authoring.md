@@ -55,6 +55,12 @@ two clauses that each carry an expectation verb (names, states, calls,
 confirms, ...). A noun pair ("every number and identifier") or an adjective
 pair is one property and stays clean.
 
+A single property also blunts the judge's halo effect, where a well-formatted,
+fluent reply earns credit for content it does not have: a rubric that asks only
+"the final response states the amount as 650 dollars" cannot be passed on
+polish. Splitting rubrics is the decomposed-judge half of auditing a judge
+(`/adk:eval-analyze` `calibration.md`, "Audit the judge").
+
 ## Rubrics that ask about actions need a trajectory metric
 
 A judge that sees only the final reply grades the agent's account of what it
@@ -128,7 +134,10 @@ Rules for them:
 `num_samples` runs the judge that many times per invocation and takes the
 majority. 1 means a single unlucky sample decides; 3 is a stable vote at
 moderate cost; 5 is the library default and five times the price. Same principle
-as running the agent several times, applied to the evaluator.
+as running the agent several times, applied to the evaluator. A vote hides
+disagreement rather than fixing it, and result files keep only the voted verdict:
+a rubric whose verdict moves when `num_samples` or a re-run changes is ambiguous
+and needs rewriting (`/adk:eval-analyze` `calibration.md`, stability).
 
 ## Ids
 
@@ -182,6 +191,9 @@ https://cloud.google.com/blog/topics/developers-practitioners/behind-the-scenes-
 Action rubrics and reply-only judges: West, "Four evaluation engineering
 lessons learned from building agent plugins", Google Cloud Blog, 2026-10-17,
 https://cloud.google.com/blog/topics/developers-practitioners/four-eval-engineering-lessons.
-Both paraphrased. The rubric-design practices follow the LinkedIn
+Both paraphrased. The halo effect: "Who judges the judge? Three helpful ways to
+audit your LLM evaluators", Google Cloud Blog, 2026-10-20,
+https://cloud.google.com/blog/topics/consulting/three-ways-to-audit-your-llm-evaluators
+(paraphrased). The rubric-design practices follow the LinkedIn
 Learning course *Evaluating AI Agents with Google ADK*, recommended as background
 reading.

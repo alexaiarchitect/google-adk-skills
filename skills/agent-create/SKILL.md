@@ -118,6 +118,10 @@ graph read `nodeInfo.path` in traces; a node may set its output once.
 - **A remote step is a state, not a crash.** A `RemoteA2aAgent` that cannot be
   reached yields an error event and the pipeline runs on; write the
   manual-review hold yourself ([workflow-graphs.md](references/workflow-graphs.md)).
+- **Memory stays with the caller of an `AgentTool` through 2.13.0.** A wrapped
+  agent's `load_memory` searches a fresh, empty store (`AGT082`); call the
+  memory tool from the parent, or transfer
+  ([context-engineering.md](references/context-engineering.md)).
 - **The generated TODOs are not decoration.** A tool docstring that still says
   "TODO" is a tool the model has to guess about; say so before the user runs
   anything.

@@ -115,7 +115,16 @@ split by `gen_ai.token.modality`, and histograms
 `gen_ai.client.token.usage`; failed calls record 0 under modality `unknown`.
 Spans that end in an error, and compaction failures, carry `error.type`
 (`a96fc11b5`, `8038bd7f4`), which is the attribute to filter on when a run
-failed without a useful message. Through 2.13.0 neither exists.
+failed without a useful message. Through 2.13.0 neither exists. Checked again at
+`ee8720162`: main measures streaming latency (`e0b812a3d`) with two histograms in
+seconds, `gen_ai.client.inference.time_to_first_chunk` (from the span's start) and
+`gen_ai.client.inference.time_per_output_chunk` (between chunks), recorded only
+for SSE streaming (`StreamingMode.SSE`), not under `run_live`, and not when
+`opentelemetry-instrumentation-google-genai` owns the inference telemetry. And a
+streamed call's `generate_content` span now records the aggregated answer, not
+each partial chunk (`80a44111c`), so through 2.13.0 expect one output message per
+chunk on a streamed span (duplicated text with LiteLlm) and read the final event
+instead.
 
 Export with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (install `google-adk[otel]` on
 2.13+ for the OTLP exporter), or `adk web --otel_to_cloud` for Cloud Trace.
@@ -176,7 +185,8 @@ Sources: `adk-python: cli/cli.py` (`_print_event`, `--jsonl`), `events/event.py`
 exporter (schema v2 is `adk-python` commit `7838488`, in `v2.13.0`);
 `adk-docs: docs/observability/*`, `docs/integrations/weave.md` (Agent Lens,
 `cc53b6c14`); main after 2.13.0: the four telemetry commits above, read at
-`dfd534a88`. The reasoning-trace / system-trace
+`dfd534a88`; `telemetry/_metrics.py` and `telemetry/_instrumentation.py`
+(`e0b812a3d`, `80a44111c`) at `ee8720162`, post-tag. The reasoning-trace / system-trace
 distinction is paraphrased from Vlad Kolesnikov, "From 'vibe checks' to
 continuous evaluation: engineering reliable AI agents", Google Cloud blog,
 2026-02-28,

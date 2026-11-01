@@ -145,6 +145,23 @@ uses no model at all. Four habits from it make such a pipeline evaluable:
   others. Fault-injection cases (remote delayed, remote crashed → expected
   hold) are in `/adk:eval-create` `case-taxonomy.md`.
 
+**Coming after 2.13.0 (unreleased main, checked at `ee8720162`).** Three A2A
+changes matter to a pipeline like this. `adk generate_agent_card` (`875e2aef7`,
+needs `google-adk[a2a]`) builds each app's card from the agent itself, run from
+the agents directory: it prints the cards as JSON with the RPC URL
+`http://127.0.0.1:8000/a2a/<app>` unless `--protocol`, `--host` and `--port` say
+otherwise, and `--create-file` writes `<app>/agent.json`, so the card you serve
+can be generated instead of hand-kept (`/adk:eval-run` `cli-reference.md`).
+Cancelling an A2A task now reaches the running invocation (`14765ab2b`,
+`abd8f0f69`): the remote's tools and model calls stop, dangling tool calls are
+sealed with `INVOCATION_ABORTED`, and the task reports `CANCELED` instead of
+`FAILED`; through 2.13.0 the work kept running after the cancel, so a fault case
+that cancels a remote step should expect `FAILED` there. And `RemoteA2aAgent`
+always sends the `A2A-Version` header from its own HTTP client (`e44b31675`):
+with a client factory that has no HTTP client of its own and a2a-sdk 1.3, released
+versions can send no header, which an A2A v1 server reads as protocol 0.3 and
+rejects.
+
 ## Choosing between a graph and the deprecated workflow agents
 
 `SequentialAgent`, `ParallelAgent` and `LoopAgent` still exist and are
@@ -166,7 +183,9 @@ routing); `workflow/_workflow.py` (terminal-output finalization),
 `workflow/_errors.py`, `workflow/_function_node.py`, `workflow/_node.py`
 (`require_confirmation`, `988fd1a`, in `v2.12.0`); `a2a/agent/_remote_a2a_agent.py`
 (`AGENT_CARD_WELL_KNOWN_PATH`, `DEFAULT_TIMEOUT`, the `A2A request failed`
-error events) and `agents/sequential_agent.py`, read in the 2.13.0 wheel.
+error events) and `agents/sequential_agent.py`, read in the 2.13.0 wheel;
+`cli/_cli_generate_agent_card.py`, `a2a/executor/` and `a2a/_compat.py` on main
+`ee8720162` (`875e2aef7`, `14765ab2b`, `abd8f0f69`, `e44b31675`, all post-tag).
 Remote steps: Saboo and Dong, "Build Cross-Language Multi-Agent Team with
 Google's Agent Development Kit and A2A", Google Developers Blog, 2026-06-22,
 https://developers.googleblog.com/en/build-cross-language-multi-agent-team-with-google-agent-development-kit-and-a2a/.

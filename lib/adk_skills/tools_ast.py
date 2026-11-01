@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from . import DEPRECATED_MODELS
-from .env import classify_model_id, is_live_model_id
+from .env import classify_model_id, is_live_model_id, version_at_least
 from .report import Finding
 from .skills import (
     MAX_INSTRUCTION_LINES, MAX_INSTRUCTION_TOKENS, MIN_DESCRIPTION_CHARS, UNREADABLE,
@@ -532,6 +532,9 @@ class ModuleFacts:
     opaque_tools: dict[str, str] = field(default_factory=dict)
     #: `AgentTool(agent=x)` bindings still to be resolved to the agent's `name`.
     _agent_tool_refs: list[str] = field(default_factory=list)
+    #: Opaque `agent_tool` label (or `T = AgentTool(agent=x)` constant) -> the
+    #: variable `x` it wraps, when `agent=` is a plain name. For AGT082.
+    agent_tool_targets: dict[str, str] = field(default_factory=dict)
     #: Every definition seen for a name, before collision resolution.
     tool_candidates: dict[str, list[ToolSpec]] = field(default_factory=dict)
     #: file -> the `from module import name` pairs it declares, as "module.name".
@@ -759,6 +762,12 @@ def _wrapped_function(call: ast.Call) -> str | None:
     return _name_of(inner)
 
 
+def _agent_tool_target(call: ast.Call) -> str | None:
+    """The variable an `AgentTool(agent=x)` / `AgentTool(x)` wraps, if a plain name."""
+    agent = _kwarg(call, "agent") or (call.args[0] if call.args else None)
+    return agent.id if isinstance(agent, ast.Name) else None
+
+
 def _opaque_label(call: ast.Call, call_name: str, fallback: str | None = None) -> str:
     """The trajectory-visible name of an opaque tool object, best effort."""
     literal = _literal(_kwarg(call, "name"))
@@ -843,6 +852,9 @@ def _binding_names(node: ast.AST | None, facts: ModuleFacts, _depth: int = 0) ->
             return Binding(bound=[wrapped]) if wrapped else Binding(resolved=False)
         if call_name == "AgentTool":
             label = _opaque_label(node, call_name)
+            target = _agent_tool_target(node)
+            if target:
+                facts.agent_tool_targets.setdefault(label, target)
             # The agent's declared `name=` may live in a file not parsed yet, so
             # record the variable and swap it for the name in a later pass.
             facts._agent_tool_refs.append(label)
@@ -1756,8 +1768,11 @@ def collect_constants(path: Path | str, facts: ModuleFacts) -> None:
                         facts.tool_aliases[name] = wrapped
                 continue
             if call_name == "AgentTool":
+                target = _agent_tool_target(value)
                 for name in names:
                     facts.opaque_constants[name] = "agent_tool"
+                    if target:
+                        facts.agent_tool_targets.setdefault(name, target)
                 continue
             if _is_opaque_call(call_name):
                 for name in names:
@@ -1975,6 +1990,8 @@ def _resolve_agent_tool_names(facts: ModuleFacts) -> None:
             continue
         kind = facts.opaque_tools.pop(variable, "agent_tool")
         facts.opaque_tools[declared] = kind
+        if variable in facts.agent_tool_targets:
+            facts.agent_tool_targets.setdefault(declared, facts.agent_tool_targets[variable])
         for agent in facts.agents:
             agent.opaque_tools = [
                 declared if t == variable else t for t in agent.opaque_tools
@@ -2964,6 +2981,96 @@ def _case_requests_more_than_once(case: dict[str, Any]) -> bool:
         if isinstance(data, dict) and data.get("tool_uses"):
             return True
     return False
+
+
+#: Memory tools as they appear in an agent's `opaque_tools`.
+MEMORY_TOOL_LABELS = ("load_memory", "preload_memory", "LoadMemoryTool", "PreloadMemoryTool")
+_SRC_AGENT_TOOL_MEMORY = ("adk-python v2.13.0: tools/agent_tool.py "
+                          "(`memory_service=InMemoryMemoryService()`, line 275; 2.9.2 line 269); "
+                          "main 4e0ac64e3 shares the parent's memory service")
+
+
+def agent_tool_memory_findings(facts: ModuleFacts, *,
+                               adk_version: str | None = None) -> list[Finding]:
+    """AGT082: memory tools inside an agent that runs as an `AgentTool`.
+
+    Through 2.13.0 `AgentTool.run_async` builds its runner with a fresh
+    `InMemoryMemoryService()` whatever the parent's runner holds, so
+    `load_memory` / `preload_memory` in the wrapped agent (or anywhere in its
+    sub-agent tree) search an empty store. Main after 2.13.0 (4e0ac64e3) passes
+    the parent's memory service down. Warn on a runner through 2.13.0 or an
+    unknown one (the 2.13 target), info on a newer one.
+    """
+    by_var = {a.var: a for a in facts.agents if a.var}
+    by_name: dict[str, AgentSpec] = {}
+    for agent in facts.agents:
+        if agent.name and agent.name not in by_name:
+            by_name[agent.name] = agent
+
+    def memory_tools(agent: AgentSpec, seen: frozenset[int] = frozenset()) -> list[str]:
+        if id(agent) in seen:
+            return []
+        found = [t for t in agent.opaque_tools if t in MEMORY_TOOL_LABELS]
+        for child_var in agent.sub_agents:
+            child = by_var.get(child_var)
+            if child is not None:
+                found.extend(memory_tools(child, seen | {id(agent)}))
+        return found
+
+    version = str(adk_version).strip() if adk_version is not None else None
+    parsable = bool(version and re.match(r"^\d+\.\d+(?:\.\d+)?$", version))
+    newer = (version is not None and parsable and version_at_least(version, "2.13.1")) or (
+        version is not None and not parsable)
+
+    findings: list[Finding] = []
+    reported: set[tuple[int, int]] = set()
+    for parent in facts.agents:
+        for label in parent.opaque_tools:
+            if facts.opaque_tools.get(label) != "agent_tool":
+                continue
+            target = facts.agent_tool_targets.get(label)
+            child = by_var.get(target) if target else None
+            if child is None:
+                child = by_name.get(label) or by_var.get(label)
+            if child is None or child is parent or (id(parent), id(child)) in reported:
+                continue
+            tools = sorted(set(memory_tools(child)))
+            if not tools:
+                continue
+            reported.add((id(parent), id(child)))
+            names = ", ".join(f"`{t}`" for t in tools)
+            subject = (f"{parent.name or parent.var!r} wraps {child.name or child.var!r} in an "
+                       f"AgentTool, and that agent binds {names}")
+            if newer:
+                findings.append(Finding(
+                    id="AGT082", severity="info", area="agent",
+                    message=f"{subject}: through ADK 2.13.0 an AgentTool runs its agent with a "
+                            "fresh, empty InMemoryMemoryService, so the memory tools find "
+                            f"nothing; runner {adk_version} is newer than any release this "
+                            "plugin has measured, so check that it includes `4e0ac64e3`, "
+                            "which shares the parent's memory service",
+                    path=child.file, locator=f"line {child.lineno}",
+                    fix="nothing to change on a runner that shares the parent's memory "
+                        "service; pin it, since on 2.13.0 and earlier the lookup comes back "
+                        "empty",
+                    source=_SRC_AGENT_TOOL_MEMORY,
+                ))
+                continue
+            findings.append(Finding(
+                id="AGT082", severity="warn", area="agent",
+                message=f"{subject}: through ADK 2.13.0 an AgentTool runs its agent with a "
+                        "fresh, empty InMemoryMemoryService (`tools/agent_tool.py`), whatever "
+                        "memory service the parent's runner has, so these tools search an "
+                        "empty store and find nothing; main after 2.13.0 (`4e0ac64e3`) shares "
+                        "the parent's memory service",
+                path=child.file, locator=f"line {child.lineno}",
+                fix="call the memory tool from the parent and pass what it found in the "
+                    "request, or reach the agent by transfer (`sub_agents=`) instead of "
+                    "wrapping it; after a release that includes `4e0ac64e3`, the memory "
+                    "service given to the Runner reaches the AgentTool",
+                source=_SRC_AGENT_TOOL_MEMORY,
+            ))
+    return findings
 
 
 _SRC_STREAMING = ("adk-python: flows/llm_flows/tools/_agent_tools.py "

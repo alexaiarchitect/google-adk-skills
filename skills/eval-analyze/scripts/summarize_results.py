@@ -11,7 +11,11 @@ For each failing case it reports:
   belongs.
 * **rubric verdicts**, by id, so a judge failure names the property that failed.
 * **NOT_EVALUATED** separately from failure, because "the judge was unreachable"
-  and "the agent regressed" need different fixes.
+  and "the agent regressed" need different fixes. On main after 2.13.0
+  (`d1f2add4f`) a rubric sample whose judge response skips a rubric, names an
+  unknown one, or gives a verdict that contains neither yes nor no is unscored
+  (score None) instead of averaged away; through 2.13.0 the remaining rubrics
+  are averaged, which can turn a fail into a pass.
 * the **efficiency** figures ADK 2.10+ reports on every run (tool calls,
   inference calls, tokens, seconds per invocation) in their own table. They carry
   `eval_status` 4 (`INFORMATIONAL`): a value, never a verdict, so they are not
@@ -65,6 +69,9 @@ NOT_EVALUATED_CAUSES = (
     "metric without a project)",
     "no reference response, for a metric that compares against one",
     "an empty rubric list: criterion-level rubrics plus type-matching per-case rubrics",
+    "on ADK main after 2.13.0 (`d1f2add4f`): every judge sample left a rubric without a "
+    "yes/no verdict (skipped it, named an unknown rubric, or answered neither yes nor no); "
+    "through 2.13.0 the remaining rubrics are averaged instead",
 )
 
 

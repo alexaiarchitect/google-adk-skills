@@ -11,10 +11,7 @@ adk eval AGENT_MODULE_FILE_PATH [EVAL_SET_FILE_PATH_OR_ID ...]
          [--log_level debug|info|warning|error|critical]
 ```
 
-That is the whole list, and the **options are identical on 2.9.2 through
-2.13.0** (`--help` for `eval`, `run`, `web`, `conformance`, `eval_set`). 2.12.0
-changed docstrings only (`d56a994`): `AGENT_MODULE_FILE_PATH` is the agent
-*folder*, and `adk conformance record` names `spec.yaml`.
+That is the whole list, and the **options are identical on 2.9.2 through 2.13.0** (`--help` for `eval`, `run`, `web`, `conformance`, `eval_set`). 2.12.0 changed docstrings only (`d56a994`): `AGENT_MODULE_FILE_PATH` is the agent *folder*, and `adk conformance record` names `spec.yaml`.
 
 | Argument | Notes |
 |---|---|
@@ -27,30 +24,13 @@ changed docstrings only (`d56a994`): `AGENT_MODULE_FILE_PATH` is the agent
 
 ### What it does not have
 
-- **No gate before 2.13.0, and only a coarse one after.** Through 2.12.0 it
-  prints the summary and returns 0 whether cases passed or failed (measured on
-  2.12.0). From 2.13.0 it exits 1 when a case fails or no case ran, and
-  `NOT_EVALUATED` counts as failed (measured on 2.13.0). Either way it cannot
-  gate on a pass rate, on regressions against a baseline, or on a budget; see
-  "In 2.13.0" below. The printed summary puts everything not `PASSED`, including
-  `NOT_EVALUATED`, in the failed column; only the result files tell them apart.
-- **No `--num_runs` on any release.** Repetition is either
-  `AgentEvaluator(num_runs=...)`, which averages, or running the command again,
-  which is what `run_evals.py --runs N` does. Main after 2.13.0 adds the flag
-  (see the last section).
-- **No parallelism flag.** `InferenceConfig.parallelism` and
-  `EvaluateConfig.parallelism` exist, but only on the programmatic path. On 2.10+ a
-  value below 1 raises ``ValueError: `parallelism` must be at least 1, got N.``
-  where 2.9.2 built a semaphore of 0 and hung forever.
+- **No gate before 2.13.0, and only a coarse one after.** Through 2.12.0 it prints the summary and returns 0 whether cases passed or failed (measured on 2.12.0). From 2.13.0 it exits 1 when a case fails or no case ran, and `NOT_EVALUATED` counts as failed (measured on 2.13.0). Either way it cannot gate on a pass rate, on regressions against a baseline, or on a budget; see "In 2.13.0" below. The printed summary puts everything not `PASSED`, including `NOT_EVALUATED`, in the failed column; only the result files tell them apart.
+- **No `--num_runs` on any release.** Repetition is either `AgentEvaluator(num_runs=...)`, which averages, or running the command again, which is what `run_evals.py --runs N` does. Main after 2.13.0 adds the flag (see the last section).
+- **No way to change case parallelism from the CLI on any release.** Cases run 4 at a time (`InferenceConfig.parallelism` / `EvaluateConfig.parallelism`, default 4 on 2.9.2 through 2.13.0), and only the programmatic path changes it: `adk eval --parallelism` stops with `Error: No such option '--parallelism'.`, and a top-level `"parallelism"` key in the config is dropped silently, whatever its value (measured on 2.9.2 and 2.13.0; `CFG077` warns). On 2.10+ a value below 1 raises ``ValueError: `parallelism` must be at least 1, got N.`` where 2.9.2 built a semaphore of 0 and hung forever. Main after 2.13.0 adds the key, a flag and an argument (see the last section).
 
 ## Config discovery
 
-`test_config.json` is auto-discovered **only** when exactly one evalset *file* is
-passed and the config sits in the same directory. Several evalsets, or a config
-under `tests/eval/`, means passing `--config_file_path` explicitly. Without it,
-ADK silently uses its defaults — `tool_trajectory_avg_score` 1.0 and
-`response_match_score` 0.8 — and the wording metric starts failing cases nobody
-meant to score on wording.
+`test_config.json` is auto-discovered **only** when exactly one evalset *file* is passed and the config sits in the same directory. Several evalsets, or a config under `tests/eval/`, means passing `--config_file_path` explicitly. Without it, ADK silently uses its defaults — `tool_trajectory_avg_score` 1.0 and `response_match_score` 0.8 — and the wording metric starts failing cases nobody meant to score on wording.
 
 ## Managing eval sets from the CLI
 
@@ -62,16 +42,9 @@ adk eval_set generate_eval_cases <agent-dir> <eval_set_id> \
     --user_simulation_config_file config.json
 ```
 
-`generate_eval_cases` uses the Vertex AI evaluation SDK, so it needs a project
-and location. See `/adk:eval-simulation`.
+`generate_eval_cases` uses the Vertex AI evaluation SDK, so it needs a project and location. See `/adk:eval-simulation`.
 
-Which sub-command owns which flag is easy to get wrong, so: `--scenarios_file`
-and `--session_input_file` are **both required** by `add_eval_case` and exist
-nowhere else; `--user_simulation_config_file` is required by
-`generate_eval_cases`; `create` takes no options of its own. And
-`--sampler_config_file_path` / `--optimizer_config_file_path` belong to
-**`adk optimize`**, a top-level command for prompt optimization — not to
-`adk eval` and not to any `eval_set` sub-command.
+Which sub-command owns which flag is easy to get wrong, so: `--scenarios_file` and `--session_input_file` are **both required** by `add_eval_case` and exist nowhere else; `--user_simulation_config_file` is required by `generate_eval_cases`; `create` takes no options of its own. And `--sampler_config_file_path` / `--optimizer_config_file_path` belong to **`adk optimize`**, a top-level command for prompt optimization — not to `adk eval` and not to any `eval_set` sub-command.
 
 ## Running and inspecting
 
@@ -82,58 +55,24 @@ adk web <agents-dir>                        # dev UI: trace tab and eval tab
 adk api_server <agents-dir>                 # same API, no UI, no /dev routes
 ```
 
-**`initial_state.json` (2.13+, `adk web` only).** There is no flag: `adk web`
-reads `<agents_dir>/<app>/initial_state.json` whenever a session is created
-explicitly (the UI's new-session button, `POST .../sessions`) and merges it under
-the caller's state, so a key the caller sends wins. Sessions the runner creates
-on its own (`--auto_create_session`) are not seeded, and `adk api_server` never
-reads the file. A missing or malformed file logs a warning and seeds nothing.
-`adk run --state_file` (below) is the equivalent for the terminal.
+**`initial_state.json` (2.13+, `adk web` only).** There is no flag: `adk web` reads `<agents_dir>/<app>/initial_state.json` whenever a session is created explicitly (the UI's new-session button, `POST .../sessions`) and merges it under the caller's state, so a key the caller sends wins. Sessions the runner creates on its own (`--auto_create_session`) are not seeded, and `adk api_server` never reads the file. A missing or malformed file logs a warning and seeds nothing. `adk run --state_file` (below) is the equivalent for the terminal.
 
-`adk run` prints events to stdout and writes its log to
-`$TMPDIR/agents_log/agent.latest.log`; `adk web` does the opposite. The directory
-comes from `tempfile.gettempdir()`, so it is platform dependent — `/tmp` on
-Linux, a private per-user directory on macOS. Do not guess it: ADK echoes both
-the real filename and `To access latest log: tail -F <path>` at startup.
+`adk run` prints events to stdout and writes its log to `$TMPDIR/agents_log/agent.latest.log`; `adk web` does the opposite. The directory comes from `tempfile.gettempdir()`, so it is platform dependent — `/tmp` on Linux, a private per-user directory on macOS. Do not guess it: ADK echoes both the real filename and `To access latest log: tail -F <path>` at startup.
 
-**`--state_file` (2.12+).** `adk run <agent-dir> --state_file state.json` seeds
-the session state from a JSON file (commit `c390266`, released in 2.12.0); it sits
-beside the older `--state '<json string>'`. On 2.9–2.11 the flag does not exist,
-so seed state with `--state`, an evalset's `session_input`, or the dev UI. This plugin's
-`run_jsonl.py` (`/adk:agent-debug`) passes `--state-file F` through as
-`--state_file` on a 2.12+ runner, and stops with exit 2 on an older runner or
-one whose version it cannot read. The 2.11.0 `adk run` help change was service-URI wording only
-(Agent Platform auto-detection, a `sqlite:///` memory-service URI).
+**`--state_file` (2.12+).** `adk run <agent-dir> --state_file state.json` seeds the session state from a JSON file (commit `c390266`, released in 2.12.0); it sits beside the older `--state '<json string>'`. On 2.9–2.11 the flag does not exist, so seed state with `--state`, an evalset's `session_input`, or the dev UI. This plugin's `run_jsonl.py` (`/adk:agent-debug`) passes `--state-file F` through as `--state_file` on a 2.12+ runner, and stops with exit 2 on an older runner or one whose version it cannot read. The 2.11.0 `adk run` help change was service-URI wording only (Agent Platform auto-detection, a `sqlite:///` memory-service URI).
 
-On 2.12.0 `--print_detailed_results` prints readable text (`69c58ea`), judge
-requests run without automatic function calling (`cc339e0`), and eval session
-ids suit Agent Engine (`4368d68`).
+On 2.12.0 `--print_detailed_results` prints readable text (`69c58ea`), judge requests run without automatic function calling (`cc339e0`), and eval session ids suit Agent Engine (`4368d68`).
 
 ### In 2.13.0
 
-- **Exit code** (`c2ff634`): `adk eval` exits
-  `1 if total_failed or not eval_run_summary else 0` — 1 on a failed case, 1 when
-  no case ran, and `NOT_EVALUATED` counts as failed. Measured: a failing case
-  exits 0 on 2.12.0 and 1 on 2.13.0; a passing case exits 0 on both.
-- **Duration split** (`e3797a4`): `invocation_duration_v1` results carry
-  `details.duration_details.{total,model,tool,framework}_seconds`, and
-  `--print_detailed_results` prints the breakdown.
+- **Exit code** (`c2ff634`): `adk eval` exits `1 if total_failed or not eval_run_summary else 0` — 1 on a failed case, 1 when no case ran, and `NOT_EVALUATED` counts as failed. Measured: a failing case exits 0 on 2.12.0 and 1 on 2.13.0; a passing case exits 0 on both.
+- **Duration split** (`e3797a4`): `invocation_duration_v1` results carry `details.duration_details.{total,model,tool,framework}_seconds`, and `--print_detailed_results` prints the breakdown.
 - **Vertex rubric verdicts** (`bc220d2`): extra `RubricScore` rows with the ids
   `"explanation"` and `"error"` inside the existing `rubric_scores`.
-- **`AgentEvaluator.evaluate`** takes each metric's pass direction from the
-  evaluator's own per-invocation `eval_status` (`5bf7f12`), so lower-is-better
-  custom metrics gate correctly; judge and user-simulator models may be `BaseLlm` instances, not
-  only model-id strings (`c12392e`, `cb48b91`).
-- **Drive-qualified ids** (`29bb053`): an `eval_set_id` (or app name) starting
-  with a letter and a colon (`c:pass`) is rejected when results are saved — after
-  inference has already been paid for. `validate_evalset.py` flags it (`EVS076`).
+- **`AgentEvaluator.evaluate`** takes each metric's pass direction from the evaluator's own per-invocation `eval_status` (`5bf7f12`), so lower-is-better custom metrics gate correctly; judge and user-simulator models may be `BaseLlm` instances, not only model-id strings (`c12392e`, `cb48b91`).
+- **Drive-qualified ids** (`29bb053`): an `eval_set_id` (or app name) starting with a letter and a colon (`c:pass`) is rejected when results are saved — after inference has already been paid for. `validate_evalset.py` flags it (`EVS076`).
 
-See `/adk:eval-analyze` `result-schema.md` for the result-file shapes. **`run_evals.py`
-stays the recommended command on every version**: it reads the result files,
-separates failed from never-scored, and gates on `--min-pass-rate`; with
-`compare_runs.py --max-regressions` and the budget flags it gates on things a
-single process exit cannot express. Bare `adk eval` on a 2.13+ pin is a
-`CI001` warning in `lint_workflows.py`, an error on an older or unknown pin.
+See `/adk:eval-analyze` `result-schema.md` for the result-file shapes. **`run_evals.py` stays the recommended command on every version**: it reads the result files, separates failed from never-scored, and gates on `--min-pass-rate`; with `compare_runs.py --max-regressions` and the budget flags it gates on things a single process exit cannot express. Bare `adk eval` on a 2.13+ pin is a `CI001` warning in `lint_workflows.py`, an error on an older or unknown pin.
 
 ### Coming after 2.13.0 (unreleased main)
 
@@ -169,6 +108,13 @@ Not in any release yet (checked against `adk-python` `dfd534a88`):
   deploy` targets (default 3.11; `agent_engine` falls back to
   `.agent_engine_config.json`), and `--extra_packages` pip-installs wheels,
   sdists and `pyproject.toml` projects instead of only copying them to `/app`.
+
+Since then (checked against `ee8720162`, 2026-11-02; every item below is absent from 2.13.0, measured on 2.9.2 and 2.13.0):
+
+- **Eval case parallelism** (`e9e8f6156`): a top-level `"parallelism": N` in the config, `adk eval --parallelism N` and `AgentEvaluator.evaluate(..., parallelism=N)` (also `evaluate_eval_set`) cap how many cases run at once. The flag or argument wins over the key, the key over the service default of 4. Values below 1 are refused: in the config with `Input should be greater than or equal to 1`, on the command line with `Invalid value for '--parallelism': 0 is not in the range x>=1.` (exit 2), as an argument with the `ValueError` above. It is unrelated to the judge option `parallelism_limit` (concurrent judge calls inside one metric).
+- **`adk run --reload_agents`** (`4f8e4aeef`): watches the agent folder for `.py`, `.yaml` and `.yml` changes and reloads the agent, in interactive mode only (it needs `watchdog`). 2.13.0 answers `No such option '--reload_agents'`.
+- **`adk generate_agent_card [--protocol http] [--host 127.0.0.1] [--port 8000] [--create-file]`** (`875e2aef7`): needs `google-adk[a2a]` (without it, it stops with an install hint) and treats the **current directory as the agents directory**, so run it from the parent of your app folders. For every app it can load it prints one card in a JSON array, with the RPC URL `{protocol}://{host}:{port}/a2a/{app}`; `--create-file` also writes `<app>/agent.json`. An app that fails to load prints an error to stderr and the rest continue. 2.13.0 answers `No such command 'generate_agent_card'`.
+- **`adk create` checks the name** (`3655990f6`): a name that is not a Python identifier or is a keyword is refused before anything is written. On 2.13.0 `adk create my-agent` succeeds and `adk run my-agent` then fails with `ValueError: Invalid agent name: 'my-agent'` (the loader accepts only letters, digits and underscores; keywords and digit-leading names still load). `discover.py` reports such a directory as `ENV015`.
 
 Released versions drop `multi_run_config` silently (the config model ignores
 unknown keys; measured on 2.9.2, 2.12.0 and 2.13.0), so `pass_at_k.py` and
@@ -240,7 +186,9 @@ Every flag list above was diffed between the installed 2.9.2, 2.10.0, 2.11.0 and
 failing case and as 1 on 2.13.0 (`c2ff634`, in `v2.13.0`); `initial_state.json` is
 `3c8c63e`, in `v2.13.0` (`cli/dev_server.py`); the multi-run, matcher, compaction
 and cache-token items were classified post-tag against `v2.13.0` at `12c7bed76`,
-the storage and deploy items at `dfd534a88` (`file://` measured on 2.13.0);
+the storage and deploy items at `dfd534a88` (`file://` measured on 2.13.0), the
+parallelism, reload, agent-card and `adk create` items at `ee8720162`
+(`cli/_cli_generate_agent_card.py`, `cli/cli_create.py`, `cli/utils/agent_loader.py`);
 `adk-docs: docs/deploy/cloud-run.md` (`cc53b6c14`). Neighbours: "Powering the
 Agent Development Lifecycle with any framework, from ADK to LangChain and beyond"
 (https://developers.googleblog.com/powering-the-agent-development-lifecycle-with-any-framework-from-adk-to-langchain-and-beyond/),

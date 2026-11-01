@@ -103,6 +103,59 @@ Two more rules:
   value of calibration is the trend: a single round says the judge is fine
   today, a sequence of rounds says whether it is drifting.
 
+## Audit the judge before you trust a climb
+
+Calibration asks whether the judge agrees with people. Google's "Who judges the
+judge?" gives the reason to ask more: judges are "not objective arbiters of
+truth" but models with habits of their own. Five are worth naming, because each
+has a counter in how a suite is built:
+
+| Habit | What it looks like | Counter |
+|---|---|---|
+| length | a longer, confident answer outscores a short correct one | rubrics that name an observable, not a quality; a short correct reply in the calibration sample |
+| position | a verdict on two options changes when they are swapped | ADK's judges grade one response against rubrics or a reference, not a pair; keep a custom judge that way, or score both orders |
+| halo | clean formatting earns credit for content it lacks | one property per rubric (`RUB006`), so formatting cannot carry a factual rubric |
+| leniency | a judge that says yes readily looks fine on a mostly good dataset and misses the bad outputs | failing and unsafe cases in the sample, and chance-corrected agreement (below) |
+| self-preference | a judge rates its own model family's output higher | a judge from another family than the agent's model, or a second judge (below) |
+
+Then three checks, cheapest first.
+
+**1. Stability.** Score identical output several times: wide swings mean the
+rubric is ambiguous, not that the agent is flaky. ADK votes over `num_samples`
+judge calls per invocation but writes only the voted verdict (2.9.2 and 2.13.0),
+so the spread has to be re-measured: run the suite twice with the same config, or
+again with `num_samples` raised, and compare with `compare_runs.py`. A rubric
+whose verdict flips on a case whose response and tool calls did not change (both
+are in the result files' `actual_invocation`) is ambiguous: rewrite it
+(`/adk:eval-criteria` `rubric-authoring.md`) rather than raising `num_samples` to
+outvote it. Through 2.13.0 also check that every rubric id is in `rubric_scores`:
+a rubric the judge skipped is left out of the average instead of failing
+(`result-schema.md`).
+
+**2. Human alignment, chance-corrected.** Raw agreement (the table above)
+flatters a lenient judge: on a sample where nine cases in ten should pass, a judge
+that passes everything agrees 90% of the time and has caught nothing. Report
+Cohen's kappa beside it, from the same sample: with `p_o` the observed agreement,
+`p_h` and `p_j` the human's and the judge's pass rates, and
+`p_e = p_h·p_j + (1 − p_h)(1 − p_j)` the agreement chance alone would give,
+`κ = (p_o − p_e) / (1 − p_e)`. The judge above scores κ = 0. As this plugin's rule
+of thumb, treat κ below about 0.6 as not calibrated whatever the raw figure says.
+`calibration_sample.py` draws passing and marginal cases; add failing and refusal
+cases by hand so `p_e` is not close to 1.
+
+**3. More than one judge.** Two halves. *Decomposed judging*, one judge per
+criterion instead of one verdict on everything, is what ADK's rubric metrics do
+when each rubric holds one property; `RUB006` (a compound rubric) and `CFG075`
+(an action rubric under the final-response judge with no trajectory metric) are
+the mechanical checks. *Two judges*: run the suite with two configs that differ
+only in `judge_model`, ideally from different model families, and compare them:
+`compare_runs.py <judge-A-run> <judge-B-run> --max-mean-drop 0.1` fails when a
+judged metric's mean is more than 0.1 lower under judge B; swap the arguments to
+catch a rise. Each run re-runs the agent, so first measure the spread between two
+runs with the *same* judge; only divergence beyond it is the judges disagreeing.
+On a nightly schedule that pair is the alarm that one judge has drifted, and the
+trigger for a calibration round.
+
 ## After calibration
 
 Re-run the suite with the corrected rubric and compare pass rates. A rubric that
@@ -116,4 +169,11 @@ rubric_based_final_response_quality_v1.py` and `llm_as_judge.py` (how a judge
 score is produced and aggregated); `adk-python/src/google/adk/evaluation/
 eval_result.py` (the per-metric scores a sample is drawn from). Background
 reading: the LinkedIn Learning course "Evaluating AI Agents with Google ADK",
-which covers judging agent output with model-based metrics.
+which covers judging agent output with model-based metrics. The judge audit (the
+five biases, stability, chance-corrected agreement, decomposed and multiple
+judges) is paraphrased from Héctor González Álvarez, "Who judges the judge? Three
+helpful ways to audit your LLM evaluators", Google Cloud Blog, 2026-10-20,
+https://cloud.google.com/blog/topics/consulting/three-ways-to-audit-your-llm-evaluators
+(one phrase quoted; the mapping onto ADK, kappa and the 0.6 rule are this
+plugin's). Voted-only verdicts and skipped rubrics: `evaluation/local_eval_service.py`
+and `rubric_based_evaluator.py`, measured on 2.9.2 and 2.13.0.

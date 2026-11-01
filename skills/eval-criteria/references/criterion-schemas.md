@@ -80,8 +80,8 @@ against each criterion class's real field set.
 | Field | Default | Notes |
 |---|---|---|
 | `judge_model` | `gemini-2.5-flash` | always set this. This plugin's policy treats that id as retiring and the reviewer warns on it; the source is `adk-recipes: AGENTS.md`, not ADK, which still ships it as the default |
-| `num_samples` | 5 | judge calls per invocation, majority vote. 3 is a good balance; 1 lets one unlucky sample decide |
-| `parallelism_limit` | 1 | concurrent judge calls |
+| `num_samples` | 5 | judge calls per invocation, majority vote. 3 is a good balance; 1 lets one unlucky sample decide. Raising it is also a stability probe: a verdict that moves means an ambiguous rubric |
+| `parallelism_limit` | 1 | concurrent judge calls inside one metric. Not the top-level `parallelism` key (eval cases at once, main only, below) |
 
 Vertex-served metrics (`safety_v1`, `response_evaluation_score`, `multi_turn_*`)
 ignore these: the evaluation service picks its own model.
@@ -179,6 +179,22 @@ lists built-in tools instead of crashing on them (2.13.0: `TypeError`, see
 `CFG076`). The judge, rubric and simulator classes also stop printing
 `[EXPERIMENTAL]` (`1112606c2`). `metric-catalog.md` has the detail.
 
+Checked again at `ee8720162` (2026-11-02), main adds a sixth top-level key
+(`e9e8f6156`):
+
+| Key | Type | Meaning |
+|---|---|---|
+| `parallelism` | integer ≥ 1, optional | how many eval cases run at once (inference and scoring); `adk eval --parallelism` or `AgentEvaluator.evaluate(parallelism=)` overrides it; unset → 4 |
+
+It sits beside `criteria`, not inside `judge_model_options`, and has nothing to do
+with `parallelism_limit`. **Released versions drop it silently, whatever the
+value** (measured on 2.9.2 and 2.13.0: `{"parallelism": 0}` and `"many"` load
+too), so cases still run 4 at a time; main refuses a value below 1 with
+`Input should be greater than or equal to 1`. `validate_config.py` reports it as
+`CFG077`. The rubric judge also changes on main (`d1f2add4f`): a sample whose
+response leaves a rubric without a yes/no verdict is unscored instead of averaged
+over the rubrics it did answer (`metric-catalog.md`).
+
 ---
 
 Sources: `adk-python: evaluation/eval_config.py` (the
@@ -192,7 +208,8 @@ Sources: `adk-python: evaluation/eval_config.py` (the
 `evaluation/eval_rubrics.py`, `evaluation/custom_metric_evaluator.py`,
 `evaluation/rubric_based_evaluator.py`; `MultiRunConfig` and
 `tools/tool_args_matcher/` on main `12c7bed76` (post-tag); the score changes
-`5e52b21a8`, `571670d9f`, `4c66a0091`, `047815043` at `dfd534a88`;
+`5e52b21a8`, `571670d9f`, `4c66a0091`, `047815043` at `dfd534a88`; `parallelism`
+(`e9e8f6156`) and the unscored sample (`d1f2add4f`) at `ee8720162`;
 `adk-docs: docs/evaluate/criteria.md`, `docs/evaluate/custom_metrics.md`.
 The `gemini-2.5-flash` judgement is this plugin's policy, from
 `adk-recipes: AGENTS.md`.

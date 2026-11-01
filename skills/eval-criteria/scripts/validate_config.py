@@ -9,6 +9,10 @@ judge for a 1-5 rating, and user simulation combined with a metric that needs a
 fixed reference. Cross-checks against the agent: a rubric about actions where
 no metric grades the trajectory (CFG075), and the multi-turn trajectory judge
 on an agent with a built-in tool, which crashes through ADK 2.13.0 (CFG076).
+A top-level `parallelism` key (CFG077) is read only by ADK main after 2.13.0:
+a warning through 2.13.0 (cases still run 4 at a time), an info on a newer
+runner, and an error on every version when main would reject the value (< 1 or
+not a whole number).
 
     validate_config.py <config.json> [--agent-dir DIR] [--format json|md]
 
@@ -76,10 +80,11 @@ def main(argv: list[str] | None = None) -> int:
     agent_models = (agent_model_ids(facts, backend.model_name if backend else None)
                     if facts is not None else None)
 
-    # Which ADK will run this config decides two findings only: CFG071 (the four
-    # efficiency metrics exist from 2.10 on) and CFG076 (the multi-turn
-    # trajectory judge crashes on built-in tools through 2.13.0; an unprobed
-    # runner is taken to be the 2.13 target). Every error is version-independent.
+    # Which ADK will run this config decides three findings only: CFG071 (the
+    # four efficiency metrics exist from 2.10 on), CFG076 (the multi-turn
+    # trajectory judge crashes on built-in tools through 2.13.0) and CFG077 (the
+    # `parallelism` key is read only on main after 2.13.0). An unprobed runner is
+    # taken to be the 2.13 target. Every error is version-independent.
     adk_version = args.adk_version
     if adk_version is None and not args.no_probe:
         runner = resolve_runner(agent_dir or layout.agent_dir, layout.project_root)

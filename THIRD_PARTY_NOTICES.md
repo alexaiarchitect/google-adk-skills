@@ -14,8 +14,10 @@ tree it came from.
     Licensed under the Apache License, Version 2.0
     https://github.com/google/adk-python
 
-Snapshot: `dfd534a88` (2026-10-29) on `main`, 87 commits after the previous
-snapshot `12c7bed76` (2026-10-24), none of them in a release; the reference
+Snapshot: `ee8720162` (2026-11-02) on `main`, 63 commits after the previous
+snapshot `dfd534a88` (2026-10-29; local checkout `3b74a99bd`), none of them in a
+release (2.13.0 is still the latest on PyPI); before that `dfd534a88` was 87
+commits after `12c7bed76` (2026-10-24), none in a release either; the reference
 pages describe them under "Coming after 2.13.0 (unreleased main)" and keep
 2.13.0 behaviour as the target. The `v2.13.0` release tag is
 `d68ca857` (2026-10-23), which sits on a release branch: it is the merge-base
@@ -36,8 +38,10 @@ references. No source files are redistributed.
     Licensed under the Apache License, Version 2.0
     https://github.com/google/adk-docs
 
-Snapshot: `49c928f1e` (2026-10-29; previously `cc53b6c14`, before that
-`923938a4`). Nothing under `docs/evaluate/` changed in the latest twelve
+Snapshot: `5f1b1b5b3` (2026-11-02; previously `49c928f1e`, before that
+`cc53b6c14`, before that `923938a4`). The four commits since `49c928f1e` touch
+only the Java and TypeScript API references and Kotlin snippet CI, nothing for
+Python. Nothing under `docs/evaluate/` changed in the latest twelve
 commits; new are the Gemini 3.8 Live models and the voice-architectures
 (speech-to-speech and cascade) pages under `docs/live/`, and the CLI reference
 regenerated for 2.13.0 (version strings only). Earlier:
@@ -53,8 +57,12 @@ Used as a source for the condensed reference pages, including
     Licensed under the Apache License, Version 2.0
     https://github.com/google/adk-recipes
 
-Snapshot: `665f7b2a1` (2026-10-29; previously `a6d62a409`, before that
-`05811bba`). Since `a6d62a409`: `core/python/ambient-quality-agent` v0.2.0, and
+Snapshot: `584a7e634` (2026-11-02; previously `665f7b2a1`, before that
+`a6d62a409`, before that `05811bba`). Since `665f7b2a1`: the new
+`core/python/adk-voice-agent` (a Gemini Live voice agent with two `agents-cli`
+eval suites; its eval layout is described in `layouts.md`, `live-agents.md` and
+`user-simulation.md`, and none of its graders, prompts or datasets is copied) and
+genmedia-for-commerce fixes. Since `a6d62a409`: `core/python/ambient-quality-agent` v0.2.0, and
 `long-horizon-harness` moved 69 of its 78 eval cases to `agents-cli eval`
 datasets (`af088392`), keeping two `adk eval` replay suites. The repository is
 organised in three layers: reference patterns under `core/`, installable
@@ -71,11 +79,11 @@ file is redistributed or derived from.
 
 ## Background reading
 
-Twenty-one Google-authored articles informed the context-caching,
+Twenty-five Google-authored articles (one co-written with CopilotKit) informed the context-caching,
 eval-engineering, shadow-rollout, merge-gates, behavioural-tests, skills,
 context-engineering, layouts, improvement-loop, user-simulation, case-taxonomy,
 state-and-memory, workflows, maturity, rubric-authoring, live-agents,
-workflow-graphs, app-and-plugins and CLI guidance. Nothing is reproduced from them: the references
+workflow-graphs, app-and-plugins, calibration and CLI guidance. Nothing is reproduced from them: the references
 paraphrase their ideas in this plugin's own words, cite them by title and URL in
 their `Sources:` footers, and quote no more than a short phrase.
 
@@ -168,6 +176,23 @@ their `Sources:` footers, and quote no more than a short phrase.
   Cloud", Google Developers Blog, 2026-10-22 —
   https://developers.googleblog.com/architecting-governed-self-evolving-ai-agents-on-gemini-agent-platform/
   (`app-and-plugins.md`, one paragraph on governance gates).
+- Héctor González Álvarez, "Who judges the judge? Three helpful ways to audit
+  your LLM evaluators", Google Cloud Blog, 2026-10-20 —
+  https://cloud.google.com/blog/topics/consulting/three-ways-to-audit-your-llm-evaluators
+  (`calibration.md`, `rubric-authoring.md`, `metric-catalog.md`,
+  `improvement-loop.md`; the five biases and three audit checks, paraphrased).
+- Google A2UI team with Atai Barkai (CopilotKit), "Build Generative UI Apps with
+  A2UI & CopilotKit Agents", Google Developers Blog, 2026-10-29 —
+  https://developers.googleblog.com/build-generative-ui-apps-with-a2ui-copilotkit-agents/
+  (`context-engineering.md`, one paragraph on a dedicated generation sub-agent).
+- Siddharth Deekshit and Surekha Balla, "Scale agents securely with IAM Helper
+  Agent Skills and MCP Tools", Google Cloud Blog, 2026-10-28 —
+  https://cloud.google.com/blog/products/identity-security/scale-agents-securely-with-iam-helper-agent-skills-and-mcp-tools
+  (`app-and-plugins.md`, one paragraph on tiered confirmation).
+- Christina Lin, "The DevFest Community Workshop Experience: Building Real
+  Agents Together", Google Cloud Blog, 2026-09-19 —
+  https://cloud.google.com/blog/topics/developers-practitioners/the-devfest-community-workshop-experience-building-real-agents-together
+  (`app-and-plugins.md`, `improvement-loop.md`; one sentence each).
 
 ## Not included
 
@@ -178,5 +203,5 @@ Exercise File License, which does not permit redistribution. No code, data,
 evalset, checklist or prose from that repository is included in this plugin;
 every reference page, template and fixture here is original work. The course is
 credited as background reading only. (Snapshot consulted for the background
-reading credit only: `17924c4`, unchanged at the 2026-10-17, 2026-10-24 and
-2026-10-29 syncs.)
+reading credit only: `17924c4`, unchanged at the 2026-10-17, 2026-10-24,
+2026-10-29 and 2026-11-02 syncs.)

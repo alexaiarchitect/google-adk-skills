@@ -150,6 +150,33 @@ written for.
   uses its inner model directly — but its streaming tools are then off the live
   path, with the consequences in the table.
 
+## A worked example: `adk-voice-agent`
+
+The `adk-recipes` voice agent (`core/python/adk-voice-agent`, pinned to
+`google-adk>=2.13.0,<2.14.0`) is a Gemini Live agent that hands coding work to
+background threads, and it applies this page end to end. Its slow tools return a
+pending status at once, finish in the background and deliver the result with
+`WHEN_IDLE` at the user's next pause; a lookup still running after 8 s yields one
+short status line, and each milestone is announced exactly once. Voice mode is a
+per-user setting: native audio on one Live model (with session resumption and
+context-window compression) or `CascadeLive` (speech-to-text, a text model,
+text-to-speech), pinned per session by a plugin that sets the `RunConfig`. In
+cascaded mode the non-blocking tools are swapped for plain twins that return at
+once and feed updates back as text turns, which costs some first-audio latency and
+resends the history each turn. Its two eval suites are in `/adk:eval-simulation`
+`user-simulation.md`.
+
+### Coming after 2.13.0 (unreleased main)
+
+Checked at `ee8720162`. `CascadeLive` starts reasoning when the history it is
+handed ends with a user turn (`e4a824f24`), which is the case when it runs as a
+workflow node or right after a transfer; through 2.13.0 it waits for new input
+there, so send it a user turn to make it answer. It also drops saved audio and
+`artifact://` live blobs from the history it replays to its reasoning model,
+keeping the transcriptions (`50ab3b5e9`); through 2.13.0 a resumed cascade session
+that had saved live blobs (`save_live_blob`) failed every turn with
+`CASCADE_TURN_FAILED`, so leave blob saving off for cascade agents you resume.
+
 ---
 
 Sources: `adk-python: flows/llm_flows/tools/_agent_tools.py`
@@ -166,4 +193,7 @@ the docstring and latch, `stop_streaming`, barge-in, scheduling modes and the
 Voice Agent That Never Goes Silent using ADK", Google Developers Blog,
 2026-10-19,
 https://developers.googleblog.com/step-by-step-guide-build-a-voice-agent-that-never-goes-silent-using-adk/
-(the one quoted line is theirs).
+(the one quoted line is theirs). Main at `ee8720162`: `live/` (`e4a824f24`,
+`50ab3b5e9`, post-tag). Worked example: `adk-recipes`
+`core/python/adk-voice-agent/{README.md,AGENTS.md,docs/architecture.md}` at
+`584a7e634` (Apache-2.0; described, not copied).

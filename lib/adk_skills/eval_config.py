@@ -72,6 +72,16 @@ MULTI_RUN_METHODS = {"mean_over_invocations": True, "mean_of_runs": True,
                      "min_over_runs": True, "pass_rate": False}
 _SRC_MULTI_RUN = "adk-python main after 2.13.0: evaluation/eval_config.py (MultiRunConfig)"
 
+#: Read only by ADK main after 2.13.0 (e9e8f6156, unreleased): caps how many
+#: eval cases `LocalEvalService` runs at once. `adk eval --parallelism N` or
+#: `AgentEvaluator.evaluate(parallelism=N)` beats the key, the key beats the
+#: service default of 4. Released `EvalConfig` (2.9.2, 2.13.0) drops it silently.
+PARALLELISM_KEY = "parallelism"
+#: Top-level keys that only main reads; CFG004 leaves them to CFG072 / CFG077.
+MAIN_ONLY_KEYS = frozenset({MULTI_RUN_KEY, PARALLELISM_KEY})
+_SRC_PARALLELISM = ("adk-python main after 2.13.0 (e9e8f6156): evaluation/eval_config.py "
+                    "(`parallelism: int | None = Field(default=None, ge=1)`)")
+
 #: `LlmBackedUserSimulatorConfig` / `LlmAudioUserSimulatorConfig` fields
 #: (2.12.0 = 2.13.0). Both set `extra="allow"`, so a misspelt key is kept and
 #: never read.
@@ -222,8 +232,9 @@ def validate_config(
     backend that has to serve it.
 
     `adk_version` is the version of the runner that will execute this config,
-    when one was probed. It only changes the informational note about the
-    always-on efficiency metrics: every error here holds on both 2.9 and 2.10.
+    when one was probed. It changes severities only: the note about the
+    always-on efficiency metrics, CFG076 and CFG077 (warn through 2.13.0 or
+    unprobed, info on a newer runner). Every error here holds on every version.
     `agent_models` are the agent's model ids when known, for SIM033.
     `builtin_tools` are the agent's built-in tools (`google_search`,
     `VertexAiSearchTool`, code execution ...) when known, for CFG076.
@@ -260,7 +271,7 @@ def validate_config(
                    path=path, fix="normalize to snake_case, as in the ADK docs",
                    source="adk-python: evaluation/common.py")
 
-    unknown_top = sorted(set(doc) - CONFIG_KEYS - {MULTI_RUN_KEY})
+    unknown_top = sorted(set(doc) - CONFIG_KEYS - MAIN_ONLY_KEYS)
     if unknown_top:
         report.add("CFG004", "warn", "config",
                    f"unrecognized top-level key(s): {', '.join(unknown_top)}",
@@ -278,6 +289,9 @@ def validate_config(
             source=_SRC_MULTI_RUN,
         )
         _validate_multi_run(doc[MULTI_RUN_KEY], doc.get("criteria"), report, path)
+
+    if PARALLELISM_KEY in doc:
+        _check_parallelism(doc[PARALLELISM_KEY], report, path, adk_version=adk_version)
 
     if "live_model_config" in doc or "user_simulator_config" in doc:
         validate_live_and_audio(doc, report, path, agent_models=agent_models)
@@ -504,6 +518,80 @@ def _check_trajectory_judge_builtins(
             "tool_trajectory_avg_score until a release lists built-in tools, or evaluate a "
             "variant of the agent without the built-in tool",
         source=_SRC_TRAJECTORY_BUILTIN,
+    )
+
+
+def _parallelism_value(value: Any) -> tuple[int | None, str | None]:
+    """What main's `Field(ge=1)` makes of `value` in a JSON config (lax mode):
+    the integer it reads, or the pydantic message it fails with."""
+    if isinstance(value, bool):
+        number = int(value)
+    elif isinstance(value, int):
+        number = value
+    elif isinstance(value, float):
+        if not value.is_integer():
+            return None, "Input should be a valid integer, got a number with a fractional part"
+        number = int(value)
+    elif isinstance(value, str):
+        if not re.match(r"^\s*[+-]?\d+\s*$", value):
+            return None, "Input should be a valid integer, unable to parse string as an integer"
+        number = int(value.strip())
+    else:
+        return None, "Input should be a valid integer"
+    if number < 1:
+        return number, "Input should be greater than or equal to 1"
+    return number, None
+
+
+def _check_parallelism(value: Any, report: GapReport, path: str, *,
+                       adk_version: str | None) -> None:
+    """CFG077: the top-level `parallelism` key, read only by main after 2.13.0.
+
+    A value main would reject is an error on every version: released versions
+    ignore it, so the mistake surfaces only on the upgrade. A valid value is a
+    warning on a runner through 2.13.0 (or unprobed: the 2.13 target), because
+    the cases still run 4 at a time, and an info on a newer runner.
+    """
+    if value is None:
+        return
+    _, problem = _parallelism_value(value)
+    if problem:
+        report.add(
+            "CFG077", "error", "config",
+            f"`parallelism` is {json.dumps(value)}: ADK main after 2.13.0 (`e9e8f6156`) "
+            f"rejects the whole config with a ValidationError ({problem}); released "
+            "versions drop the key silently, so the mistake only shows after an upgrade",
+            path=path, locator=PARALLELISM_KEY,
+            fix="set a whole number of at least 1 (cases run at once; the default is 4), "
+                "or remove the key",
+            source=_SRC_PARALLELISM,
+        )
+        return
+    newer = (adk_version is not None and _parsable(adk_version)
+             and version_at_least(adk_version, "2.13.1"))
+    unknown = adk_version is not None and not _parsable(adk_version)
+    if newer or unknown:
+        report.add(
+            "CFG077", "info", "config",
+            f"`parallelism` caps how many eval cases run at once only on ADK main after "
+            f"2.13.0 (`e9e8f6156`; `adk eval --parallelism N` or the `parallelism=` argument "
+            f"beats the key, the key beats the default of 4); runner {adk_version} is newer "
+            "than any release this plugin has measured, so check that it reads the key",
+            path=path, locator=PARALLELISM_KEY,
+            fix="nothing to change if the runner reads it; on 2.13.0 and earlier the key "
+                "is ignored",
+            source=_SRC_PARALLELISM,
+        )
+        return
+    report.add(
+        "CFG077", "warn", "config",
+        "`parallelism` is read only by ADK main after 2.13.0 (`e9e8f6156`); every released "
+        "version drops it silently, so cases still run 4 at a time",
+        path=path, locator=PARALLELISM_KEY,
+        fix="through 2.13.0 cap concurrency programmatically (`InferenceConfig.parallelism` "
+            "/ `EvaluateConfig.parallelism` on `LocalEvalService`) or split the evalset; keep "
+            "the key if you want it ready for the release that reads it",
+        source=_SRC_PARALLELISM,
     )
 
 

@@ -28,7 +28,8 @@ from .metrics import DEFAULT_CRITERIA, cost_tier
 from .report import GapReport, Option
 from .results import find_result_files, latest_per_evalset, parse_result
 from .tools_ast import (
-    LLM_AGENT_CALLS, PLUGIN_EXPORTS, ModuleFacts, builtin_model_tools, cache_suite_findings,
+    LLM_AGENT_CALLS, PLUGIN_EXPORTS, ModuleFacts, agent_tool_memory_findings,
+    builtin_model_tools, cache_suite_findings,
     compaction_suite_findings, extract_module, skill_lifecycle_findings, tool_resolver,
 )
 
@@ -244,6 +245,10 @@ class Discovery:
                 data["layout"]["agents_cli_datasets"] = [
                     _rel(p, root) for p in self.layout.agents_cli_datasets
                 ]
+                if self.layout.agents_cli_configs:
+                    data["layout"]["agents_cli_configs"] = [
+                        _rel(p, root) for p in self.layout.agents_cli_configs
+                    ]
             layout_notes = [n for n in self.layout.notes if "deprecated" not in n]
             if layout_notes:
                 data["layout"]["notes"] = layout_notes
@@ -454,6 +459,9 @@ class Discovery:
                         f'"{directory}"; renaming one of the two silences it',
                     source="adk-python: runners.py (_enforce_app_name_alignment)",
                 )
+            name_finding = self.layout.app_dir_name_finding() if self.layout.is_agent else None
+            if name_finding:
+                report.add(**name_finding)
 
         if "env" not in self.focus or not self.runner or not self.backend:
             return
@@ -502,6 +510,7 @@ class Discovery:
                 self.facts, env_enabled=dotenv_flag(self.layout.agent_dir,
                                                     "ADK_ENABLE_SKILL_LIFECYCLE"),
                 adk_version=self.adk_version))
+            report.extend(agent_tool_memory_findings(self.facts, adk_version=self.adk_version))
 
     def _add_plugin_version_findings(self, report: GapReport) -> None:
         """AGT066: a plugin the project imports is newer than the runner."""

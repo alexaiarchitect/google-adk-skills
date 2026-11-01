@@ -59,7 +59,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 
 | # | Dimension | What goes wrong |
 |---|---|---|
-| 1 | loader and naming | nothing loadable exported; a name that is not an identifier, or is `user`; two agents in the tree with one name (`AGT015`) |
+| 1 | loader and naming | nothing loadable exported; a name that is not an identifier, or is `user`; two agents in the tree with one name (`AGT015`); an app directory `adk` cannot load (`ENV015`) |
 | 2 | model policy | retiring `gemini-2.0-flash` / `gemini-2.5-flash` (a plugin policy, so a warning), preview ids, hardcoded dated ids |
 | 3 | agent configuration | sampling kwargs passed directly; `generate_content_config` carrying tools, system_instruction or response_schema |
 | 4 | tool contracts | no docstring, no `Args:`, untyped parameters, raising instead of returning, no `status` |
@@ -71,7 +71,7 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
 | 10 | blocking calls | `time.sleep`, `requests`, `subprocess` in a synchronous tool |
 | 11 | context caching | a cached prefix that changes per request, a long instruction nothing caches, an out-of-range `ContextCacheConfig`, caching no eval case can exercise (`AGT060`–`AGT063`), and plugin imports that need 2.11 or a public path (`AGT065`, `AGT066`), and a prefix too small for the cache floor (`AGT067`) |
 | 12 | skills | a `SKILL.md` ADK will reject, instructions too long to disclose progressively, an agent instruction that repeats a skill's body, a description too vague to trigger it, lifecycle settings out of range (`AGT070`–`AGT075`) |
-| 13 | context engineering | an `EventsCompactionConfig` ADK rejects, long conversations with no compaction, a sub-agent scoped wider than its job, a tool returning a large inline blob instead of an artifact (`AGT076`–`AGT079`) |
+| 13 | context engineering | an `EventsCompactionConfig` ADK rejects, long conversations with no compaction, a sub-agent scoped wider than its job, a tool returning a large inline blob instead of an artifact (`AGT076`–`AGT079`), memory tools inside an `AgentTool` (`AGT082`) |
 | 14 | streaming tools | an async-generator tool on a text model, or on a live model whose evals lack `live_model_config` (`AGT081`) |
 
 ## Decision rules
@@ -93,6 +93,12 @@ are at `${CLAUDE_SKILL_DIR}/../<skill>/scripts/`.
   `run_async` run, on 2.9 its body never runs. As an info it means the agent is
   live but no eval config sets `live_model_config`, so evals never exercise the
   streaming. Point at `../agent-create/references/live-agents.md`.
+- **Released behaviour decides the severity.** `AGT082` (memory tools inside an
+  `AgentTool`) warns because through 2.13.0 they search a fresh, empty store;
+  main after 2.13.0 shares the parent's memory, so with `--adk-version` above
+  2.13.0 it drops to info. `ENV015` is an error when the loader refuses the app
+  directory name (a hyphen, dot, space or non-ASCII letter) and an info for a
+  keyword or leading digit, which loads today.
 - **The load check is optional and it costs an import.** Offer it when the static
   review is clean but the agent is reported not to work, or when the user is
   mid-migration.
@@ -117,7 +123,7 @@ The 1.x-to-2.x drift table lives in the router skill:
 
 | Command | Does | Exit codes |
 |---|---|---|
-| `scripts/lint_agent.py <agent-dir> [--strict] [--no-backend] [--adk-version V] [--json]` | the static review, fourteen dimensions (streaming tools: `AGT081`, warn on a text model, info on a live one whose evals lack `live_model_config`); `--adk-version` stands in for the resolved runner in version-gated checks (`AGT066`, `AGT074`) | 0 clean, 1 findings, 2 no agent |
+| `scripts/lint_agent.py <agent-dir> [--strict] [--no-backend] [--adk-version V] [--json]` | the static review, fourteen dimensions (streaming tools: `AGT081`, warn on a text model, info on a live one whose evals lack `live_model_config`); `--adk-version` stands in for the resolved runner in version-gated checks (`AGT066`, `AGT074`, `AGT082`) | 0 clean, 1 findings, 2 no agent |
 | `scripts/load_agent.py <agent-dir> [--json]` | imports it the way ADK does | 0 loaded, 1 did not load, 2 no runner |
 
 ## Completion checklist

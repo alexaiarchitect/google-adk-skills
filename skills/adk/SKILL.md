@@ -93,7 +93,10 @@ An `adk-recipes` Agent-Plugins skill layer (`plugin.json`, `skills/*/EVAL.yaml`)
 is not an agent: discovery reports `ENV014` and a `plugin_layer` fact instead of
 a layout, and the inventory lists the layer after the agents with its cases,
 rubric lines and assertion types. Send it to `/adk:eval-review`
-(`validate_eval_yaml.py`); nothing runs it.
+(`validate_eval_yaml.py`); nothing runs it. An `agents-cli` project with
+`tests/eval/datasets/` (the voice recipe has two suites and two
+`eval_config_system*.yaml`) is listed as `agents_cli_datasets` with its configs;
+none of it is an ADK evalset.
 
 ## What to tell the user when they ask what this can do
 
@@ -115,6 +118,15 @@ Six things, in the order they usually matter:
 - **Say what a run costs before running it.** Judge and Vertex metrics spend
   money per case per sample.
 - **Cite the source** when you explain an ADK behaviour, so the user can check.
+- **A refused app name is a blocker, not style.** `ENV015` as an error means
+  `adk run`, `adk web` and `adk eval` cannot load the app directory (a hyphen,
+  dot, space or non-ASCII letter; 2.13.0's `adk create` writes such names):
+  offer the rename, with every `app_name` reference, before any eval work. As an
+  info (a keyword, a leading digit) it loads today; mention it and move on.
+- **Main-only findings keep the released verdict.** `CFG077` (a `parallelism`
+  key) and `AGT082` (memory tools inside an `AgentTool`) warn because 2.13.0, the
+  latest release, ignores the key and isolates the memory; they become info only
+  on a runner newer than 2.13.0. Say which version the warning is about.
 
 ## References
 

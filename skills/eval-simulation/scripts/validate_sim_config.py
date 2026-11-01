@@ -17,8 +17,11 @@ Live and voice runs add three more, all accepted by ADK without a word:
 `live_model_config` while the agent's model is not a Live API model (SIM033),
 and an unknown key inside `user_simulator_config` (SIM034: the `llm_backed` and
 `llm_audio` configs use `extra=allow`, so `audio_modle` is kept and never read).
+The shared config checks run too, among them CFG077: a top-level `parallelism`
+key is read only by ADK main after 2.13.0 (`--adk-version` newer than 2.13.0
+turns the warning into an info).
 
-    validate_sim_config.py <agent-dir | config.json> [--agent-dir D] [--json]
+    validate_sim_config.py <agent-dir | config.json> [--agent-dir D] [--adk-version V] [--json]
 
 Exit codes: 0 clean, 1 findings, 2 nothing to check.
 """
@@ -47,6 +50,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("path", nargs="?", default=".")
     parser.add_argument("--agent-dir")
     parser.add_argument("--config", help="the eval config to check")
+    parser.add_argument("--adk-version",
+                        help="the ADK version these evals will run on; without it the "
+                             "version-specific checks assume the 2.13 target")
     parser.add_argument("--format", choices=("json", "md"), default="md")
     parser.add_argument("--json", action="store_const", const="json", dest="format")
     args = parser.parse_args(argv)
@@ -88,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     validate_config(
         loaded, report=report, backend=backend,
         agent_dir=layout.agent_dir, known_tools=known_tools, agent_models=agent_models,
-        builtin_tools=builtin_tools,
+        builtin_tools=builtin_tools, adk_version=args.adk_version,
     )
 
     scenario_cases: list[str] = []

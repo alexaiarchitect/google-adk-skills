@@ -89,6 +89,7 @@ user's conversation needs `'default'`.
 | Who keeps control | the caller; the result comes back as a tool response | the sub-agent takes over the conversation |
 | What the sub-agent sees | a **fresh in-memory session** holding only the tool's `request` (or its input-schema JSON) and a copy of the caller's state (minus `_adk` keys); none of the caller's history | the shared session, filtered by its `include_contents` |
 | Artifacts | forwarded to the caller's artifact service | shared |
+| Memory | a **fresh, empty** in-memory store through 2.13.0 (`AGT082`); the caller's memory service on main after 2.13.0 | the app's |
 | Plugins | the caller's, unless `include_plugins=False` | the app's |
 | Eval shape | one tool call in the caller's trajectory | a `transfer_to_agent` call, then the sub-agent's calls |
 
@@ -96,6 +97,31 @@ So an agent-as-tool is already scoped: `include_contents` changes nothing for
 its first request, because the fresh session has no prior turns. The scoping
 question for an `AgentTool` is what goes into `request`: write the tool's
 description so the caller passes a complete, self-contained question.
+
+**Memory inside an `AgentTool`.** Through 2.13.0 the nested runner gets its own
+`InMemoryMemoryService()` (`tools/agent_tool.py:275` on 2.13.0, `:269` on 2.9.2),
+whatever memory service the App or Runner was given, so a `load_memory` or
+`preload_memory` bound to the wrapped agent searches an empty store and finds
+nothing, with no error (measured). Call the memory tool from the caller and put
+what it found into `request`, or reach the specialist by transfer.
+**Coming after 2.13.0 (unreleased main, `4e0ac64e3`):** the sub-agent shares the
+caller's memory service under the same app and user, so the pattern works once a
+release includes it. `lint_agent.py` warns on an explicit `AgentTool(agent=...)`
+whose agent, or an agent below it, binds a memory tool (`AGT082`; info on a newer
+runner).
+
+**Heavy generation in its own sub-agent.** Google's A2UI and CopilotKit
+walkthrough (an ADK `LlmAgent` served to a web client through `ag_ui_adk`) makes
+the same scoping argument for generated interfaces: the component catalog and
+the protocol rules live in a dedicated UI sub-agent, so the main agent's context
+never carries them. Two more of its habits travel to any structured output: check
+what the user typed on the client before it costs a model turn, and when a
+generation fails validation, send the specific error back for a correction, then,
+once a small retry budget is spent, answer with a short message so "nothing broken
+reaches the screen" and the conversation goes on. In ADK that is an `AgentTool`
+or workflow node with its own instruction and `output_schema`, a validating
+callback or node, and a retry cap; the fallback message is something an eval case
+can assert.
 
 ## Large payloads belong in artifacts
 
@@ -131,6 +157,7 @@ measure the hit ratio: [context-caching.md](context-caching.md).
 | `AGT077` | info | no `App` sets `events_compaction_config` while some eval case has 6+ invocations or a `conversation_scenario` (discovery and lint); long sessions resend the whole history; consider compaction, and keep the long case as its test |
 | `AGT078` | info | a sub-agent of an `LlmAgent` parent (a transfer target) keeps `include_contents='default'`. Children of `SequentialAgent` / `ParallelAgent` / `LoopAgent` are skipped; an `AgentTool` runs in a fresh session and is out of scope; each of its requests carries the whole conversation; set `'none'` if it only needs the handed-over turn, or call it as an `AgentTool` |
 | `AGT079` | warn | a bound tool returns a string over 2,000 characters (a literal, `"..." * N`, a dict value, or a module constant); it lands in the history and is resent on every later call; save it as an artifact and return a reference |
+| `AGT082` | warn | an `AgentTool(agent=x)` whose `x` (or an agent below it) binds a memory tool; through 2.13.0 it searches a fresh, empty store; info on a runner newer than 2.13.0 |
 
 ## Proving it
 
@@ -146,6 +173,12 @@ Sources: Hangfei Lin, "Architecting efficient context-aware multi-agent
 framework for production", Google Developers Blog, 2025-12-04,
 https://developers.googleblog.com/architecting-efficient-context-aware-multi-agent-framework-for-production/
 (the compiled view, the three principles, the anti-patterns; paraphrased).
+Google A2UI team with Atai Barkai (CopilotKit), "Build Generative UI Apps with
+A2UI & CopilotKit Agents", Google Developers Blog, 2026-10-29,
+https://developers.googleblog.com/build-generative-ui-apps-with-a2ui-copilotkit-agents/
+(the UI sub-agent, client-side validation, retry then fallback; paraphrased, one
+phrase quoted). AgentTool memory: `tools/agent_tool.py` on 2.9.2, 2.13.0 and main
+`ee8720162` (`4e0ac64e3`, post-tag), the 2.13.0 sub-runner captured at runtime.
 `adk-python: apps/_configs.py` (`EventsCompactionConfig`, its bounds and
 pairing validator), `apps/compaction.py` (`_ensure_compaction_summarizer`),
 `agents/llm_agent.py` (`include_contents`), `flows/llm_flows/context/_contents.py`

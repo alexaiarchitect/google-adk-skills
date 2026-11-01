@@ -158,9 +158,12 @@ How many runs: 5 separates "usually works" from "often fails" but not 95% from
   establish which it is: `/adk:eval-run --runs 5`.
 - **Never average away the variance.** `AgentEvaluator(num_runs=N)` does exactly
   that, which is why repeated runs are kept separate here.
-- **Calibrate occasionally.** Sample passing cases and check you agree they
-  should have passed. Criteria that are too lenient produce a green suite and a
-  bad agent, and nothing in the system notices.
+- **Calibrate occasionally, and audit the judge.** Sample passing cases and
+  check you agree they should have passed; report chance-corrected agreement, not
+  only raw agreement, which flatters a lenient judge. Before trusting a climb,
+  check the judge's stability (a re-run or a higher `num_samples` that flips a
+  verdict means an ambiguous rubric) and, on a schedule, compare two runs that
+  differ only in `judge_model` with `compare_runs.py --max-mean-drop`.
 
 ## References
 
@@ -169,7 +172,7 @@ How many runs: 5 separates "usually works" from "often fails" but not 95% from
 | The result file's shape and every status | [result-schema.md](references/result-schema.md) |
 | Quadrant and divergence in depth | [diagnosis.md](references/diagnosis.md) |
 | pass@k, fragility, run counts | [reliability.md](references/reliability.md) |
-| Human calibration: cadence, sample size, what to do on disagreement | [calibration.md](references/calibration.md) |
+| Human calibration, and auditing the judge (biases, stability, kappa, two judges) | [calibration.md](references/calibration.md) |
 | Gating a merge on a comparison: pass threshold, regressions, budgets | [merge-gates.md](../eval-ci/references/merge-gates.md) |
 | The improvement loop, who grades a fix, and what the hosted platform adds after launch | [improvement-loop.md](references/improvement-loop.md) |
 

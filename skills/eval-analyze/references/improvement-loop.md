@@ -35,23 +35,20 @@ another turned red has proved nothing yet.
 
 ## The proposer never grades its own fix
 
-Whatever proposes a change — a person, an automated optimiser, a coding agent
-such as the one running this plugin — must not also be the thing that says the
-change worked. An optimiser that scores itself learns to satisfy the score.
+Whatever proposes a change — a person, an automated optimiser, a coding agent such as the one running this plugin — must not also be the thing that says the change worked. An optimiser that scores itself learns to satisfy the score.
 
 In this plugin that is a protocol rule, not advice:
 
-- **The assistant proposes.** An instruction sentence, a tool description, a
-  threshold — offered as a numbered option with its cost, never applied silently.
-- **The scripts and the judge grade.** `run_evals.py` and the config's metrics
-  produce the verdict; `compare_runs.py` turns two verdicts into a delta. The
-  assistant reports what they printed and does not restate a result it would
-  prefer.
-- **The user approves.** Nothing is kept until the comparison has been shown and
-  the user has said yes.
-- **The cases are not the proposer's to edit.** Changing a golden case so the
-  candidate passes is grading by deletion; `manage_cases.py` refuses it on a
-  frozen suite (`EVS120`), and `/adk:eval-ci` `merge-gates.md` explains why.
+- **The assistant proposes.** An instruction sentence, a tool description, a threshold — offered as a numbered option with its cost, never applied silently.
+- **The scripts and the judge grade.** `run_evals.py` and the config's metrics produce the verdict; `compare_runs.py` turns two verdicts into a delta. The assistant reports what they printed and does not restate a result it would prefer.
+- **The user approves.** Nothing is kept until the comparison has been shown and the user has said yes.
+- **The cases are not the proposer's to edit.** Changing a golden case so the candidate passes is grading by deletion; `manage_cases.py` refuses it on a frozen suite (`EVS120`), and `/adk:eval-ci` `merge-gates.md` explains why.
+
+The same rule covers a harness that patches the agent itself: a recap of
+Google's DevFest workshops describes self-patching harnesses that update runtime
+behaviour only after an eval passes the change. That is the only safe shape: the
+patch is a proposal, the frozen suite is the gate, and nothing ships on the
+patcher's own say-so.
 
 ## Trust the delta, not the number
 
@@ -152,31 +149,16 @@ number, two different decisions — revert the first; weigh the second against
 how often production traffic looks like the case it broke. The bad prompt also
 compiled and passed lint, unit and type checks; only the eval saw it.
 
-- Read `compare_runs.py`'s per-case deltas before its summary line; a flat mean
-  can hide a fixed case and a broken one.
-- **Keep the judge constant across a model swap.** Change the agent's model and
-  the judge's together and the delta measures both. Pin
-  `judge_model_options.judge_model` for the length of the experiment.
-- A fair model comparison is each model with its own best prompt: a cheaper
-  model plus a tuned prompt against the stronger model plus its prompt, on the
-  same suite and judge.
+- Read `compare_runs.py`'s per-case deltas before its summary line; a flat mean can hide a fixed case and a broken one.
+- **Keep the judge constant across a model swap.** Change the agent's model and the judge's together and the delta measures both. Pin `judge_model_options.judge_model` for the length of the experiment. A constant judge is only as good as its audit: check its stability and, on a schedule, run a second judge beside it (`calibration.md`, "Audit the judge").
+- A fair model comparison is each model with its own best prompt: a cheaper model plus a tuned prompt against the stronger model plus its prompt, on the same suite and judge.
 - Keep the full result files; a per-case table cannot be rebuilt from a score.
 
 ## Schedule it, and alert on the drop
 
-Run a larger regression set nightly (`/adk:eval-ci` `gen_workflows.py --tier
-nightly`, baseline result files committed under `--baseline-dir`) and compare: `compare_runs.py <baseline>
-<candidate> --max-mean-drop D` exits 1 when a scored metric's mean falls by
-more than `D`, and the scheduler turns that exit code into the alert. Alert on a
-drop, not on a low absolute: a suite at 0.7 for months is a known state, a fall
-from 0.85 to 0.7 overnight is news. The hosted counterpart is `agents-cli eval
-compare` plus a threshold script; the walkthrough's own warning applies to both
-— "A file nobody looks at is not an alert."
+Run a larger regression set nightly (`/adk:eval-ci` `gen_workflows.py --tier nightly`, baseline result files committed under `--baseline-dir`) and compare: `compare_runs.py <baseline> <candidate> --max-mean-drop D` exits 1 when a scored metric's mean falls by more than `D`, and the scheduler turns that exit code into the alert. Alert on a drop, not on a low absolute: a suite at 0.7 for months is a known state, a fall from 0.85 to 0.7 overnight is news. The hosted counterpart is `agents-cli eval compare` plus a threshold script; the walkthrough's own warning applies to both — "A file nobody looks at is not an alert."
 
-`agents-cli eval optimize` (GEPA) hill-climbs the prompt only, for ADK projects
-only, and can overfit to the wording of the metric it climbs. Treat its output
-as a proposal: in this plugin's protocol it is the proposer, the frozen suite
-and the user are the graders.
+`agents-cli eval optimize` (GEPA) hill-climbs the prompt only, for ADK projects only, and can overfit to the wording of the metric it climbs. Treat its output as a proposal: in this plugin's protocol it is the proposer, the frozen suite and the user are the graders.
 
 ## Grade the trajectory, not the summary
 
@@ -246,4 +228,9 @@ Trajectory over summary, turn structure, live and plan-only runs, golden sets:
 Casey West, "Four evaluation engineering lessons learned from building agent
 plugins", Google Cloud Blog, 2026-10-17,
 https://cloud.google.com/blog/topics/developers-practitioners/four-eval-engineering-lessons
-(both paraphrased; one short phrase quoted from each).
+(both paraphrased; one short phrase quoted from each). Eval-gated self-patching:
+Christina Lin, "The DevFest Community Workshop Experience: Building Real Agents
+Together", Google Cloud Blog, 2026-09-19,
+https://cloud.google.com/blog/topics/developers-practitioners/the-devfest-community-workshop-experience-building-real-agents-together.
+Judge audit: "Who judges the judge? Three helpful ways to audit your LLM
+evaluators", Google Cloud Blog, 2026-10-20 (`calibration.md`).

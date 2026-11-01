@@ -88,9 +88,14 @@ deduplicate through tooling that keeps ids stable. Review a new case for what it
 asserts, not only for whether it parses. `/adk:eval-create`'s
 `managing-evalsets.md` and `/adk:eval-review` cover the mechanics.
 
-Inference over a large suite is parallel work. ADK exposes
-`InferenceConfig.parallelism` / `EvaluateConfig.parallelism` (a semaphore) on the
-programmatic path only; `adk eval` has no flag for it. Running that inference
+Inference over a large suite is parallel work. Through 2.13.0 ADK exposes
+`InferenceConfig.parallelism` / `EvaluateConfig.parallelism` (a semaphore, default
+4) on the programmatic path only; `adk eval` has no flag for it and a
+`"parallelism"` key in the config is ignored. **Coming after 2.13.0 (unreleased
+main, `e9e8f6156`):** the config key, `adk eval --parallelism N` and
+`AgentEvaluator.evaluate(..., parallelism=N)` set the same semaphore (flag or
+argument over key over 4, values below 1 refused); raise it for a large suite whose
+quota allows, lower it when the judge or the model rate-limits. Running that inference
 against a not-yet-released revision of a deployed agent is the shadow pattern in
 `/adk:eval-ci`'s `shadow-rollout.md`.
 
@@ -158,7 +163,7 @@ cost half without extra configuration.
 
 Sources: `adk-python: evaluation/eval_metrics.py`, `evaluation/eval_case.py`,
 `evaluation/eval_set.py`, `evaluation/eval_config.py`,
-`evaluation/local_eval_service.py` (`_parallelism_semaphore`),
+`evaluation/local_eval_service.py` (`_parallelism_semaphore`; the main-only key and flag are `e9e8f6156`, checked at `ee8720162`),
 `evaluation/_efficiency_evaluators.py`; `adk-docs: docs/evaluate/index.md`,
 `docs/evaluate/criteria.md`. The two modes, the three-level taxonomy, the
 dataset-as-code fields, the 0.85 grounding example and the two-trace distinction

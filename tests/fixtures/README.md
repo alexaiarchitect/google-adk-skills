@@ -32,6 +32,11 @@ this plugin's references in its own words.
 | `eval_configs/action_rubric_reply_judge.json` | an action rubric ("calls `check_cost_centre_funds` before it calls `submit_claim`") under `rubric_based_final_response_quality_v1` with no trajectory metric (CFG075) |
 | `eval_configs/compound_rubric.json` | one rubric holding two expectations joined by a single "and" (RUB006) |
 | `projects/src_layout` | an agents-cli project in a src layout: `src/__init__.py` re-exports `root_agent`, `agents-cli-manifest.yaml` names `src/claims_agent`, the App is named "claims", and the cases are an agents-cli dataset under `tests/eval/datasets/` with `tests/eval/eval_config.yaml` (layout style `src`, dataset note, not ADK evalsets) |
+| `agents/agent_tool_memory` | `claims_agent` calls `policy_lookup` as `AgentTool(agent=policy_lookup)`, and `policy_lookup` binds `load_memory` (AGT082 warn: through 2.13.0 the AgentTool runs it with a fresh, empty memory service; info with `--adk-version` newer than 2.13.0). Loads on ADK 2.9.2 and 2.13.0 |
+| `eval_configs/parallelism.json` | a top-level `"parallelism": 2` (CFG077 warn through 2.13.0, which ignores the key; info on a newer runner; no CFG004) |
+| `eval_configs/parallelism_zero.json` | `"parallelism": 0` (CFG077 error on every version: main rejects it with "Input should be greater than or equal to 1") |
+| `projects/kebab_app` | a policy agent in `my-agent/` (ENV015 error: AgentLoader refuses the name on 2.9.2 and 2.13.0 with "Invalid agent name") |
+| `projects/keyword_app` | the same agent in `class/` (ENV015 info: it loads, but `adk create` on main after 2.13.0 refuses keyword names) |
 | `agents/yaml_agent` | `root_agent.yaml`, the deprecated config layout |
 | `evalsets/` | valid snake_case, valid camelCase, legacy list format, scenario, and broken variants |
 | `eval_configs/` | one per criterion family, plus invalid ones |

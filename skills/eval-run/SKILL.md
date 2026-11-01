@@ -105,6 +105,10 @@ Never `adk eval` alone in CI. A project with no pytest gate gets one from
   averages scores across runs, which hides the variance you are measuring.
   `--runs N` keeps each run's results separate so `/adk:eval-analyze` can compute
   pass@k.
+- **Concurrency is fixed at 4 cases through 2.13.0.** `adk eval` has no
+  `--parallelism` and drops a `parallelism` config key (`CFG077`); main after
+  2.13.0 adds both, plus `AgentEvaluator.evaluate(parallelism=)`. To go easier on
+  a quota today, split the evalset; `run_evals.py --dry-run` says the same.
 - **An empty suite fails on 2.10+, and used to pass.** `AgentEvaluator.evaluate`
   and `evaluate_eval_set` raise `ValueError` when there are no eval cases, no
   `*.test.json` under the directory, or `num_runs < 1`. On 2.9.2 all three passed

@@ -130,7 +130,12 @@ A rubric metric's `details.rubric_scores` is a list of
 `{rubric_id, score, rationale}`. Score is 1.0 or 0.0 after the majority vote over
 `num_samples`. The `rationale` is the judge's reason, and it is usually the
 fastest way to tell "the agent did the wrong thing" from "the rubric asks the
-wrong question".
+wrong question". The list is the voted result (per invocation, with the rationale
+of the first sample on the winning side; per case, the mean): the individual
+samples are not in the file (2.9.2 and 2.13.0), so judge stability cannot be read
+back from it, only re-measured. A rubric the judge skipped or answered without a
+yes/no verdict is simply missing from the list through 2.13.0 (and the metric's
+score averages the rest); compare the ids against the config.
 
 ## In 2.13.0
 
@@ -156,41 +161,25 @@ parser has to tolerate both shapes; this plugin's does.
   longer failed by a hard-coded `score >= threshold`. This touches the pytest
   path only; the files `adk eval` writes are unchanged by it.
 
-2.13.0 also makes bare `adk eval` exit 1 when a case fails or none ran
-(`c2ff634`; 0 whatever happened through 2.12.0), and rejects a drive-qualified
-`eval_set_id` (`c:pass`) when it saves these files, after inference. The exit code
-of `run_evals.py`, computed from these files, stays the recommended verdict on
-every version: it separates failed from never-scored and carries the pass-rate
-gate.
+2.13.0 also makes bare `adk eval` exit 1 when a case fails or none ran (`c2ff634`; 0 whatever happened through 2.12.0), and rejects a drive-qualified `eval_set_id` (`c:pass`) when it saves these files, after inference. The exit code of `run_evals.py`, computed from these files, stays the recommended verdict on every version: it separates failed from never-scored and carries the pass-rate gate.
 
 ## Coming after 2.13.0 (unreleased main)
 
-`adk-python` main after the `v2.13.0` tag (`7f3517e`) adds `repetition_index` to
-`EvalCaseResult` and `InferenceResult`, set when `adk eval --num_runs N` or
-`EvalConfig.multi_run_config` repeats a case; the cross-run verdict comes from
-`cross_run_scoring` (`mean_over_invocations` default, `mean_of_runs`,
-`min_over_runs`, or a `pass_rate` rule with a `threshold`) and
-`cross_run_criteria`, with `max_crashed_runs` default 0. `summarize_results.py`
-already groups repeated runs of one `eval_id` when the field is present. Main
-also serialises prompt-cache creation tokens on `LlmResponse`, has a tool
-argument matcher not yet used by any evaluator, and lets a plugin set compaction
-per session. Released versions drop `multi_run_config` silently, so `pass_at_k.py`
-and `run_evals.py --runs` remain the way to batch today.
+`adk-python` main after the `v2.13.0` tag (`7f3517e`) adds `repetition_index` to `EvalCaseResult` and `InferenceResult`, set when `adk eval --num_runs N` or `EvalConfig.multi_run_config` repeats a case; the cross-run verdict comes from `cross_run_scoring` (`mean_over_invocations` default, `mean_of_runs`, `min_over_runs`, or a `pass_rate` rule with a `threshold`) and `cross_run_criteria`, with `max_crashed_runs` default 0. `summarize_results.py` already groups repeated runs of one `eval_id` when the field is present. Main also serialises prompt-cache creation tokens on `LlmResponse`, has a tool argument matcher not yet used by any evaluator, and lets a plugin set compaction per session. Released versions drop `multi_run_config` silently, so `pass_at_k.py` and `run_evals.py --runs` remain the way to batch today.
 
 Three scores move on main without a shape change, so a baseline recorded on
 2.13.0 and a candidate on main can differ for no behavioural reason:
 
-- **`token_usage_v1`** (`5e52b21a8`): through 2.13.0 each count is averaged over
-  every invocation, so a turn that reported no usage pulls the mean down; main
-  averages only invocations that reported input or output tokens.
-- **`response_match_score`** (`571670d9f`): main ignores thought parts when
-  computing ROUGE-1; 2.13.0 joins every text part, thoughts included, so a
-  thinking model scores lower than its visible answer deserves.
-- **`final_response_match_v2`** (`4c66a0091`): through 2.13.0 any judge label
-  other than `true`/`invalid` counts as VALID; main maps `almost` and
-  `partially…` to INVALID and an unknown label to NOT_FOUND.
+- **`token_usage_v1`** (`5e52b21a8`): through 2.13.0 each count is averaged over every invocation, so a turn that reported no usage pulls the mean down; main averages only invocations that reported input or output tokens.
+- **`response_match_score`** (`571670d9f`): main ignores thought parts when computing ROUGE-1; 2.13.0 joins every text part, thoughts included, so a thinking model scores lower than its visible answer deserves.
+- **`final_response_match_v2`** (`4c66a0091`): through 2.13.0 any judge label other than `true`/`invalid` counts as VALID; main maps `almost` and `partially…` to INVALID and an unknown label to NOT_FOUND.
 
 Pin both runs to one ADK version before reading a delta on these metrics.
+
+Checked again at `ee8720162` (2026-11-02), two more:
+
+- **Unscored rubric samples** (`d1f2add4f`): a judge response that leaves a criterion rubric without a yes/no verdict makes that sample unscored (no `rubric_scores`, score None) instead of averaging the answered rubrics. The vote skips such samples; if all are unscored the metric's `score` is null and `eval_status` 3 (`NOT_EVALUATED`). A case that passed on 2.13.0 because a rubric went missing can read `NOT_EVALUATED` or `FAILED` on main.
+- **Live usage** (`8cd3b12c8`): for evals under `live_model_config`, standalone Gemini Live usage reports now reach `token_usage_v1`'s `token_usage_details` (and the call count); through 2.13.0 they were dropped, so live token figures were zero or partial. Do not compare live token usage across the two.
 
 ## Deprecated fields
 
@@ -217,4 +206,7 @@ rubric-verdict rows (`bc220d2`) were read in source, not measured, because they
 need Vertex credentials. `repetition_index` is `evaluation/eval_result.py` on main
 `12c7bed76`, post-tag; the three score changes are post-tag at `dfd534a88`
 (2.13.0 behaviour read in the installed wheel's `_efficiency_evaluators.py`,
-`response_evaluator.py` and `final_response_match_v2.py`).
+`response_evaluator.py` and `final_response_match_v2.py`); the unscored sample
+and live usage are post-tag at `ee8720162` (`rubric_based_evaluator.py`,
+`evaluation_generator.py`); the absence of per-sample verdicts was read off the
+2.9.2 and 2.13.0 result models (`local_eval_service.py` writes the voted list).

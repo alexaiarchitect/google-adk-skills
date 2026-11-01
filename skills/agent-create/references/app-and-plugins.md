@@ -69,66 +69,38 @@ and `ToolResultClassification` (read in the installed 2.13.0 wheel).
 
 ### 2.13, in one line each
 
-- **Stable from 2.13**: tool confirmation (`require_confirmation`), tool config,
-  authenticated function tools, progressive SSE streaming, JSON-schema function
-  declarations, the `AGENT_CONFIG` flag and six more. Their `[EXPERIMENTAL]
-  feature ... is enabled.` warnings are gone; the YAML loader still warns
-  through 2.13.0 (main after 2.13.0 drops that one too, below).
-- **`ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1`** silences the experimental
-  warnings that remain through 2.13.0 (decorator ones on 2.9.2 already,
-  feature-registry ones from 2.13); `/adk:adk` `check_env.py` knows it.
-- **`pip install "google-adk[otel]"`** pulls the OTLP exporter and GenAI/gRPC/httpx
-  instrumentation; without it a configured exporter now degrades to a warning.
-- **`ForceEscalationPlugin()`** (`google.adk.plugins`) forces `ModelConsultTool`
-  calls a weak executor would skip: the first step, after repeated identical
-  calls, or before named state-changing tools. Forced consults are tool calls,
-  so the trajectory changes.
-- **Duplicate agent names** anywhere in the tree are logged (siblings before
-  2.13; cousins and an agent reused below itself from 2.13); `find_agent()`
-  returns the first depth-first match. `AGT015` reports the whole tree.
+- **Stable from 2.13**: tool confirmation (`require_confirmation`), tool config, authenticated function tools, progressive SSE streaming, JSON-schema function declarations, the `AGENT_CONFIG` flag and six more. Their `[EXPERIMENTAL] feature ... is enabled.` warnings are gone; the YAML loader still warns through 2.13.0 (main after 2.13.0 drops that one too, below).
+- **`ADK_SUPPRESS_EXPERIMENTAL_FEATURE_WARNINGS=1`** silences the experimental warnings that remain through 2.13.0 (decorator ones on 2.9.2 already, feature-registry ones from 2.13); `/adk:adk` `check_env.py` knows it.
+- **`pip install "google-adk[otel]"`** pulls the OTLP exporter and GenAI/gRPC/httpx instrumentation; without it a configured exporter now degrades to a warning.
+- **`ForceEscalationPlugin()`** (`google.adk.plugins`) forces `ModelConsultTool` calls a weak executor would skip: the first step, after repeated identical calls, or before named state-changing tools. Forced consults are tool calls, so the trajectory changes.
+- **Duplicate agent names** anywhere in the tree are logged (siblings before 2.13; cousins and an agent reused below itself from 2.13); `find_agent()` returns the first depth-first match. `AGT015` reports the whole tree.
 
 ### Coming after 2.13.0 (unreleased main)
 
 Post-tag at `adk-python` `dfd534a88`; nothing here is in a release:
 
-- **No more `[EXPERIMENTAL]` on App features** (`c54b253eb`): through 2.13.0
-  `App(resumability_config=...)`, `EventsCompactionConfig`, context caching
-  (the warning comes from `GeminiContextCacheManager`; `ContextCacheConfig`
-  never warned), the credential services behind tool auth and the YAML loader
-  all warn; main graduates them.
-- **`google.adk.plugins` exports every shipped plugin** (`4496bef70`), incl.
-  `GlobalInstructionPlugin` and `BigQueryAgentAnalyticsPlugin`; the submodule
-  paths above work on every version, so keep them while you support 2.13.0.
-- **Which hook is running** (`2084efbe1`): contexts carry `callback_info`
-  (`CallbackInfo(type=CallbackType.BEFORE_TOOL)` and so on), so one function
-  can serve several hooks.
-- **`InMemorySessionService.create_session` copies `state`** (`cec52fc00`): a
-  test that mutated the dict it passed and expected the session to follow breaks.
+- **No more `[EXPERIMENTAL]` on App features** (`c54b253eb`): through 2.13.0 `App(resumability_config=...)`, `EventsCompactionConfig`, context caching (the warning comes from `GeminiContextCacheManager`; `ContextCacheConfig` never warned), the credential services behind tool auth and the YAML loader all warn; main graduates them.
+- **`google.adk.plugins` exports every shipped plugin** (`4496bef70`), incl. `GlobalInstructionPlugin` and `BigQueryAgentAnalyticsPlugin`; the submodule paths above work on every version, so keep them while you support 2.13.0.
+- **Which hook is running** (`2084efbe1`): contexts carry `callback_info` (`CallbackInfo(type=CallbackType.BEFORE_TOOL)` and so on), so one function can serve several hooks.
+- **`InMemorySessionService.create_session` copies `state`** (`cec52fc00`): a test that mutated the dict it passed and expected the session to follow breaks.
+
+Checked again at `ee8720162` (2026-11-02), also main only:
+
+- **Compaction stops when the run stops** (`87d9dcdf5`): if the invocation aborts (`abort_signal`, a cancelled task), an in-flight compaction summary is cancelled and no compaction event is appended afterwards.
+- **`FsspecArtifactService`** (`6bf806a01`, experimental, behind the `FSSPEC_ARTIFACT_SERVICE` feature, off by default; `pip install "google-adk[fsspec]"` plus the protocol backend such as `gcsfs`): reads and lists artifacts in the GCS object layout over any fsspec filesystem; saving and deleting raise `NotImplementedError`, so it is not yet a drop-in artifact service.
+- **YAML configs refuse more references** (`1c7e8f76b`): the module denylist, on by default, now also blocks `anyio`, `click`, `dotenv`, `graphviz`, `uvicorn`, `watchdog`, anything under `google.adk.cli`, `pydantic._internal` or `pydantic.v1`, and any private `google.adk` module or symbol (`Blocked module reference: ...`). The key denylist (`args`) now also runs in `BaseAgent.from_config`, but stays off unless `adk web` turns it on. A `root_agent.yaml` that names such a callback stops loading on main.
+- **`TeamsRunner`** (`c4376a657`, `google.adk.integrations.teams`, `pip install "google-adk[teams]"`, experimental): serves an ADK runner to Microsoft Teams, acknowledging at once and answering in the background.
 
 ### Tool-call integrity (2.11)
 
-`ToolCallIntegrityPlugin(secret_key=b"...")` signs every function call with an
-HMAC as its event is emitted, re-verifies every stored call before each run, and
-lets a tool execute only when its call verifies. It exists for sessions kept in a
-store someone else could write to: a tampered call cannot be given a valid
-stamp. `secret_key` also takes a list for rotation (the first key signs, all
-verify); `allow_unstamped_calls=True` logs instead of raising for calls stored
-before the plugin was installed. Register it **first** in `plugins=[...]`.
-A failed check surfaces as a `RuntimeError` whose `__cause__` is
-`ToolCallIntegrityError`. Tools run as workflow nodes are not covered.
+`ToolCallIntegrityPlugin(secret_key=b"...")` signs every function call with an HMAC as its event is emitted, re-verifies every stored call before each run, and lets a tool execute only when its call verifies. It exists for sessions kept in a store someone else could write to: a tampered call cannot be given a valid stamp. `secret_key` also takes a list for rotation (the first key signs, all verify); `allow_unstamped_calls=True` logs instead of raising for calls stored before the plugin was installed. Register it **first** in `plugins=[...]`. A failed check surfaces as a `RuntimeError` whose `__cause__` is `ToolCallIntegrityError`. Tools run as workflow nodes are not covered.
 
-An eval case starts a fresh session, so the plugin stays out of the way; events
-restored via the create-session API or `adk run --resume` are never executed.
+An eval case starts a fresh session, so the plugin stays out of the way; events restored via the create-session API or `adk run --resume` are never executed.
 
 ### Two other 2.11 additions, in one line each
 
-- **`ModelConsultTool`** (`from google.adk.tools import ModelConsultTool`) lets
-  the executing model escalate a hard step to an advisor model mid-run (default
-  advisor `gemini-3.1-pro-preview`, a preview id the model policy warns about).
-  The advisor's call is a tool call, so it shows in the trajectory and an eval
-  case has to expect it.
-- **`abort_signal`** on `Runner.run_async` takes an `asyncio.Event`; setting it
-  cancels the invocation. Useful in a harness that enforces its own time budget.
+- **`ModelConsultTool`** (`from google.adk.tools import ModelConsultTool`) lets the executing model escalate a hard step to an advisor model mid-run (default advisor `gemini-3.1-pro-preview`, a preview id the model policy warns about). The advisor's call is a tool call, so it shows in the trajectory and an eval case has to expect it.
+- **`abort_signal`** on `Runner.run_async` takes an `asyncio.Event`; setting it cancels the invocation. Useful in a harness that enforces its own time budget.
 
 ### Model Armor
 
@@ -175,27 +147,28 @@ with: pip install 'google-adk[gcp]'.` (shipped since 2.9.2).
 | inside one tool's logic | in the tool, returning a structured refusal |
 | model-level harm | `before_model_callback` or a plugin, plus `safety_v1` in the suite |
 
-Evaluation and guardrails are not alternatives. A guardrail stops the bad thing
-happening; the eval proves the guardrail works and catches what it misses.
+Evaluation and guardrails are not alternatives. A guardrail stops the bad thing happening; the eval proves the guardrail works and catches what it misses.
 
-**Policies are contracts.** An instruction ("never approve above the limit") is a
-soft constraint that an injected prompt, a prompt rewrite or a model upgrade can
-undo. A rule that must hold lives outside the model: a `before_tool_callback` or
-plugin that checks tool arguments against fixed bounds, a deterministic gateway
-for secrets and jailbreak phrasing, Model Armor, a sandboxed code executor for
-generated code. Test the enforcement directly — a blocked token, a hijack
-prompt, an out-of-bounds update, an allowed one — and the agent end to end with
-the policy-contract behaviour from `gen_test_eval.py --behavioral`
-(`/adk:eval-create` `behavioral-tests.md`).
+**Tier the actions, not the prompt.** Google's IAM Helper agent skills (packaged
+on the open Agent Skills standard, usable from ADK) draw the line by what a call
+can change: read-only discovery and simulations run unattended, while any change
+to an access policy pauses for a person, with a configurable risk tier deciding
+when. A change is simulated against past access before it applies, broad roles are
+blocked outright, and elevation is granted just in time, bounded in time and
+revoked when the task ends instead of held as a standing privilege. In ADK: leave
+read-only tools unconfirmed, give state-changing ones `require_confirmation=True`
+or a callable that inspects the arguments and asks only above a threshold (use
+`tool_context.request_confirmation(hint=..., payload=...)` when the person must
+see or edit a payload), and refuse the never-allowed cases in a
+`before_tool_callback` or plugin. A DevFest workshop recap puts the reason in one
+line: an instruction steers the model but is "not an execution boundary". So a
+constraint that matters lives in a callback, a plugin or a confirmation gate, not
+only in the instruction, and the suite holds a case for the approve path and one
+for the reject path.
 
-**Governed change.** When a pipeline can change the agent itself (generated
-tools, rewritten instructions, a new sub-agent), the idea moves up a level.
-Google's reference architecture for self-evolving agents chains gates: screen
-inputs, sandbox generated code, sign artefacts and refuse unsigned ones, enforce
-policy as code, require human approval for structural changes, keep a
-tamper-evident log, and replay candidates offline and in a shadow environment
-before production. Here: a structural change is a new baseline, gated by
-`/adk:eval-ci` and rolled out per its `shadow-rollout.md`.
+**Policies are contracts.** An instruction ("never approve above the limit") is a soft constraint that an injected prompt, a prompt rewrite or a model upgrade can undo. A rule that must hold lives outside the model: a `before_tool_callback` or plugin that checks tool arguments against fixed bounds, a deterministic gateway for secrets and jailbreak phrasing, Model Armor, a sandboxed code executor for generated code. Test the enforcement directly — a blocked token, a hijack prompt, an out-of-bounds update, an allowed one — and the agent end to end with the policy-contract behaviour from `gen_test_eval.py --behavioral` (`/adk:eval-create` `behavioral-tests.md`).
+
+**Governed change.** When a pipeline can change the agent itself (generated tools, rewritten instructions, a new sub-agent), the idea moves up a level. Google's reference architecture for self-evolving agents chains gates: screen inputs, sandbox generated code, sign artefacts and refuse unsigned ones, enforce policy as code, require human approval for structural changes, keep a tamper-evident log, and replay candidates offline and in a shadow environment before production. Here: a structural change is a new baseline, gated by `/adk:eval-ci` and rolled out per its `shadow-rollout.md`.
 
 ## Callback discipline
 
@@ -247,3 +220,14 @@ https://developers.googleblog.com/architecting-governed-self-evolving-ai-agents-
 Policies as contracts: Saboo and Dong, "Build zero-trust AI
 agents with Google's Agent Development Kit", Google Developers Blog, 2026-08-17,
 https://developers.googleblog.com/build-zero-trust-ai-agents-with-googles-agent-development-kit/.
+Tiered actions: Deekshit and Balla, "Scale agents securely with IAM Helper Agent
+Skills and MCP Tools", Google Cloud Blog, 2026-10-28,
+https://cloud.google.com/blog/products/identity-security/scale-agents-securely-with-iam-helper-agent-skills-and-mcp-tools;
+Christina Lin, "The DevFest Community Workshop Experience: Building Real Agents
+Together", Google Cloud Blog, 2026-09-19,
+https://cloud.google.com/blog/topics/developers-practitioners/the-devfest-community-workshop-experience-building-real-agents-together
+(paraphrased; one phrase quoted). `require_confirmation` (bool or callable) and
+`request_confirmation(hint=, payload=)` read in the 2.13.0 wheel. Main at
+`ee8720162`: `apps/compaction.py` (`87d9dcdf5`), `integrations/fsspec/`
+(`6bf806a01`), `agents/config_agent_utils.py` and `agents/base_agent.py`
+(`1c7e8f76b`), `integrations/teams/` (`c4376a657`), all post-tag.

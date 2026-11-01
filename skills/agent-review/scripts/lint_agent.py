@@ -5,7 +5,7 @@ Everything here is read from the syntax tree, so a broken dependency, a missing
 virtualenv or a side effect at import time cannot affect the review, and it works
 on a project you cannot yet run.
 
-Ten dimensions:
+Fourteen dimensions:
 
 1. loader and naming — will ADK find and accept this agent
 2. model policy — deprecated ids, preview ids, hardcoded ids
@@ -28,7 +28,10 @@ Ten dimensions:
     without ADK_ENABLE_SKILL_LIFECYCLE (AGT074), max_active_skills < 1 (AGT075)
 12. context — an EventsCompactionConfig ADK rejects (AGT076), long eval
     conversations with no compaction (AGT077), a transfer target that reads the
-    whole history (AGT078), a tool returning a large inline blob (AGT079)
+    whole history (AGT078), a tool returning a large inline blob (AGT079),
+    memory tools (`load_memory`, `preload_memory`) in an agent wrapped as an
+    `AgentTool` (AGT082: through 2.13.0 the AgentTool gets a fresh, empty memory
+    service; warn, info with an `--adk-version` newer than 2.13.0)
 13. state keys — an instruction placeholder `{key}` that no tool, callback,
     `output_key`, evalset `session_input.state` or `initial_state.json` ever
     writes (AGT080: ADK raises KeyError when it builds the instruction); agent
@@ -61,7 +64,8 @@ from adk_skills.evalset import load_evalset  # noqa: E402
 from adk_skills.layout import detect_layout  # noqa: E402
 from adk_skills.report import EXIT_FINDINGS, EXIT_OK, EXIT_USAGE, GapReport  # noqa: E402
 from adk_skills.tools_ast import (  # noqa: E402
-    LLM_AGENT_CALLS, cache_suite_findings, compaction_suite_findings, extract_module,
+    LLM_AGENT_CALLS, agent_tool_memory_findings, cache_suite_findings,
+    compaction_suite_findings, extract_module,
     skill_lifecycle_findings, state_placeholder_findings, streaming_tool_findings,
 )
 
@@ -91,7 +95,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-backend", action="store_true", help="skip the .env checks")
     parser.add_argument("--adk-version",
                         help="the ADK release the agent runs on, when known (e.g. 2.9.2); "
-                             "AGT074 then says when SkillLifecycleConfig does not exist yet")
+                             "AGT074 then says when SkillLifecycleConfig does not exist yet, "
+                             "and a version newer than 2.13.0 turns AGT082 into an info")
     args = parser.parse_args(argv)
 
     target = Path(args.path)
@@ -150,6 +155,9 @@ def main(argv: list[str] | None = None) -> int:
                    fix=f"`app:` state, memory and the results file all use \"{directory}\"; "
                        "rename one so the two agree",
                    source="adk-python: runners.py")
+    name_finding = layout.app_dir_name_finding() if layout.is_agent else None
+    if name_finding:
+        report.add(**name_finding)
 
     # 9. eval readiness
     rules = extract_sop_rules(agent.spec_text if agent else None, facts.bound_tool_names)
@@ -178,6 +186,8 @@ def main(argv: list[str] | None = None) -> int:
     report.extend(cache_suite_findings(facts, docs))
     # 12. context: long conversations want compaction
     report.extend(compaction_suite_findings(facts, docs))
+    # 12. context: memory tools inside an AgentTool search an empty store through 2.13.0
+    report.extend(agent_tool_memory_findings(facts, adk_version=args.adk_version))
     # 13. state keys: a required placeholder nothing writes raises KeyError
     report.extend(state_placeholder_findings(facts, docs, layout.agent_dir))
     # 11. skills: lifecycle modes lean on an experimental flag for unload_skill

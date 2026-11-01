@@ -84,7 +84,7 @@ What a skill is, the limits ADK enforces and the activation evals:
 | `AGT074` | info | `lifecycle_config` uses `BOUNDED` / `EPHEMERAL` or `skill_overrides` while the agent's `.env` lacks `ADK_ENABLE_SKILL_LIFECYCLE`; a known runner below 2.10 adds that `SkillLifecycleConfig` exists only from 2.10 | the modes and the cap work without the flag; it adds `unload_skill` and pruning of released skills' instructions (experimental) |
 | `AGT075` | **error** | `SkillLifecycleConfig(max_active_skills < 1)`, literal or through a constant | ADK raises `ValueError` at construction |
 
-## Context engineering (`AGT076`–`AGT079`)
+## Context engineering (`AGT076`–`AGT079`, `AGT082`)
 
 Compaction, `include_contents`, agents as tools and artifacts:
 `../../agent-create/references/context-engineering.md`.
@@ -95,6 +95,7 @@ Compaction, `include_contents`, agents as tools and artifacts:
 | `AGT077` | info | no `App` sets `events_compaction_config` while some eval case has 6+ invocations or a `conversation_scenario` (discovery and lint) | long sessions resend the whole history; consider compaction, and keep the long case as its test |
 | `AGT078` | info | a sub-agent of an `LlmAgent` parent (a transfer target) keeps `include_contents='default'`. Children of `SequentialAgent` / `ParallelAgent` / `LoopAgent` are skipped; an `AgentTool` runs in a fresh session and is out of scope | each of its requests carries the whole conversation; set `'none'` if it only needs the handed-over turn, or call it as an `AgentTool` |
 | `AGT079` | warn | a bound tool returns a string over 2,000 characters (a literal, `"..." * N`, a dict value, or a module constant) | it lands in the history and is resent on every later call; save it as an artifact and return a reference |
+| `AGT082` | warn / info | an agent wrapped as `AgentTool(agent=x)` (inline or through a constant) where `x`, or an agent in its `sub_agents` tree, binds `load_memory`, `preload_memory`, `LoadMemoryTool()` or `PreloadMemoryTool()`. **Warn** on a runner ≤ 2.13 or with no `--adk-version`; **info** on a newer one | through 2.13.0 an AgentTool runs its agent with a fresh, empty `InMemoryMemoryService` (`tools/agent_tool.py:275`; 2.9.2 `:269`) whatever the Runner was given, so the memory tools search an empty store and find nothing; main after 2.13.0 (`4e0ac64e3`) shares the parent's. Call the memory tool from the parent and pass what it found in the request, or reach the agent by transfer |
 
 ## Evaluation readiness
 
@@ -113,6 +114,7 @@ Compaction, `include_contents`, agents as tools and artifacts:
 | `ENV004` | **error** | a backend selected but missing project or location |
 | `ENV006` | info | the model comes from the environment and `MODEL_NAME` is unset, so the code default applies |
 | `ENV013` | warn | `App.name` differs from the agent directory |
+| `ENV015` | **error** / info | the app directory name fails `^[a-zA-Z0-9_]+$` (error: `AgentLoader` refuses it with `ValueError: Invalid agent name` on 2.9.2–2.13.0, though 2.13.0's `adk create` writes it), or is a keyword or starts with a digit (info: it loads, but main's `adk create` refuses it); rename the directory and every reference |
 | `ENV014` | info | (discovery) the target is an `adk-recipes` Agent-Plugins skill layer (`plugin.json`, `skills/*/SKILL.md`, `EVAL.yaml`), not an agent; check its `EVAL.yaml` with `/adk:eval-review` `validate_eval_yaml.py` |
 
 ## Reading the severities
@@ -138,7 +140,10 @@ missing `{key}`, measured on 2.9.2 and 2.13.0); `agents/base_agent.py`
 `v2.13.0`, measured on 2.12.0 and 2.13.0);
 `flows/llm_flows/tools/_agent_tools.py` and `tools/function_tool.py` (`AGT081`:
 `mark_live_async_tools_non_blocking` only under `run_live`; the `run_async`
-outcome measured on 2.9.2, 2.12.0 and 2.13.0);
+outcome measured on 2.9.2, 2.12.0 and 2.13.0); `tools/agent_tool.py` (`AGT082`:
+the sub-runner's memory service captured at runtime on 2.9.2 and 2.13.0;
+`4e0ac64e3` on main `ee8720162`); `cli/utils/agent_loader.py` (`ENV015`, measured
+on 2.9.2 and 2.13.0; `adk create` check `3655990f6` on main);
 `adk-docs: docs/tools-custom/function-tools.md`, `docs/sessions/state.md`,
 `docs/2.0/index.md`, `docs/context/caching.md` (`AGT060`–`AGT063`, `AGT065`–`AGT067`),
 `docs/live/tools.md` (`AGT081`); `adk-recipes: AGENTS.md` (`AGT005`, the model-deprecation

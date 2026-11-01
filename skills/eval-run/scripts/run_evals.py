@@ -40,6 +40,11 @@ directory, where a relative path would point somewhere else).
 `/adk:eval-analyze` can compute pass@k. That is deliberately not
 `AgentEvaluator(num_runs=N)`, which averages scores across runs and hides the
 variance.
+
+Concurrency: `adk eval --parallelism N` and a top-level `parallelism` key exist
+on ADK main after 2.13.0 (`e9e8f6156`: flag or argument > config key > default
+4); through 2.13.0 cases run 4 at a time and the key is ignored. This wrapper
+has no flag for it.
 """
 
 from __future__ import annotations
@@ -68,6 +73,12 @@ from adk_skills.report import (  # noqa: E402
 EXIT_CODE_NOTE = ("bare `adk eval` exits 0 on every version through 2.12.0 and exits 1 on a "
                   "failure from 2.13.0; this wrapper reads the result files and gates "
                   "(`--min-pass-rate`), so its exit code is the one to use")
+
+
+#: Shown by `--dry-run`.
+PARALLELISM_NOTE = ("`adk eval --parallelism N` and a top-level `parallelism` key exist on "
+                    "main after 2.13.0 (`e9e8f6156`: flag or argument > config key > default "
+                    "4); through 2.13.0 cases run 4 at a time and the key is ignored")
 
 
 def absolute(path: str | None) -> str | None:
@@ -222,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
             print("note: no interpreter with google.adk was found; the command above assumes "
                   "`adk` on PATH", file=sys.stderr)
         print(f"note: {EXIT_CODE_NOTE}", file=sys.stderr)
+        print(f"note: {PARALLELISM_NOTE}", file=sys.stderr)
         if args.min_pass_rate is not None:
             print(f"note: gating on a pass rate of at least {args.min_pass_rate:.1%}",
                   file=sys.stderr)

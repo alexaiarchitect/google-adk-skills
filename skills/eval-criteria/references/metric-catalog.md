@@ -58,21 +58,17 @@ off wherever the result gates a release.
 
 ### `response_match_score`
 
-ROUGE-1 word overlap with the reference text. Cheap, and blind to meaning: a
-correct paraphrase fails it. Set it to 0.0 to run trajectory-first, or 0.8 where
-the wording really is fixed.
+ROUGE-1 word overlap with the reference text. Cheap, and blind to meaning: a correct paraphrase fails it. Set it to 0.0 to run trajectory-first, or 0.8 where the wording really is fixed.
 
 ## Judge metrics
 
 ### `final_response_match_v2`
 
-A judge decides whether the response means the same as the reference. Use it
-instead of `response_match_score` when the wording is free.
+A judge decides whether the response means the same as the reference. Use it instead of `response_match_score` when the wording is free.
 
 ### The three rubric metrics
 
-Each takes a list of yes/no rubrics, scores each one per invocation with a
-majority vote over `num_samples`, and averages.
+Each takes a list of yes/no rubrics, scores each one per invocation with a majority vote over `num_samples`, and averages. `num_samples` doubles as a stability probe: when raising it changes a verdict, the samples disagreed and the rubric is ambiguous (`/adk:eval-analyze` `calibration.md`, "Audit the judge"). Through 2.13.0 the verdict is read by substring: a verdict containing "yes" is 1, else one containing "no" is 0 (so "unknown" and "not sure" count as no), else the rubric gets no score and is **left out of the average**, as is a rubric the judge skipped or answered under an unknown id; two yeses and one missing rubric pass a 0.7 threshold. Result files keep only the voted rubric scores, never the samples.
 
 | Metric | Judges | Per-case rubric `type` |
 |---|---|---|
@@ -80,27 +76,19 @@ majority vote over `num_samples`, and averages.
 | `rubric_based_tool_use_quality_v1` | the tool calls | `TOOL_USE_QUALITY` |
 | `rubric_based_multi_turn_trajectory_quality_v1` | the whole conversation | `TRAJECTORY_QUALITY` |
 
-Criterion-level rubrics are used unfiltered; per-case rubrics are filtered by
-`type` and merged on top. The effective list must not be empty or evaluation
-raises.
+Criterion-level rubrics are used unfiltered; per-case rubrics are filtered by `type` and merged on top. The effective list must not be empty or evaluation raises.
 
-**The tool-use one carries restraint guarantees.** Phrase them as negatives
-("does NOT call `submit_claim` when the cost centre is frozen") and set the
-threshold to **1.0**: a guarantee that holds 80% of the time is not a guarantee.
+**The tool-use one carries restraint guarantees.** Phrase them as negatives ("does NOT call `submit_claim` when the cost centre is frozen") and set the threshold to **1.0**: a guarantee that holds 80% of the time is not a guarantee.
 
 ### `hallucinations_v1`
 
-Splits the response into sentences and labels each against everything the agent
-saw — tool definitions, tool results, the instruction, the user's prompt — as
-supported, unsupported, contradictory, disputed or not applicable.
+Splits the response into sentences and labels each against everything the agent saw — tool definitions, tool results, the instruction, the user's prompt — as supported, unsupported, contradictory, disputed or not applicable.
 
-Set `evaluate_intermediate_nl_responses` to `true`, or only the final message is
-checked and an invented number in an intermediate message goes unnoticed.
+Set `evaluate_intermediate_nl_responses` to `true`, or only the final message is checked and an invented number in an intermediate message goes unnoticed.
 
 ### `per_turn_user_simulator_quality_v1`
 
-Scores the **simulated user**, not the agent. Run it when a simulated suite
-starts failing and you need to know whether the harness or the agent moved.
+Scores the **simulated user**, not the agent. Run it when a simulated suite starts failing and you need to know whether the harness or the agent moved.
 
 ## Vertex-backed metrics
 
@@ -209,28 +197,22 @@ ADK's own wording, verbatim from `MetricInfo.description`:
 > regression signal. It is an informational efficiency metric: it reports the
 > value for tracking and does not pass or fail the eval case."
 
-Read them as a trend across runs, not as a gate: a duration that doubles is a
-question, not a failure, and the two call counts tell you whether a turn got
-expensive through more attempts or a bigger context.
+Read them as a trend across runs, not as a gate: a duration that doubles is a question, not a failure, and the two call counts tell you whether a turn got expensive through more attempts or a bigger context.
 
 ## Coming after 2.13.0 (unreleased main)
 
-Not released (post-tag at `adk-python` `dfd534a88`; `token_usage_v1` is
-above); validators keep 2.13.0 behaviour:
+Not released (post-tag at `adk-python` `dfd534a88`; `token_usage_v1` is above); validators keep 2.13.0 behaviour:
 
-- **Judge and rubric metrics stop warning** (`1112606c2`): through 2.13.0
-  `final_response_match_v2`, the rubric metrics, `hallucinations_v1`, the
-  registry and `LocalEvalService` print `[EXPERIMENTAL]`; main graduates them.
-- **`response_match_score` skips thought parts** (`571670d9f`); 2.13.0 scores
-  thoughts as response text.
-- **`final_response_match_v2` labels** (`4c66a0091`): `almost`/`partially…` →
-  INVALID and unknown → NOT_FOUND on main; 2.13.0 counts both as VALID.
-- **Built-in tools and the multi-turn trajectory judge** (`047815043`): on
-  2.13.0 `rubric_based_multi_turn_trajectory_quality_v1` crashes with
-  `TypeError: 'NoneType' object is not iterable` when the agent has a built-in
-  tool such as `google_search` (no function declarations; same code on 2.9.2);
-  main lists it as `- google_search (built-in)`. `validate_config.py
-  --agent-dir` warns (`CFG076`; info on a runner newer than 2.13.0).
+- **Judge and rubric metrics stop warning** (`1112606c2`): through 2.13.0 `final_response_match_v2`, the rubric metrics, `hallucinations_v1`, the registry and `LocalEvalService` print `[EXPERIMENTAL]`; main graduates them.
+- **`response_match_score` skips thought parts** (`571670d9f`); 2.13.0 scores thoughts as response text.
+- **`final_response_match_v2` labels** (`4c66a0091`): `almost`/`partially…` → INVALID and unknown → NOT_FOUND on main; 2.13.0 counts both as VALID.
+- **Built-in tools and the multi-turn trajectory judge** (`047815043`): on 2.13.0 `rubric_based_multi_turn_trajectory_quality_v1` crashes with `TypeError: 'NoneType' object is not iterable` when the agent has a built-in tool such as `google_search` (no function declarations; same code on 2.9.2); main lists it as `- google_search (built-in)`. `validate_config.py --agent-dir` warns (`CFG076`; info on a runner newer than 2.13.0).
+
+Checked again at `ee8720162` (2026-11-02):
+
+- **An unanswered rubric no longer passes silently** (`d1f2add4f`): when the judge's response leaves any criterion rubric without a yes/no verdict (skipped, unknown id, a verdict such as "almost"), that sample is **unscored** (score None) instead of averaged over the rest. With `num_samples > 1` the other samples still vote; if every sample is unscored the metric is `NOT_EVALUATED`. Per-case (invocation-level) rubrics are not checked yet. The substring reading of verdicts is unchanged.
+- **Live usage is counted** (`8cd3b12c8`): under `live_model_config`, Gemini Live's standalone usage reports are merged into the model events, so `token_usage_v1` (and `inference_call_count_v1`) stop under-counting; through 2.13.0 those reports were dropped.
+- **Case parallelism** (`e9e8f6156`): a top-level `parallelism` key, not a metric option; `criterion-schemas.md`.
 
 ---
 
@@ -247,4 +229,7 @@ descriptions quoted above, and `requires_threshold`),
 measured on installed wheels 2.9.2 and 2.10.0; the 17-metric registry and
 `_reject_threshold` re-read on 2.11.0 and 2.12.0. The 2.13.0 `token_usage_v1`
 docstring ("every invocation") and the trajectory-judge `TypeError` were
-measured on the 2.13.0 wheel; the main-only changes were read at `dfd534a88`.
+measured on the 2.13.0 wheel; the main-only changes were read at `dfd534a88`,
+the unscored sample and live usage at `ee8720162`; the substring verdict rule and
+the dropped rubric were measured on 2.13.0 (`DefaultAutoRaterResponseParser`,
+`llm_as_judge_utils.get_average_rubric_score`).

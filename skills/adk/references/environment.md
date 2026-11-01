@@ -119,6 +119,23 @@ deploy` gains `--python_version` (all four targets, default 3.11) and
 projects (`bd77f3f2c`, `e3d0ec926`); `/adk:eval-run` `cli-reference.md` has
 the detail.
 
+## Naming the app directory
+
+`adk create <name>` names the directory, and the directory name is the app name
+every later command loads. Keep it to letters, digits and underscores
+(`claims_agent`, not `claims-agent`): `AgentLoader` refuses anything else with
+`ValueError: Invalid agent name` on 2.9.2 and 2.13.0, yet 2.13.0's `adk create`
+writes such a directory without complaint (measured). Main after 2.13.0
+(`3655990f6`) refuses it in `adk create`, along with Python keywords.
+`discover.py` reports the directory as `ENV015` (`layouts.md`).
+
+**Credentials for an agents-cli project.** A recipe such as
+`core/python/adk-voice-agent` keeps its evals in `agents-cli` datasets, not ADK
+evalsets (two suites, `system1.json` and `system2.json`): both suites need
+`GOOGLE_CLOUD_PROJECT` and ADC in `.env` (the second also Docker), while its
+`make test` grader tests run offline with no credentials. `check_env.py` checks
+the ADK side only.
+
 ---
 
 Sources: `adk-python: cli/utils/envs.py`, `evaluation/vertex_ai_eval_facade.py`
@@ -127,6 +144,9 @@ Sources: `adk-python: cli/utils/envs.py`, `evaluation/vertex_ai_eval_facade.py`
 `cli/cli_create.py`, `cli/utils/evals.py`, `pyproject.toml` (`[eval]` extra; the
 `[otel]` extra read in the 2.13.0 wheel's `METADATA`), `utils/env_utils.py`,
 `telemetry/_schema_version.py` (2.13.0); `cli/utils/_eval_storage.py`,
-`cli/cli_deploy.py` on main `dfd534a88` (post-tag);
+`cli/cli_deploy.py` on main `dfd534a88` (post-tag); `cli/utils/agent_loader.py`
+(name check measured on 2.9.2 and 2.13.0) and `cli/cli_create.py` on main
+`ee8720162` (`3655990f6`); `adk-recipes: core/python/adk-voice-agent/docs/evals.md`
+(`584a7e634`);
 `adk-docs: docs/evaluate/criteria.md`, `docs/get-started/*`;
 `adk-recipes: AGENTS.md` (model deprecations), recipe `.env.example` files.

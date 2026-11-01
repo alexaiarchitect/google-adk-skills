@@ -18,7 +18,12 @@ INFORMATIONAL    4  ADK 2.10: the metric reported a value and no verdict
 `NOT_EVALUATED` is not a regression: it means the judge could not be reached, no
 reference was available, or a rubric list was empty. `adk eval`'s own summary
 counts it in the failed column, which is why this parser keeps it separate - the
-fix for a NOT_EVALUATED is a configuration fix, not an agent fix.
+fix for a NOT_EVALUATED is a configuration fix, not an agent fix. On main after
+2.13.0 (`d1f2add4f`) a rubric sample whose judge response skips a rubric, names
+an unknown one, or gives a verdict that contains neither yes nor no is unscored
+(score None) instead of averaged away; through 2.13.0 the remaining rubrics are
+averaged, which can turn a fail into a pass. Result files keep only the
+majority-voted rubric verdicts, never the per-sample ones.
 
 `INFORMATIONAL` (ADK 2.10) is not a regression either, and not a skipped metric:
 it is the status of the four always-on efficiency metrics

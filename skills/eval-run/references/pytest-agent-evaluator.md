@@ -88,6 +88,15 @@ config; selecting a sub-agent by `agent_name` needs a `BaseAgent` root (else a
 fails with `ModuleNotFoundError` (its repr is imported as a module name), and
 `agent=` with `TypeError: ... unexpected keyword argument 'agent'` (measured).
 
+**`parallelism=`** (`e9e8f6156`, checked at `ee8720162`): on main, `evaluate`
+and `evaluate_eval_set` take `parallelism=N`, which caps how many eval cases run at
+once and overrides a top-level `"parallelism"` key in the test config (itself new
+on main); with neither, the service default of 4 applies. A value below 1 raises
+``ValueError: `parallelism` must be at least 1, got 0.`` before anything runs.
+Through 2.13.0 the argument does not exist and the config key is dropped silently
+(measured on 2.9.2 and 2.13.0), so cases run 4 at a time; `validate_config.py`
+warns about the key as `CFG077`.
+
 ## A working test module
 
 ```python
@@ -161,4 +170,5 @@ Compared across installed 2.9.2, 2.10.0, 2.11.0 and 2.12.0 wheels; the `[eval]`
 pins read from each wheel's `METADATA` (2.13.0's compared with 2.12.0's). The
 2.13.0 changes are commits `5bf7f12`, `c12392e` and `cb48b91`, in `v2.13.0`;
 multi-run (`7f3517e`) and the matcher (`ed76f94`) are post-tag at `12c7bed76`,
-the runtime-agent signature (`ce92e9247`) at `dfd534a88`.
+the runtime-agent signature (`ce92e9247`) at `dfd534a88`, `parallelism=`
+(`e9e8f6156`, `agent_evaluator.py:187-188` on main) at `ee8720162`.
